@@ -232,7 +232,7 @@ echo ""
 # =============================================================================
 info "Step 7: Installing Python dependencies..."
 
-pip install -r requirements.txt --quiet
+.venv/bin/pip install -r requirements.txt --quiet
 success "Python dependencies installed"
 
 echo ""
@@ -242,7 +242,7 @@ echo ""
 # =============================================================================
 info "Step 8: Installing Playwright browser binaries..."
 
-playwright install
+.venv/bin/playwright install
 success "Playwright browser binaries installed"
 
 echo ""
