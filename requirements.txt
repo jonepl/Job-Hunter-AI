@@ -1,0 +1,20 @@
+# LLM Provider
+openai
+
+# Environment variable management
+python-dotenv
+
+# Web scraping
+playwright
+beautifulsoup4
+requests
+
+# Resume parsing
+pypdf2
+
+# Testing
+pytest
+pytest-asyncio
+
+# Utilities
+lxml
