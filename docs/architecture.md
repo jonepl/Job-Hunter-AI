@@ -123,20 +123,57 @@ job-search-agent/
 │           ├── email_output.py          ← Gmail SMTP adapter
 │           └── file_output.py           ← CSV file adapter
 │
-├── tests/
-│   ├── unit/                            ← Core domain tests (no external calls)
-│   │   ├── test_job_search_service.py
-│   │   ├── test_match_result.py
-│   │   └── test_resume.py
+tests/
+│
+├── unit/                                    ← mirrors src/ exactly
+│   ├── core/
+│   │   ├── domain/
+│   │   │   ├── test_job.py                  ← tests for Job entity
+│   │   │   ├── test_resume.py               ← tests for Resume entity
+│   │   │   └── test_match_result.py         ← tests for MatchResult entity
+│   │   │
+│   │   ├── ports/
+│   │   │   ├── test_scraper_port.py         ← tests for ScraperPort ABC
+│   │   │   ├── test_evaluator_port.py       ← tests for EvaluatorPort ABC
+│   │   │   └── test_output_port.py          ← tests for OutputPort ABC
+│   │   │
+│   │   └── services/
+│   │       └── test_job_search_service.py   ← tests for orchestration logic
 │   │
-│   └── integration/                     ← Adapter tests (mocked externals)
-│       ├── test_linkedin.py
-│       ├── test_indeed.py
-│       ├── test_glassdoor.py
-│       ├── test_ziprecruiter.py
-│       ├── test_openai_evaluator.py
-│       ├── test_email_output.py
-│       └── test_file_output.py
+│   └── adapters/
+│       ├── scrapers/
+│       │   ├── test_linkedin.py
+│       │   ├── test_indeed.py
+│       │   ├── test_glassdoor.py
+│       │   └── test_ziprecruiter.py
+│       ├── evaluator/
+│       │   └── test_openai_evaluator.py
+│       └── output/
+│           ├── test_email_output.py
+│           └── test_file_output.py
+│
+├── integration/                             ← mirrors src/ exactly
+│   ├── core/
+│   │   └── services/
+│   │       └── test_job_search_service.py   ← full pipeline integration test
+│   │
+│   └── adapters/
+│       ├── scrapers/
+│       │   ├── test_linkedin.py
+│       │   ├── test_indeed.py
+│       │   ├── test_glassdoor.py
+│       │   └── test_ziprecruiter.py
+│       ├── evaluator/
+│       │   └── test_openai_evaluator.py
+│       └── output/
+│           ├── test_email_output.py
+│           └── test_file_output.py
+│
+├── conftest.py                              ← shared fixtures for all tests
+└── fixtures/                               ← static test data
+│   ├── sample_resume.pdf                   ← test resume
+│   ├── sample_job.json                     ← sample job listing
+│   └── sample_match_result.json            ← sample evaluation result
 │
 ├── logs/                                ← Persistent log output (volume mounted)
 ├── output/                              ← CSV results output (volume mounted)
