@@ -28,8 +28,9 @@ test-results/
 
 
 archive/
-ai/prompts.txt
+ai/prompts/
 docs/resume/resume.pdf
 logs
 
-output/*.csv
+output
+
