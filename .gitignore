@@ -25,3 +25,10 @@ htmlcov/
 # Playwright
 playwright-report/
 test-results/
+
+
+archive/
+ai/prompts.txt
+docs/resume/resume.pdf
+logs
+

@@ -1,0 +1,9 @@
+services:
+  agent:
+    build: .
+    env_file: .env
+    volumes:
+      - ./docs/resume:/app/docs/resume
+      - ./output:/app/output
+      - ./logs:/app/logs
+    restart: "no"
