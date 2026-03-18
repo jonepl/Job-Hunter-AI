@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Page
 from playwright.async_api import async_playwright
 
 from src.core.domain.job import Job
@@ -69,6 +69,10 @@ class LinkedInScraper(ScraperPort):
                 cards = await page.query_selector_all(".base-search-card")
                 logger.info("LinkedIn — found %d cards", len(cards))
 
+                # Pass 1 — extract all card data while the search results DOM is intact.
+                # Navigating away later (to fetch descriptions) destroys element handles,
+                # so all fields must be read before any page.goto call.
+                card_data: list[dict] = []
                 for card in cards[:limit]:
                     try:
                         title_el = await card.query_selector(".base-search-card__title")
@@ -84,21 +88,31 @@ class LinkedInScraper(ScraperPort):
                         if not title or not url_href:
                             continue
 
-                        description = await self._fetch_description(page, url_href)
-                        await asyncio.sleep(_RATE_LIMIT_SECONDS)
-
-                        jobs.append(Job(
-                            title=title,
-                            company=company,
-                            location=location_text,
-                            url=url_href,
-                            description=description,
-                            platform="linkedin",
-                            scraped_at=datetime.now(),
-                        ))
+                        card_data.append({
+                            "title": title,
+                            "company": company,
+                            "location": location_text,
+                            "url": url_href,
+                        })
                     except Exception as exc:
                         logger.warning("LinkedIn — failed to parse card: %s", exc)
                         continue
+
+                # Pass 2 — fetch descriptions. Element handles are no longer used here,
+                # so page navigation cannot produce stale-handle errors.
+                for data in card_data:
+                    description = await self._fetch_description(page, data["url"])
+                    await asyncio.sleep(_RATE_LIMIT_SECONDS)
+
+                    jobs.append(Job(
+                        title=data["title"],
+                        company=data["company"],
+                        location=data["location"],
+                        url=data["url"],
+                        description=description,
+                        platform="linkedin",
+                        scraped_at=datetime.now(),
+                    ))
 
                 await browser.close()
 
@@ -110,7 +124,7 @@ class LinkedInScraper(ScraperPort):
         logger.info("LinkedIn — returning %d jobs", len(jobs))
         return jobs
 
-    async def _fetch_description(self, page, url: str) -> str:
+    async def _fetch_description(self, page: Page, url: str) -> str:
         """Navigate to a job detail page and extract the description.
 
         Args:

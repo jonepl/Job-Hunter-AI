@@ -141,3 +141,89 @@ async def test_fetch_jobs_respects_limit(mock_playwright_context):
             results = await scraper.fetch_jobs("Python Developer", "Remote", limit=2)
 
     assert len(results) <= 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_all_cards_parsed_despite_navigation(mock_playwright_context):
+    """Regression — all cards are parsed even though _fetch_description navigates away.
+
+    Simulates the stale-handle scenario: page.goto is called once per card during
+    Pass 2 (description fetching). All card fields must still be present because
+    they were collected in Pass 1, before any navigation occurred.
+    """
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+    page.query_selector_all = AsyncMock(return_value=[
+        make_mock_card("Job A", "Co A", "NYC", "https://linkedin.com/1"),
+        make_mock_card("Job B", "Co B", "Remote", "https://linkedin.com/2"),
+        make_mock_card("Job C", "Co C", "Austin", "https://linkedin.com/3"),
+    ])
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            results = await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert len(results) == 3
+    titles = [r.title for r in results]
+    assert "Job A" in titles
+    assert "Job B" in titles
+    assert "Job C" in titles
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_description_navigation_called_after_all_cards_parsed(mock_playwright_context):
+    """Regression — page.goto for descriptions is only called after Pass 1 completes.
+
+    Verifies that card.query_selector is never called after page.goto fires,
+    confirming the two-pass order is preserved.
+    """
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    cards = [
+        make_mock_card("Job X", "Co X", "Remote", "https://linkedin.com/x"),
+        make_mock_card("Job Y", "Co Y", "Remote", "https://linkedin.com/y"),
+    ]
+    page.query_selector_all = AsyncMock(return_value=cards)
+
+    call_log: list[str] = []
+
+    original_goto = page.goto.side_effect
+
+    async def tracked_goto(url, **kwargs):
+        call_log.append(f"goto:{url}")
+
+    page.goto = AsyncMock(side_effect=tracked_goto)
+
+    for card in cards:
+        original_qs = card.query_selector
+
+        async def tracked_qs(selector, _orig=original_qs):
+            call_log.append(f"card_qs:{selector}")
+            return await _orig(selector)
+
+        card.query_selector = tracked_qs
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs("Python Developer", "Remote")
+
+    # All card.query_selector calls must appear before any description-fetch
+    # page.goto calls. The initial search-page goto is excluded — only navigations
+    # to the job detail URLs (collected in Pass 2) count here.
+    detail_urls = {"https://linkedin.com/x", "https://linkedin.com/y"}
+    first_detail_goto = next(
+        (i for i, e in enumerate(call_log) if e.startswith("goto:") and e[5:] in detail_urls),
+        len(call_log),
+    )
+    last_card_qs = next(
+        (i for i, e in reversed(list(enumerate(call_log))) if e.startswith("card_qs:")),
+        -1,
+    )
+    assert last_card_qs < first_detail_goto, (
+        "card.query_selector was called after page.goto — stale-handle bug reintroduced"
+    )
