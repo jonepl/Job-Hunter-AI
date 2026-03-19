@@ -19,10 +19,8 @@ from dotenv import load_dotenv
 from src.adapters.evaluator.openai_evaluator import OpenAIEvaluator
 from src.adapters.output.email_output import EmailOutput
 from src.adapters.output.file_output import FileOutput
-from src.adapters.scrapers.glassdoor import GlassdoorScraper
-from src.adapters.scrapers.indeed import IndeedScraper
+from src.adapters.scrapers.jsearch import JSearchScraper
 from src.adapters.scrapers.linkedin import LinkedInScraper
-from src.adapters.scrapers.ziprecruiter import ZipRecruiterScraper
 from src.core.services.job_search_service import JobSearchService
 
 
@@ -120,9 +118,9 @@ async def main() -> None:
     # Instantiate scraper adapters
     scrapers = [
         LinkedInScraper(),
-        IndeedScraper(),
-        GlassdoorScraper(),
-        ZipRecruiterScraper(),
+        JSearchScraper(platform="indeed"),
+        JSearchScraper(platform="glassdoor"),
+        JSearchScraper(platform="ziprecruiter"),
     ]
     logger.info("Scrapers registered: LinkedIn, Indeed, Glassdoor, ZipRecruiter")
 

@@ -110,9 +110,7 @@ job-search-agent/
 │       ├── scrapers/                    ← One adapter per platform
 │       │   ├── __init__.py
 │       │   ├── linkedin.py
-│       │   ├── indeed.py
-│       │   ├── glassdoor.py
-│       │   └── ziprecruiter.py
+│       │   └── jsearch.py
 │       │
 │       ├── evaluator/                   ← LLM evaluation adapter
 │       │   ├── __init__.py
@@ -143,9 +141,7 @@ tests/
 │   └── adapters/
 │       ├── scrapers/
 │       │   ├── test_linkedin.py
-│       │   ├── test_indeed.py
-│       │   ├── test_glassdoor.py
-│       │   └── test_ziprecruiter.py
+│       │   └── test_jsearch.py
 │       ├── evaluator/
 │       │   └── test_openai_evaluator.py
 │       └── output/
@@ -160,9 +156,7 @@ tests/
 │   └── adapters/
 │       ├── scrapers/
 │       │   ├── test_linkedin.py
-│       │   ├── test_indeed.py
-│       │   ├── test_glassdoor.py
-│       │   └── test_ziprecruiter.py
+│       │   └── test_jsearch.py
 │       ├── evaluator/
 │       │   └── test_openai_evaluator.py
 │       └── output/
@@ -330,10 +324,8 @@ JobSearchService.run(query, location, threshold)
 
 | Adapter | Platform | Method | Reason |
 |---|---|---|---|
-| `LinkedInAdapter` | LinkedIn | Playwright | JavaScript-rendered page |
-| `IndeedAdapter` | Indeed | BeautifulSoup + requests | Static HTML |
-| `GlassdoorAdapter` | Glassdoor | Playwright | JavaScript-rendered page |
-| `ZipRecruiterAdapter` | ZipRecruiter | BeautifulSoup + requests | Static HTML |
+| `LinkedInScraper` | LinkedIn | Playwright | JavaScript-rendered page |
+| `JSearchScraper` | Indeed, Glassdoor, ZipRecruiter | JSearch API (RapidAPI) | Bot detection makes direct scraping non-viable for all three platforms |
 
 All scraper adapters:
 - Implement `ScraperPort`
@@ -624,5 +616,6 @@ calls a real external API.
 | Trigger | Manual + cron | Flexible for Phase 1 without added infrastructure |
 | Test structure | Mirror `src/` in both `unit/` and `integration/` | Easy module location, clear coverage mapping per module |
 | Shared test fixtures | `conftest.py` + `fixtures/` directory | Eliminates repeated setup, ensures consistent test data |
-| Scraping method — LinkedIn, Glassdoor | Playwright | JavaScript-rendered pages — require real browser execution |
-| Scraping method — Indeed, ZipRecruiter | BeautifulSoup + requests | Static HTML — lightweight, fast, no browser overhead |
+| Scraping method — LinkedIn | Playwright | JavaScript-rendered page — requires real browser execution |
+| Scraping method — Indeed, Glassdoor, ZipRecruiter | JSearch API (RapidAPI) | Bot detection makes direct scraping non-viable for all three platforms (TLS fingerprinting, Cloudflare, JS cookie challenge) |
+| Consolidated Indeed/Glassdoor/ZipRecruiter into JSearchScraper | Single JSearchScraper with platform parameter | All three platforms block direct scraping. JSearch is the permanent reliable source. Separate adapters were YAGNI — speculative generality with no practical benefit for a personal tool |

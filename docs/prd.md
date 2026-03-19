@@ -68,7 +68,7 @@ src/
 │   ├── ports/           # Interfaces: ScraperPort, EvaluatorPort, OutputPort
 │   └── services/        # JobSearchService — orchestrates the pipeline
 └── adapters/
-    ├── scrapers/         # linkedin.py, indeed.py, glassdoor.py, ziprecruiter.py
+    ├── scrapers/         # linkedin.py, jsearch.py
     ├── evaluator/        # openai_evaluator.py
     └── output/           # email_output.py, file_output.py
 ```
@@ -86,9 +86,7 @@ src/
 | Adapter | Port | Notes |
 |---|---|---|
 | `LinkedInScraper` | `ScraperPort` | Playwright — JS-rendered |
-| `IndeedScraper` | `ScraperPort` | BeautifulSoup — static HTML |
-| `GlassdoorScraper` | `ScraperPort` | Playwright — JS-rendered |
-| `ZipRecruiterScraper` | `ScraperPort` | BeautifulSoup — static HTML |
+| `JSearchScraper` | `ScraperPort` | JSearch API (RapidAPI) — Indeed, Glassdoor, ZipRecruiter |
 | `OpenAIEvaluator` | `EvaluatorPort` | GPT-4o via OpenAI SDK |
 | `EmailOutput` | `OutputPort` | SMTP delivery |
 | `FileOutput` | `OutputPort` | Structured file — persisted via volume mount |
@@ -101,8 +99,8 @@ src/
 |---|---|
 | Language | Python 3.10+ |
 | LLM | OpenAI GPT-4o (`gpt-4o`) via `openai` SDK |
-| JS-rendered scraping | Playwright (LinkedIn, Glassdoor) |
-| Static scraping | BeautifulSoup + requests (Indeed, ZipRecruiter) |
+| JS-rendered scraping | Playwright (LinkedIn) |
+| API-based scraping | JSearch API (RapidAPI) for Indeed, Glassdoor, ZipRecruiter |
 | Resume parsing | PyPDF2 |
 | Secret management | python-dotenv |
 | Containerization | Docker + docker-compose |
@@ -125,8 +123,8 @@ src/
 ### Scraping
 
 - Scrape job listings from LinkedIn, Indeed, Glassdoor, and ZipRecruiter
-- Use Playwright for JavaScript-rendered platforms (LinkedIn, Glassdoor)
-- Use BeautifulSoup + requests for static platforms (Indeed, ZipRecruiter)
+- Use Playwright for LinkedIn (JavaScript-rendered, direct scraping)
+- Use JSearch API (RapidAPI) for Indeed, Glassdoor, and ZipRecruiter — bot detection makes direct scraping non-viable for all three platforms
 - Enforce a minimum 2-second delay between requests
 - Cap results at 50 listings per platform per run
 - Handle HTTP errors, timeouts, and empty responses gracefully

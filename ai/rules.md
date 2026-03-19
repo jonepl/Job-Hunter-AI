@@ -95,10 +95,8 @@ via email and CSV file output.
 
 ## Scraping Rules
 
-- LinkedIn → Playwright (JavaScript-rendered)
-- Indeed → BeautifulSoup + requests (static HTML)
-- Glassdoor → Playwright (JavaScript-rendered)
-- ZipRecruiter → BeautifulSoup + requests (static HTML)
+- LinkedIn → Playwright (JavaScript-rendered, direct)
+- Indeed, Glassdoor, ZipRecruiter → JSearch API (RapidAPI) — bot detection makes direct scraping non-viable for all three platforms
 - Minimum 2 second delay between requests on all platforms
 - Maximum 25 results per platform per run
 - Always handle HTTP errors, timeouts, and empty responses

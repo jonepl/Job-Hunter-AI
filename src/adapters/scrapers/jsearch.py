@@ -1,4 +1,9 @@
-"""Indeed scraper adapter — fetches job listings via the JSearch API."""
+"""JSearch scraper adapter — fetches job listings via the JSearch API (RapidAPI).
+
+Used for Indeed, Glassdoor, and ZipRecruiter. Direct scraping for all three
+platforms is non-viable due to bot detection (TLS fingerprinting, Cloudflare,
+and JS cookie challenges respectively). JSearch is the permanent primary source.
+"""
 
 import logging
 import os
@@ -18,8 +23,17 @@ _JSEARCH_URL = "https://jsearch.p.rapidapi.com/search"
 _REQUEST_TIMEOUT = 10
 
 
-class IndeedScraper(ScraperPort):
-    """Fetches Indeed job listings via the JSearch API."""
+class JSearchScraper(ScraperPort):
+    """Fetches job listings via the JSearch API for a given platform."""
+
+    def __init__(self, platform: str) -> None:
+        """Initialise the scraper for the specified platform.
+
+        Args:
+            platform: Platform label stamped on each Job (e.g. "indeed",
+                "glassdoor", "ziprecruiter").
+        """
+        self.platform = platform
 
     async def fetch_jobs(
         self,
@@ -27,7 +41,7 @@ class IndeedScraper(ScraperPort):
         location: str,
         limit: int = 25,
     ) -> list[Job]:
-        """Fetch job listings from Indeed via JSearch API.
+        """Fetch job listings via the JSearch API.
 
         Args:
             query: Job search query string (e.g. "Senior Python Developer").
@@ -35,7 +49,8 @@ class IndeedScraper(ScraperPort):
             limit: Maximum number of results to return. Defaults to 25.
 
         Returns:
-            A list of validated Job domain entities.
+            A list of validated Job domain entities, or an empty list on any
+            HTTP error, timeout, or unexpected exception.
         """
         headers = {
             "X-RapidAPI-Key": os.getenv("JSEARCH_API_KEY", ""),
@@ -49,7 +64,7 @@ class IndeedScraper(ScraperPort):
         jobs: list[Job] = []
 
         try:
-            logger.info("Indeed — querying JSearch API")
+            logger.info("%s — querying JSearch API", self.platform)
             response = requests.get(
                 _JSEARCH_URL, headers=headers, params=params, timeout=_REQUEST_TIMEOUT
             )
@@ -75,19 +90,19 @@ class IndeedScraper(ScraperPort):
                         location=location_text,
                         url=item.get("job_apply_link", ""),
                         description=item.get("job_description", ""),
-                        platform="indeed",
+                        platform=self.platform,
                         scraped_at=scraped_at,
                     ))
                 except Exception as exc:
-                    logger.warning("Indeed — failed to parse job item: %s", exc)
+                    logger.warning("%s — failed to parse job item: %s", self.platform, exc)
                     continue
 
         except requests.HTTPError as exc:
-            logger.error("Indeed — HTTP error: %s", exc)
+            logger.error("%s — HTTP error: %s", self.platform, exc)
         except requests.Timeout:
-            logger.error("Indeed — request timed out")
+            logger.error("%s — request timed out", self.platform)
         except Exception as exc:
-            logger.error("Indeed — unexpected error: %s", exc)
+            logger.error("%s — unexpected error: %s", self.platform, exc)
 
-        logger.info("Indeed — returning %d jobs", len(jobs))
+        logger.info("%s — returning %d jobs", self.platform, len(jobs))
         return jobs
