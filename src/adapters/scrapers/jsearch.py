@@ -20,7 +20,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 _JSEARCH_URL = "https://jsearch.p.rapidapi.com/search"
-_REQUEST_TIMEOUT = 10
+_REQUEST_TIMEOUT = 30
 
 
 class JSearchScraper(ScraperPort):

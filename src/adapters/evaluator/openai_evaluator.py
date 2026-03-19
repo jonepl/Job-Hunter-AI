@@ -4,10 +4,11 @@ import json
 import logging
 
 from openai import APIError, AsyncOpenAI
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from src.adapters.evaluator.prompts import SYSTEM_PROMPT, USER_PROMPT
 from src.core.domain.job import Job
-from src.core.domain.match_result import MatchResult
+from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
 from src.core.ports.evaluator_port import EvaluatorPort
 
@@ -15,36 +16,42 @@ logger = logging.getLogger(__name__)
 
 _MODEL = "gpt-4o"
 
-_SYSTEM_PROMPT = """You are an expert technical recruiter and resume evaluator.
-Given a candidate resume and a job description, evaluate how well the candidate
-matches the role. Respond only with valid JSON in the exact schema provided."""
-
-_USER_PROMPT = """Evaluate the match between the following resume and job description.
-
-RESUME:
-{resume_text}
-
-JOB TITLE: {job_title}
-COMPANY: {company}
-JOB DESCRIPTION:
-{job_description}
-
-Respond with a JSON object using exactly this schema:
-{{
-    "score": <integer 0-100 representing overall match strength>,
-    "matched_skills": [<list of skills/keywords present in both resume and job>],
-    "missing_skills": [<list of skills required by job but absent from resume>],
-    "summary": "<one to two sentence summary of the match>"
-}}"""
+_VALID_HIRE_RECOMMENDATIONS = frozenset({"Strong Yes", "Yes", "Borderline", "No"})
 
 
 class _EvaluationResponse(BaseModel):
     """Internal Pydantic model to validate GPT-4o JSON responses."""
 
     score: int = Field(ge=0, le=100)
+    seniority_level: str
+    years_experience_detected: int | None
+    score_breakdown: ScoreBreakdown
     matched_skills: list[str]
     missing_skills: list[str]
     summary: str
+    hire_recommendation: str
+
+    @field_validator("hire_recommendation")
+    @classmethod
+    def validate_hire_recommendation(cls, v: str) -> str:
+        """Validate hire_recommendation is one of the four expected values."""
+        if v not in _VALID_HIRE_RECOMMENDATIONS:
+            raise ValueError(
+                f"hire_recommendation must be one of {_VALID_HIRE_RECOMMENDATIONS}, got {v!r}"
+            )
+        return v
+
+
+def _zero_category(max_val: int) -> ScoreCategory:
+    """Return a ScoreCategory with zero earned points for use in default results.
+
+    Args:
+        max_val: The maximum points for this category.
+
+    Returns:
+        A ScoreCategory with earned=0 and a failure reasoning message.
+    """
+    return ScoreCategory(max=max_val, earned=0, reasoning="Evaluation failed.")
 
 
 def _default_result(job: Job) -> MatchResult:
@@ -54,11 +61,25 @@ def _default_result(job: Job) -> MatchResult:
         job: The job that could not be evaluated.
 
     Returns:
-        A MatchResult with score 0 and an error summary.
+        A MatchResult with score 0 and safe default values for all fields.
     """
     return MatchResult(
         job=job,
         score=0,
+        seniority_level="Unknown",
+        years_experience_detected=None,
+        hire_recommendation="No",
+        score_breakdown=ScoreBreakdown(
+            role_alignment=_zero_category(20),
+            technical_stack_match=_zero_category(15),
+            system_design_architecture=_zero_category(15),
+            impact_and_metrics=_zero_category(15),
+            domain_industry_experience=_zero_category(10),
+            problem_space_relevance=_zero_category(10),
+            ownership_and_leadership=_zero_category(10),
+            resume_signal_quality=_zero_category(3),
+            career_trajectory=_zero_category(2),
+        ),
         matched_skills=[],
         missing_skills=[],
         summary="Evaluation failed — score set to 0.",
@@ -92,10 +113,10 @@ class OpenAIEvaluator(EvaluatorPort):
             job: The job listing to evaluate.
 
         Returns:
-            A MatchResult containing score, matched skills, missing skills,
-            and a summary.
+            A MatchResult containing score, breakdown, matched skills,
+            missing skills, seniority level, and hire recommendation.
         """
-        prompt = _USER_PROMPT.format(
+        prompt = USER_PROMPT.format(
             resume_text=resume.raw_text,
             job_title=job.title,
             company=job.company,
@@ -106,23 +127,114 @@ class OpenAIEvaluator(EvaluatorPort):
             response = await self._client.chat.completions.create(
                 model=_MODEL,
                 messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                response_format={"type": "json_object"},
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "evaluation_response",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "score": {"type": "integer"},
+                                "seniority_level": {"type": "string"},
+                                "years_experience_detected": {
+                                    "anyOf": [
+                                        {"type": "integer"},
+                                        {"type": "null"}
+                                    ]
+                                },
+                                "score_breakdown": {
+                                    "type": "object",
+                                    "properties": {
+                                        "role_alignment": {"$ref": "#/$defs/ScoreCategory"},
+                                        "technical_stack_match": {"$ref": "#/$defs/ScoreCategory"},
+                                        "system_design_architecture": {"$ref": "#/$defs/ScoreCategory"},
+                                        "impact_and_metrics": {"$ref": "#/$defs/ScoreCategory"},
+                                        "domain_industry_experience": {"$ref": "#/$defs/ScoreCategory"},
+                                        "problem_space_relevance": {"$ref": "#/$defs/ScoreCategory"},
+                                        "ownership_and_leadership": {"$ref": "#/$defs/ScoreCategory"},
+                                        "resume_signal_quality": {"$ref": "#/$defs/ScoreCategory"},
+                                        "career_trajectory": {"$ref": "#/$defs/ScoreCategory"}
+                                    },
+                                    "required": [
+                                        "role_alignment",
+                                        "technical_stack_match",
+                                        "system_design_architecture",
+                                        "impact_and_metrics",
+                                        "domain_industry_experience",
+                                        "problem_space_relevance",
+                                        "ownership_and_leadership",
+                                        "resume_signal_quality",
+                                        "career_trajectory"
+                                    ],
+                                    "additionalProperties": False
+                                },
+                                "matched_skills": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                },
+                                "missing_skills": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                },
+                                "summary": {"type": "string"},
+                                "hire_recommendation": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Strong Yes",
+                                        "Yes",
+                                        "Borderline",
+                                        "No"
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "score",
+                                "seniority_level",
+                                "years_experience_detected",
+                                "score_breakdown",
+                                "matched_skills",
+                                "missing_skills",
+                                "summary",
+                                "hire_recommendation"
+                            ],
+                            "additionalProperties": False,
+                            "$defs": {
+                                "ScoreCategory": {
+                                    "type": "object",
+                                    "properties": {
+                                        "max": {"type": "integer"},
+                                        "earned": {"type": "integer"},
+                                        "reasoning": {"type": "string"}
+                                    },
+                                    "required": ["max", "earned", "reasoning"],
+                                    "additionalProperties": False
+                                }
+                            }
+                        }
+                    }
+                },
                 temperature=0.2,
             )
 
             raw = response.choices[0].message.content or ""
             data = json.loads(raw)
+            logger.info("GPT-4o raw response for %r: %s", job.title, data)  # DEBUG — remove after inspection
             evaluated = _EvaluationResponse(**data)
 
             return MatchResult(
                 job=job,
                 score=evaluated.score,
+                seniority_level=evaluated.seniority_level,
+                years_experience_detected=evaluated.years_experience_detected,
+                score_breakdown=evaluated.score_breakdown,
                 matched_skills=evaluated.matched_skills,
                 missing_skills=evaluated.missing_skills,
                 summary=evaluated.summary,
+                hire_recommendation=evaluated.hire_recommendation,
             )
 
         except APIError as exc:

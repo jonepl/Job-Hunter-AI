@@ -8,7 +8,22 @@ import pytest
 
 from src.adapters.output.email_output import EmailOutput
 from src.core.domain.job import Job
-from src.core.domain.match_result import MatchResult
+from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
+
+
+def _make_score_breakdown() -> ScoreBreakdown:
+    """Return a valid ScoreBreakdown for use in email output tests."""
+    return ScoreBreakdown(
+        role_alignment=ScoreCategory(max=20, earned=18, reasoning="Strong alignment."),
+        technical_stack_match=ScoreCategory(max=15, earned=13, reasoning="Good stack."),
+        system_design_architecture=ScoreCategory(max=15, earned=11, reasoning="Solid design."),
+        impact_and_metrics=ScoreCategory(max=15, earned=12, reasoning="Clear impact."),
+        domain_industry_experience=ScoreCategory(max=10, earned=8, reasoning="Relevant domain."),
+        problem_space_relevance=ScoreCategory(max=10, earned=7, reasoning="On point."),
+        ownership_and_leadership=ScoreCategory(max=10, earned=9, reasoning="Strong ownership."),
+        resume_signal_quality=ScoreCategory(max=3, earned=3, reasoning="Clean resume."),
+        career_trajectory=ScoreCategory(max=2, earned=2, reasoning="Upward trajectory."),
+    )
 
 
 @pytest.fixture
@@ -27,6 +42,10 @@ def sample_results() -> list[MatchResult]:
         MatchResult(
             job=job,
             score=85,
+            seniority_level="Senior/Staff",
+            years_experience_detected=7,
+            hire_recommendation="Strong Yes",
+            score_breakdown=_make_score_breakdown(),
             matched_skills=["Python", "REST APIs"],
             missing_skills=["Kubernetes"],
             summary="Strong match.",
@@ -88,3 +107,51 @@ async def test_deliver_handles_smtp_auth_error_gracefully(sample_results):
 
     with patch("src.adapters.output.email_output.smtplib.SMTP", return_value=mock_smtp):
         await output.deliver(sample_results)  # must not raise
+
+
+def test_build_html_contains_hire_recommendation(sample_results):
+    """Happy path — HTML body includes the hire_recommendation value."""
+    output = EmailOutput(
+        sender="sender@gmail.com",
+        password="app-password",
+        recipient="recipient@example.com",
+    )
+    html = output._build_html(sample_results)
+    assert "Strong Yes" in html
+
+
+def test_build_html_contains_score_breakdown_table(sample_results):
+    """Happy path — HTML body includes score breakdown table with category names."""
+    output = EmailOutput(
+        sender="sender@gmail.com",
+        password="app-password",
+        recipient="recipient@example.com",
+    )
+    html = output._build_html(sample_results)
+    assert "Score Breakdown" in html
+    assert "Role Alignment" in html
+    assert "Technical Stack Match" in html
+    assert "Career Trajectory" in html
+
+
+def test_build_html_contains_seniority_and_experience(sample_results):
+    """Happy path — HTML body includes seniority level and experience detected."""
+    output = EmailOutput(
+        sender="sender@gmail.com",
+        password="app-password",
+        recipient="recipient@example.com",
+    )
+    html = output._build_html(sample_results)
+    assert "Senior/Staff" in html
+    assert "7 years" in html
+
+
+def test_build_html_contains_job_link(sample_results):
+    """Happy path — HTML body includes a link to the job posting."""
+    output = EmailOutput(
+        sender="sender@gmail.com",
+        password="app-password",
+        recipient="recipient@example.com",
+    )
+    html = output._build_html(sample_results)
+    assert "https://linkedin.com/jobs/123" in html

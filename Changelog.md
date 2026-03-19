@@ -1,4 +1,4 @@
-# Job Search Automation
+# Job Hunter AI
 
 - 0.0.2: Fix DOM being destroyed in LinkedIn Port class
 

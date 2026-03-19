@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.core.domain.job import Job
-from src.core.domain.match_result import MatchResult
+from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
 from src.core.services.job_search_service import JobSearchService
 
@@ -28,11 +28,33 @@ def make_job(title: str = "Engineer", platform: str = "linkedin") -> Job:
     )
 
 
+def _zero_breakdown() -> ScoreBreakdown:
+    """Return a zero-value ScoreBreakdown for service test fixtures."""
+    def _z(max_val: int) -> ScoreCategory:
+        return ScoreCategory(max=max_val, earned=0, reasoning="n/a")
+
+    return ScoreBreakdown(
+        role_alignment=_z(20),
+        technical_stack_match=_z(15),
+        system_design_architecture=_z(15),
+        impact_and_metrics=_z(15),
+        domain_industry_experience=_z(10),
+        problem_space_relevance=_z(10),
+        ownership_and_leadership=_z(10),
+        resume_signal_quality=_z(3),
+        career_trajectory=_z(2),
+    )
+
+
 def make_match_result(job: Job, score: int) -> MatchResult:
     """Return a MatchResult with the given score."""
     return MatchResult(
         job=job,
         score=score,
+        seniority_level="Mid-Level",
+        years_experience_detected=None,
+        hire_recommendation="Yes",
+        score_breakdown=_zero_breakdown(),
         matched_skills=["Python"],
         missing_skills=[],
         summary="Test result.",

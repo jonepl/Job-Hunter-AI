@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 
 from src.core.domain.job import Job
-from src.core.domain.match_result import MatchResult
+from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
 
 
@@ -38,6 +38,56 @@ def sample_match_result(sample_job: Job) -> MatchResult:
     return MatchResult(
         job=sample_job,
         score=85,
+        seniority_level="Senior/Staff",
+        years_experience_detected=7,
+        hire_recommendation="Strong Yes",
+        score_breakdown=ScoreBreakdown(
+            role_alignment=ScoreCategory(
+                max=20,
+                earned=18,
+                reasoning="Strong alignment with senior Python role requirements.",
+            ),
+            technical_stack_match=ScoreCategory(
+                max=15,
+                earned=13,
+                reasoning="Python, REST APIs, and Django all present.",
+            ),
+            system_design_architecture=ScoreCategory(
+                max=15,
+                earned=11,
+                reasoning="Solid system design background demonstrated.",
+            ),
+            impact_and_metrics=ScoreCategory(
+                max=15,
+                earned=12,
+                reasoning="Clear business impact with quantified metrics.",
+            ),
+            domain_industry_experience=ScoreCategory(
+                max=10,
+                earned=8,
+                reasoning="Relevant SaaS domain experience.",
+            ),
+            problem_space_relevance=ScoreCategory(
+                max=10,
+                earned=7,
+                reasoning="Matching problem space in backend services.",
+            ),
+            ownership_and_leadership=ScoreCategory(
+                max=10,
+                earned=9,
+                reasoning="Led multiple cross-team initiatives.",
+            ),
+            resume_signal_quality=ScoreCategory(
+                max=3,
+                earned=3,
+                reasoning="Well-structured resume with clear progression.",
+            ),
+            career_trajectory=ScoreCategory(
+                max=2,
+                earned=2,
+                reasoning="Consistent upward trajectory.",
+            ),
+        ),
         matched_skills=["Python", "REST APIs"],
         missing_skills=["Kubernetes"],
         summary="Strong match with a gap in container orchestration.",
