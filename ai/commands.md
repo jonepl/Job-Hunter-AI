@@ -72,6 +72,16 @@ Run integration tests only.
 
 ---
 
+## Evaluator
+
+/switch-evaluator [provider]
+Switch the active LLM evaluator provider.
+- Replace [provider] with: openai or anthropic
+- Update EVALUATOR_PROVIDER in .env
+- Confirm the correct evaluator initializes on next run
+
+---
+
 ## Debugging
 
 /debug [description]

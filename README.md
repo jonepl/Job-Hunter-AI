@@ -26,7 +26,7 @@ src/
 │   └── services/      ← JobSearchService (pipeline orchestration)
 └── adapters/
     ├── scrapers/       ← linkedin.py, indeed.py, glassdoor.py, ziprecruiter.py
-    ├── evaluator/      ← openai_evaluator.py
+    ├── evaluator/      ← openai_evaluator.py, anthropic_evaluator.py
     └── output/         ← email_output.py, file_output.py
 ```
 
@@ -34,10 +34,32 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture docum
 
 ---
 
+## Evaluator Providers
+
+This app supports two evaluation providers. Configure via `EVALUATOR_PROVIDER` in `.env`.
+
+**OpenAI GPT-4o (default):**
+```env
+EVALUATOR_PROVIDER=openai
+```
+Requires: `OPENAI_API_KEY`
+Uses structured output enforcement via `response_format` json_schema strict mode.
+
+**Anthropic Claude (claude-sonnet-4-5):**
+```env
+EVALUATOR_PROVIDER=anthropic
+```
+Requires: `ANTHROPIC_API_KEY`
+Uses prompt-based JSON enforcement.
+
+Switching providers requires only a `.env` change — no code changes needed.
+
+---
+
 ## Requirements
 
 - Docker + Docker Compose
-- An OpenAI API key (GPT-4o access)
+- An OpenAI API key (GPT-4o access) or Anthropic API key (claude-sonnet-4-5 access)
 - A Gmail account with an App Password configured
 - Your resume as a PDF file
 
@@ -110,7 +132,13 @@ docker compose build
 
 ## Running the Agent
 
-Set `QUERY` and `LOCATION` in your `.env` file, then run:
+Run directly with arguments:
+
+```bash
+python -m src.main --query "Job Title" --location "Location"
+```
+
+Or set `QUERY` and `LOCATION` in your `.env` file, then run:
 
 ```bash
 docker compose run agent

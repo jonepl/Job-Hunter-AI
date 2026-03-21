@@ -333,16 +333,20 @@ All scraper adapters:
 - Handle HTTP errors, timeouts, and malformed responses gracefully
 - Return validated `Job` Pydantic models
 
-### Evaluator Adapter
+### Evaluator Adapters
 
-| Adapter | Provider | Model |
-|---|---|---|
-| `OpenAIEvaluatorAdapter` | OpenAI API | GPT-4o |
+| Adapter | Provider | Model | Notes |
+|---|---|---|---|
+| `OpenAIEvaluator` | OpenAI API | gpt-4o | Default, uses `response_format` strict mode |
+| `ClaudeEvaluator` | Anthropic API | claude-sonnet-4-5 | Alternative, uses prompt-based JSON enforcement |
 
-- Implements `EvaluatorPort`
-- Sends resume text and job description to GPT-4o
-- Parses and validates LLM response as a `MatchResult` Pydantic model
-- Handles API errors gracefully — returns a default low-score result on failure
+Both adapters:
+- Implement `EvaluatorPort`
+- Send resume text and job description to the LLM for scoring
+- Parse and validate LLM response as a `MatchResult` Pydantic model
+- Handle API errors gracefully — return a default low-score result on failure
+- Return identical `MatchResult` output structure
+- Select via `EVALUATOR_PROVIDER` in `.env` (`openai` or `anthropic`)
 
 ### Output Adapters
 
@@ -483,6 +487,7 @@ All secrets and configuration values are injected at runtime via `.env`. See `do
 | `EMAIL_RECIPIENT` | Yes | Results delivery address |
 | `SCORE_THRESHOLD` | Yes | Minimum match score (default: 70) |
 | `JSEARCH_API_KEY` | Optional | Fallback job listings API |
+| `EVALUATOR_PROVIDER` | Optional | Selects evaluator: `openai` or `anthropic` (default: `openai`) |
 
 ---
 
@@ -619,3 +624,4 @@ calls a real external API.
 | Scraping method — LinkedIn | Playwright | JavaScript-rendered page — requires real browser execution |
 | Scraping method — Indeed, Glassdoor, ZipRecruiter | JSearch API (RapidAPI) | Bot detection makes direct scraping non-viable for all three platforms (TLS fingerprinting, Cloudflare, JS cookie challenge) |
 | Consolidated Indeed/Glassdoor/ZipRecruiter into JSearchScraper | Single JSearchScraper with platform parameter | All three platforms block direct scraping. JSearch is the permanent reliable source. Separate adapters were YAGNI — speculative generality with no practical benefit for a personal tool |
+| Dual evaluator provider support | OpenAI GPT-4o (default) + Anthropic claude-sonnet-4-5 (alternative) | Hexagonal Architecture makes adding a second evaluator adapter trivial. Dual provider support enables cost comparison, fallback on API outage, and provider flexibility with zero core logic changes |

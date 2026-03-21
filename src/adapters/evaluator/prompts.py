@@ -104,4 +104,8 @@ Respond with a JSON object using exactly this schema:
 Respond with valid JSON only.
 Do not include markdown formatting, code blocks, or any
 text outside the JSON object.
+Important: Respond with a raw JSON object only.
+Do not wrap the response in markdown code fences.
+Do not include ```json or ``` anywhere in your response.
+Begin your response with {{ and end with }}.
 """

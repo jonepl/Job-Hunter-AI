@@ -63,6 +63,13 @@ via email and CSV file output.
 - Handle API errors gracefully — return default low-score
   MatchResult on failure
 
+Alternative evaluator:
+- ClaudeEvaluator uses Anthropic claude-sonnet-4-5
+- Configured via ANTHROPIC_API_KEY in .env
+- Identical MatchResult output to OpenAIEvaluator
+- Use when OpenAI API is unavailable or for cost comparison testing
+- Select via EVALUATOR_PROVIDER=anthropic in .env
+
 ---
 
 ## Secret & Configuration Management

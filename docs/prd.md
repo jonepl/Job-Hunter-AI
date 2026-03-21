@@ -87,7 +87,8 @@ src/
 |---|---|---|
 | `LinkedInScraper` | `ScraperPort` | Playwright — JS-rendered |
 | `JSearchScraper` | `ScraperPort` | JSearch API (RapidAPI) — Indeed, Glassdoor, ZipRecruiter |
-| `OpenAIEvaluator` | `EvaluatorPort` | GPT-4o via OpenAI SDK |
+| `OpenAIEvaluator` | `EvaluatorPort` | GPT-4o via OpenAI SDK (default) |
+| `ClaudeEvaluator` | `EvaluatorPort` | claude-sonnet-4-5 via Anthropic SDK (alternative) |
 | `EmailOutput` | `OutputPort` | SMTP delivery |
 | `FileOutput` | `OutputPort` | Structured file — persisted via volume mount |
 
@@ -98,7 +99,7 @@ src/
 | Component | Technology |
 |---|---|
 | Language | Python 3.10+ |
-| LLM | OpenAI GPT-4o (`gpt-4o`) via `openai` SDK |
+| LLM | OpenAI GPT-4o (default evaluator) or Anthropic claude-sonnet-4-5 (alternative evaluator) — provider switchable via `EVALUATOR_PROVIDER` in `.env` |
 | JS-rendered scraping | Playwright (LinkedIn) |
 | API-based scraping | JSearch API (RapidAPI) for Indeed, Glassdoor, ZipRecruiter |
 | Resume parsing | PyPDF2 |

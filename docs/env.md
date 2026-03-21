@@ -14,7 +14,7 @@ all placeholder values with real credentials before running.
 | Variable | Description | Where To Get It |
 |---|---|---|
 | OPENAI_API_KEY | GPT-4o API access for resume evaluation | platform.openai.com |
-| ANTHROPIC_API_KEY | Claude Code authentication | console.anthropic.com |
+| ANTHROPIC_API_KEY | Claude Code authentication and ClaudeEvaluator API access | console.anthropic.com |
 | GMAIL_ADDRESS | Gmail address used as SMTP sender | Your Gmail account |
 | GMAIL_APP_PASSWORD | Gmail App Password for SMTP auth | Google Account → Security → App Passwords |
 | EMAIL_RECIPIENT | Email address to receive ranked results | Your preferred email |
@@ -25,6 +25,7 @@ all placeholder values with real credentials before running.
 | Variable | Description | Where To Get It |
 |---|---|---|
 | JSEARCH_API_KEY | Fallback job listings API | rapidapi.com/JSearch |
+| EVALUATOR_PROVIDER | Selects which LLM evaluator to use — `openai` or `anthropic` (default: `openai`). Required only when using ClaudeEvaluator. | Set to `openai` or `anthropic` |
 
 ---
 
@@ -54,6 +55,7 @@ GMAIL_APP_PASSWORD=your_16_character_app_password
 EMAIL_RECIPIENT=your_recipient_email@example.com
 SCORE_THRESHOLD=70
 JSEARCH_API_KEY=your_jsearch_api_key_here
+EVALUATOR_PROVIDER=openai
 
 ---
 

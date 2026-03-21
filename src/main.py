@@ -16,7 +16,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
-from src.adapters.evaluator.openai_evaluator import OpenAIEvaluator
+from src.adapters.evaluator.factory import build_evaluator
 from src.adapters.output.email_output import EmailOutput
 from src.adapters.output.file_output import FileOutput
 from src.adapters.scrapers.jsearch import JSearchScraper
@@ -107,7 +107,6 @@ async def main() -> None:
     logger.info("=" * 60)
 
     # Load required environment variables
-    openai_api_key = _require_env("OPENAI_API_KEY")
     gmail_address = _require_env("GMAIL_ADDRESS")
     gmail_app_password = _require_env("GMAIL_APP_PASSWORD")
     email_recipient = _require_env("EMAIL_RECIPIENT")
@@ -125,8 +124,7 @@ async def main() -> None:
     logger.info("Scrapers registered: LinkedIn, Indeed, Glassdoor, ZipRecruiter")
 
     # Instantiate evaluator adapter
-    evaluator = OpenAIEvaluator(api_key=openai_api_key)
-    logger.info("Evaluator registered: OpenAI GPT-4o")
+    evaluator = build_evaluator()
 
     # Instantiate output adapters
     outputs = [
