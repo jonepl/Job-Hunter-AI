@@ -95,24 +95,21 @@ Open `.env` and set the following:
 ```env
 # LLM
 OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_claude_api_key
+
+# Job Search API
+JSEARCH_API_KEY=your_jsearch_key
 
 # Email delivery
 GMAIL_ADDRESS=you@gmail.com
 GMAIL_APP_PASSWORD=your_16_char_app_password
 EMAIL_RECIPIENT=recipient@example.com
 
-# Search inputs
-QUERY=Senior Python Developer
-LOCATION=Remote
-
 # Scoring
 SCORE_THRESHOLD=70
 
 # Optional — remove to return all qualifying results
 # TOP_RESULTS=10
-
-# Optional fallback
-JSEARCH_API_KEY=your_jsearch_key
 ```
 
 See [docs/env.md](docs/env.md) for descriptions of every variable and how to generate a Gmail App Password.
@@ -140,8 +137,6 @@ Run directly with arguments:
 ```bash
 python -m src.main --query "Job Title" --location "Location"
 ```
-
-Or set `QUERY` and `LOCATION` in your `.env` file, then run:
 
 ```bash
 docker compose run agent

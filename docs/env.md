@@ -19,14 +19,14 @@ all placeholder values with real credentials before running.
 | GMAIL_APP_PASSWORD | Gmail App Password for SMTP auth | Google Account → Security → App Passwords |
 | EMAIL_RECIPIENT | Email address to receive ranked results | Your preferred email |
 | SCORE_THRESHOLD | Minimum match score to include in results (0-100). When no jobs meet this threshold a zero results report is still delivered containing top 5 near-miss jobs and a suggested lower threshold value. | Set to 70 as default |
+| JSEARCH_API_KEY | Job listings API | rapidapi.com/JSearch |
+| EVALUATOR_PROVIDER | Selects which LLM evaluator to use — `openai` or `anthropic` (default: `openai`). Required only when using ClaudeEvaluator. | Set to `openai` or `anthropic` |
 
 ## Optional Variables
 
 | Variable | Description | Where To Get It |
 |---|---|---|
 | TOP_RESULTS | When set caps the number of qualifying results delivered after score filtering. When not set all jobs above SCORE_THRESHOLD are returned. Default: not set — all qualifying results returned when not configured. | Set to any positive integer (e.g. `10`) |
-| JSEARCH_API_KEY | Fallback job listings API | rapidapi.com/JSearch |
-| EVALUATOR_PROVIDER | Selects which LLM evaluator to use — `openai` or `anthropic` (default: `openai`). Required only when using ClaudeEvaluator. | Set to `openai` or `anthropic` |
 
 ---
 
@@ -49,16 +49,18 @@ Steps to generate:
 
 Copy this file to .env and replace all placeholder values:
 
+```
 OPENAI_API_KEY=your_openai_api_key_here
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
+JSEARCH_API_KEY=your_jsearch_api_key_here
+
 GMAIL_ADDRESS=your_gmail_address@gmail.com
 GMAIL_APP_PASSWORD=your_16_character_app_password
 EMAIL_RECIPIENT=your_recipient_email@example.com
+
 SCORE_THRESHOLD=70
-JSEARCH_API_KEY=your_jsearch_api_key_here
 EVALUATOR_PROVIDER=openai
-# Optional — remove to return all qualifying results
-# TOP_RESULTS=10
+```
 
 ---
 
