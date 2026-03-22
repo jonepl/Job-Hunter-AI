@@ -38,7 +38,7 @@ via email and CSV file output.
 
 - All domain entities must be defined as Pydantic models
 - Entities live in src/core/domain/
-- Valid entities: Job, Resume, MatchResult
+- Valid entities: Job, Resume, MatchResult, RunReport
 - Never use plain dataclasses or dicts as domain entities
 - All Pydantic models must include field type hints
 
@@ -116,8 +116,14 @@ Alternative evaluator:
 - Results delivered via Gmail SMTP using Python smtplib
 - Results saved as CSV to output/results_<timestamp>.csv
 - CSV and logs are persisted via Docker volume mounts
-- Only return top 10 matches above the configured score threshold
 - Score threshold is configurable via SCORE_THRESHOLD in .env
+- A RunReport is always delivered — never skip email or CSV output
+- Near-miss results populated only when qualifying_results is empty
+- Near-miss results always capped at 5
+- Near-miss results use condensed email format — no score breakdown table
+- Zero results CSV filename prefixed with no_results_
+- TOP_RESULTS is optional — never assume it is set
+- When TOP_RESULTS is None apply no cap — return all qualifying results
 
 ---
 

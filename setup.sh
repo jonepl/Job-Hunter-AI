@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# Job Search Agent — Environment Setup Script
+# Job Hunter Agent — Environment Setup Script
 # =============================================================================
 # Usage:
 #   chmod +x setup.sh
@@ -25,7 +25,7 @@ info()    { echo -e "▶  $1"; }
 
 echo ""
 echo "=============================================="
-echo "  Job Search Agent — Environment Setup"
+echo "  Job Hunter Agent — Environment Setup"
 echo "=============================================="
 echo ""
 

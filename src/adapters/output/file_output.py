@@ -5,12 +5,13 @@ import logging
 import os
 from datetime import datetime
 
-from src.core.domain.match_result import MatchResult
+from src.core.domain.run_report import RunReport
 from src.core.ports.output_port import OutputPort
 
 logger = logging.getLogger(__name__)
 
 _CSV_FIELDS = [
+    "result_type",
     "rank",
     "score",
     "hire_recommendation",
@@ -43,11 +44,16 @@ _CSV_FIELDS = [
     "career_trajectory_earned",
     "career_trajectory_max",
     "scraped_at",
+    "run_at",
+    "query",
+    "search_location",
+    "score_threshold",
+    "top_results_cap",
 ]
 
 
 class FileOutput(OutputPort):
-    """Saves ranked job match results to a timestamped CSV file."""
+    """Saves a run report to a timestamped CSV file. Always writes — even on zero results."""
 
     def __init__(self, output_dir: str = "output") -> None:
         """Initialise the file output adapter.
@@ -58,27 +64,39 @@ class FileOutput(OutputPort):
         """
         self._output_dir = output_dir
 
-    async def deliver(self, results: list[MatchResult]) -> None:
-        """Write ranked match results to a timestamped CSV file.
+    async def deliver(self, report: RunReport) -> None:
+        """Write a run report to a timestamped CSV file.
+
+        Always writes a file regardless of whether qualifying results exist.
+        When qualifying results exist the filename is results_<timestamp>.csv.
+        When zero qualifying results the filename is no_results_<timestamp>.csv
+        and the file contains the near-miss rows instead.
 
         Args:
-            results: Ordered list of MatchResult entities to write.
+            report: RunReport produced by the pipeline this run.
         """
-        if not results:
-            logger.info("FileOutput — no results to write")
-            return
-
         os.makedirs(self._output_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(self._output_dir, f"results_{timestamp}.csv")
+        top_results_cap_label = str(report.top_results) if report.top_results is not None else "not set"
+        run_at_iso = report.run_at.isoformat()
+
+        if report.has_qualifying_results:
+            rows_to_write = report.qualifying_results
+            result_type_label = "qualifying"
+            path = os.path.join(self._output_dir, f"results_{timestamp}.csv")
+        else:
+            rows_to_write = report.near_miss_results
+            result_type_label = "near_miss"
+            path = os.path.join(self._output_dir, f"no_results_{timestamp}.csv")
 
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
                 writer.writeheader()
-                for rank, result in enumerate(results, start=1):
+                for rank, result in enumerate(rows_to_write, start=1):
                     bd = result.score_breakdown
                     writer.writerow({
+                        "result_type": result_type_label,
                         "rank": rank,
                         "score": result.score,
                         "hire_recommendation": result.hire_recommendation,
@@ -111,8 +129,21 @@ class FileOutput(OutputPort):
                         "career_trajectory_earned": bd.career_trajectory.earned,
                         "career_trajectory_max": bd.career_trajectory.max,
                         "scraped_at": result.job.scraped_at.isoformat(),
+                        "run_at": run_at_iso,
+                        "query": report.query,
+                        "search_location": report.location,
+                        "score_threshold": report.score_threshold,
+                        "top_results_cap": top_results_cap_label,
                     })
-            logger.info("FileOutput — results written to %s", path)
+
+            if report.has_qualifying_results:
+                logger.info("FileOutput — results written to %s", path)
+            else:
+                logger.info(
+                    "FileOutput — zero results report written to %s — %d near-misses included",
+                    path,
+                    len(report.near_miss_results),
+                )
         except OSError as exc:
             logger.error("FileOutput — failed to write CSV: %s", exc)
         except Exception as exc:

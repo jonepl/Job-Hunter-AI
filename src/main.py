@@ -1,4 +1,4 @@
-"""Entry point for the Job Search Automation Agent.
+"""Entry point for the Job Hunter AI Agent.
 
 Loads environment variables, wires all adapters into JobSearchService,
 and executes the full pipeline from the command line.
@@ -58,7 +58,7 @@ def _parse_args() -> argparse.Namespace:
         Namespace with query and location attributes.
     """
     parser = argparse.ArgumentParser(
-        description="Job Search Automation Agent — scrapes, evaluates, and ranks job listings."
+        description="Job Hunter AI Agent — scrapes, evaluates, and ranks job listings."
     )
     parser.add_argument(
         "--query",
@@ -112,7 +112,15 @@ async def main() -> None:
     email_recipient = _require_env("EMAIL_RECIPIENT")
     score_threshold = int(os.getenv("SCORE_THRESHOLD", "70"))
 
+    # Load optional TOP_RESULTS
+    top_results_env = os.getenv("TOP_RESULTS")
+    top_results = int(top_results_env) if top_results_env else None
+
     logger.info("Score threshold : %d", score_threshold)
+    if top_results is not None:
+        logger.info("Top results cap : %d", top_results)
+    else:
+        logger.info("Top results cap : not set (all qualifying results returned)")
 
     # Instantiate scraper adapters
     scrapers = [
@@ -146,22 +154,46 @@ async def main() -> None:
     )
 
     try:
-        results = await service.run(
+        report = await service.run(
             query=args.query,
             location=args.location,
             threshold=score_threshold,
+            top_results=top_results,
         )
+
         logger.info("=" * 60)
-        logger.info("Run complete — %d result(s) returned", len(results))
-        for i, result in enumerate(results, start=1):
+        if report.has_qualifying_results:
             logger.info(
-                "  %d. [%d] %s @ %s (%s)",
-                i,
-                result.score,
-                result.job.title,
-                result.job.company,
-                result.job.platform,
+                "Run complete — %d result(s) returned",
+                len(report.qualifying_results),
             )
+            for i, result in enumerate(report.qualifying_results, start=1):
+                logger.info(
+                    "  %d. [%d] %s @ %s (%s) — %s",
+                    i,
+                    result.score,
+                    result.job.title,
+                    result.job.company,
+                    result.job.platform,
+                    result.hire_recommendation,
+                )
+        else:
+            logger.warning("Run complete — 0 qualifying results above threshold %d", score_threshold)
+            logger.warning(
+                "Score threshold %d was not met by any evaluated job", score_threshold
+            )
+            if report.near_miss_results:
+                top = report.near_miss_results[0]
+                logger.warning(
+                    "Top near-miss: [%d] %s @ %s",
+                    top.score,
+                    top.job.title,
+                    top.job.company,
+                )
+                logger.warning(
+                    "Consider lowering SCORE_THRESHOLD to %d in your .env file",
+                    report.suggested_threshold,
+                )
         logger.info("=" * 60)
 
     except FileNotFoundError as exc:

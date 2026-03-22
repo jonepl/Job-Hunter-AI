@@ -141,7 +141,15 @@ src/
 
 - Rank all evaluated jobs by relevance score (descending)
 - Filter out any jobs below the configured score threshold
-- Return the top 10 matches that exceed the threshold
+- Returns top TOP_RESULTS ranked job matches above SCORE_THRESHOLD when TOP_RESULTS is set. Returns all qualifying matches when TOP_RESULTS is not set.
+
+### Always-On Run Report
+
+- A report is always delivered after every run regardless of results
+- Qualifying results: full ranked results with score breakdowns
+- Zero qualifying results: zero results report with top 5 near-miss jobs, explanation, and threshold suggestion
+- Near-miss results shown in condensed format — no score breakdown table
+- TOP_RESULTS is optional — when not set all qualifying results are returned
 
 ### Output
 
@@ -153,8 +161,9 @@ src/
 ## 8. Success Criteria
 
 - Agent completes a full run end-to-end without manual intervention
-- Returns the top 10 ranked job matches per run
+- Returns top TOP_RESULTS ranked job matches above SCORE_THRESHOLD when TOP_RESULTS is set. Returns all qualifying matches when TOP_RESULTS is not set.
 - Only returns matches scoring above the configurable threshold
+- A report is always delivered — email and CSV written on every run including zero-result runs
 - Delivers results via email to the configured recipient
 - Saves results to an output file that persists after the container stops
 - Core domain logic is fully testable without real scrapers or APIs

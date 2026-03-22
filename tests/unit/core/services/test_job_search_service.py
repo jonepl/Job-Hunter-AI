@@ -8,6 +8,7 @@ import pytest
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
+from src.core.domain.run_report import RunReport
 from src.core.services.job_search_service import JobSearchService
 
 
@@ -117,55 +118,39 @@ def make_service(
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Existing tests — updated for RunReport return type
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_run_returns_ranked_results_above_threshold():
-    """Happy path — run() returns results sorted by score descending."""
+    """Happy path — run() returns qualifying results sorted by score descending."""
     jobs = [make_job("Job A"), make_job("Job B"), make_job("Job C")]
     service, _, _, _ = make_service(
         scraper_jobs=[jobs],
         eval_scores=[70, 90, 80],
     )
 
-    results = await service.run(query="Python Developer", location="Remote", threshold=70)
+    report = await service.run(query="Python Developer", location="Remote", threshold=70)
 
-    assert len(results) == 3
-    assert results[0].score == 90
-    assert results[1].score == 80
-    assert results[2].score == 70
+    assert len(report.qualifying_results) == 3
+    assert report.qualifying_results[0].score == 90
+    assert report.qualifying_results[1].score == 80
+    assert report.qualifying_results[2].score == 70
 
 
 @pytest.mark.asyncio
 async def test_run_filters_results_below_threshold():
-    """Filtering — jobs scoring below threshold are excluded from results."""
+    """Filtering — jobs scoring below threshold are excluded from qualifying results."""
     jobs = [make_job("High"), make_job("Low")]
     service, _, _, _ = make_service(
         scraper_jobs=[jobs],
         eval_scores=[85, 50],
     )
 
-    results = await service.run(query="Python Developer", location="Remote", threshold=70)
+    report = await service.run(query="Python Developer", location="Remote", threshold=70)
 
-    assert len(results) == 1
-    assert results[0].score == 85
-
-
-@pytest.mark.asyncio
-async def test_run_caps_results_at_top_10():
-    """Ranking — run() returns at most 10 results even when more qualify."""
-    jobs = [make_job(f"Job {i}") for i in range(15)]
-    scores = list(range(71, 86))  # 15 scores all above 70
-    service, _, _, _ = make_service(
-        scraper_jobs=[jobs],
-        eval_scores=scores,
-    )
-
-    results = await service.run(query="Python Developer", location="Remote", threshold=70)
-
-    assert len(results) == 10
-    assert results[0].score == max(scores)
+    assert len(report.qualifying_results) == 1
+    assert report.qualifying_results[0].score == 85
 
 
 @pytest.mark.asyncio
@@ -178,11 +163,11 @@ async def test_run_handles_scraper_exception_gracefully():
         scraper_exceptions=[None, RuntimeError("Scraper failed")],
     )
 
-    results = await service.run(query="Python Developer", location="Remote", threshold=70)
+    report = await service.run(query="Python Developer", location="Remote", threshold=70)
 
     # Pipeline continues — good scraper result is returned
-    assert len(results) == 1
-    assert results[0].score == 80
+    assert len(report.qualifying_results) == 1
+    assert report.qualifying_results[0].score == 80
     # Output was still called
     output.deliver.assert_called_once()
 
@@ -220,16 +205,17 @@ async def test_run_calls_all_output_adapters():
 
 
 @pytest.mark.asyncio
-async def test_run_returns_empty_list_when_no_jobs_meet_threshold():
-    """Edge case — returns empty list when all jobs score below threshold."""
+async def test_run_returns_empty_qualifying_when_no_jobs_meet_threshold():
+    """Edge case — qualifying_results is empty when all jobs score below threshold."""
     service, _, _, _ = make_service(
         scraper_jobs=[[make_job()]],
         eval_scores=[30],
     )
 
-    results = await service.run(query="Python Developer", location="Remote", threshold=70)
+    report = await service.run(query="Python Developer", location="Remote", threshold=70)
 
-    assert results == []
+    assert report.qualifying_results == []
+    assert report.has_qualifying_results is False
 
 
 @pytest.mark.asyncio
@@ -246,3 +232,155 @@ async def test_run_scrapes_all_platforms_concurrently():
 
     scrapers[0].fetch_jobs.assert_called_once_with("Python Developer", "Remote")
     scrapers[1].fetch_jobs.assert_called_once_with("Python Developer", "Remote")
+
+
+# ---------------------------------------------------------------------------
+# New tests — RunReport return type
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_returns_run_report_not_list():
+    """run() returns a RunReport instance, not a list."""
+    service, _, _, _ = make_service(eval_scores=[80])
+    result = await service.run(query="Python Developer", location="Remote", threshold=70)
+    assert isinstance(result, RunReport)
+
+
+@pytest.mark.asyncio
+async def test_near_misses_populated_when_zero_qualifying():
+    """near_miss_results is populated when all jobs score below threshold."""
+    jobs = [make_job(f"Job {i}") for i in range(3)]
+    service, _, _, _ = make_service(
+        scraper_jobs=[jobs],
+        eval_scores=[60, 55, 50],
+    )
+
+    report = await service.run(query="Python Developer", location="Remote", threshold=70)
+
+    assert report.qualifying_results == []
+    assert len(report.near_miss_results) > 0
+    assert all(r.score < 70 for r in report.near_miss_results)
+
+
+@pytest.mark.asyncio
+async def test_near_misses_empty_when_qualifying_exist():
+    """near_miss_results is empty when qualifying results exist."""
+    service, _, _, _ = make_service(
+        scraper_jobs=[[make_job()]],
+        eval_scores=[80],
+    )
+
+    report = await service.run(query="Python Developer", location="Remote", threshold=70)
+
+    assert report.has_qualifying_results is True
+    assert report.near_miss_results == []
+
+
+@pytest.mark.asyncio
+async def test_near_misses_capped_at_five():
+    """near_miss_results contains at most 5 results even when more jobs fail threshold."""
+    jobs = [make_job(f"Job {i}") for i in range(10)]
+    scores = [60, 58, 56, 54, 52, 50, 48, 46, 44, 42]
+    service, _, _, _ = make_service(
+        scraper_jobs=[jobs],
+        eval_scores=scores,
+    )
+
+    report = await service.run(query="Python Developer", location="Remote", threshold=70)
+
+    assert len(report.near_miss_results) == 5
+
+
+@pytest.mark.asyncio
+async def test_zero_results_warning_logged(caplog):
+    """WARNING log is emitted when zero jobs pass the threshold."""
+    import logging
+    service, _, _, _ = make_service(
+        scraper_jobs=[[make_job()]],
+        eval_scores=[30],
+    )
+
+    with caplog.at_level(logging.WARNING):
+        await service.run(query="Python Developer", location="Remote", threshold=70)
+
+    assert any("0 qualifying results" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_top_results_caps_output():
+    """qualifying_results is capped at top_results when set and more qualify."""
+    jobs = [make_job(f"Job {i}") for i in range(8)]
+    scores = [90, 88, 86, 84, 82, 80, 78, 76]
+    service, _, _, _ = make_service(
+        scraper_jobs=[jobs],
+        eval_scores=scores,
+    )
+
+    report = await service.run(query="Python Developer", location="Remote", threshold=70, top_results=5)
+
+    assert len(report.qualifying_results) == 5
+    assert report.qualifying_results[0].score == 90
+    assert report.qualifying_results[4].score == 82
+
+
+@pytest.mark.asyncio
+async def test_top_results_returns_all_when_under_cap():
+    """All qualifying results returned when count is below top_results cap."""
+    jobs = [make_job(f"Job {i}") for i in range(3)]
+    scores = [80, 75, 72]
+    service, _, _, _ = make_service(
+        scraper_jobs=[jobs],
+        eval_scores=scores,
+    )
+
+    report = await service.run(query="Python Developer", location="Remote", threshold=70, top_results=5)
+
+    assert len(report.qualifying_results) == 3
+
+
+@pytest.mark.asyncio
+async def test_top_results_applied_after_score_filter():
+    """top_results cap is applied only to jobs that passed the threshold."""
+    jobs = [make_job(f"Job {i}") for i in range(10)]
+    # 4 above threshold (90, 85, 80, 75), 6 below (65, 60, 55, 50, 45, 40)
+    scores = [90, 85, 80, 75, 65, 60, 55, 50, 45, 40]
+    service, _, _, _ = make_service(
+        scraper_jobs=[jobs],
+        eval_scores=scores,
+    )
+
+    report = await service.run(query="Python Developer", location="Remote", threshold=70, top_results=3)
+
+    assert len(report.qualifying_results) == 3
+    assert all(r.score >= 70 for r in report.qualifying_results)
+
+
+@pytest.mark.asyncio
+async def test_top_results_not_set_returns_all_qualifying():
+    """All qualifying results returned when top_results is None."""
+    jobs = [make_job(f"Job {i}") for i in range(15)]
+    scores = [71 + i for i in range(15)]
+    service, _, _, _ = make_service(
+        scraper_jobs=[jobs],
+        eval_scores=scores,
+    )
+
+    report = await service.run(
+        query="Python Developer", location="Remote", threshold=70, top_results=None
+    )
+
+    assert len(report.qualifying_results) == 15
+
+
+@pytest.mark.asyncio
+async def test_top_results_none_logged_correctly(caplog):
+    """INFO log contains 'not set' when top_results is None."""
+    import logging
+    service, _, _, _ = make_service(eval_scores=[80])
+
+    with caplog.at_level(logging.INFO):
+        await service.run(
+            query="Python Developer", location="Remote", threshold=70, top_results=None
+        )
+
+    assert any("not set" in record.message for record in caplog.records)

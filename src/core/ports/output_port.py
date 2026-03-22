@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from src.core.domain.match_result import MatchResult
+from src.core.domain.run_report import RunReport
 
 
 class OutputPort(ABC):
@@ -11,11 +11,12 @@ class OutputPort(ABC):
     @abstractmethod
     async def deliver(
         self,
-        results: list[MatchResult],
+        report: RunReport,
     ) -> None:
-        """Deliver ranked match results.
+        """Deliver a run report to the output destination.
 
         Args:
-            results: Ordered list of MatchResult entities to deliver.
+            report: RunReport containing qualifying results, near-miss results,
+                    and run metadata. Always called regardless of result count.
         """
         ...

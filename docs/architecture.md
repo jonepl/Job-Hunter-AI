@@ -94,7 +94,8 @@ job-search-agent/
 │   │   │   ├── __init__.py
 │   │   │   ├── job.py                   ← Job entity
 │   │   │   ├── resume.py                ← Resume entity
-│   │   │   └── match_result.py          ← MatchResult entity
+│   │   │   ├── match_result.py          ← MatchResult entity
+│   │   │   └── run_report.py            ← RunReport entity
 │   │   │
 │   │   ├── ports/                       ← Abstract Base Class interfaces
 │   │   │   ├── __init__.py
@@ -134,6 +135,9 @@ tests/
 │   │   │   ├── test_scraper_port.py         ← tests for ScraperPort ABC
 │   │   │   ├── test_evaluator_port.py       ← tests for EvaluatorPort ABC
 │   │   │   └── test_output_port.py          ← tests for OutputPort ABC
+│   │   │
+│   │   ├── domain/
+│   │   │   └── test_run_report.py           ← tests for RunReport entity
 │   │   │
 │   │   └── services/
 │   │       └── test_job_search_service.py   ← tests for orchestration logic
@@ -221,6 +225,29 @@ class MatchResult(BaseModel):
     summary: str
 ```
 
+### `RunReport`
+Represents the full summary of a single pipeline run. Always produced regardless of whether any jobs passed the score threshold.
+
+```python
+class RunReport(BaseModel):
+    qualifying_results: list[MatchResult]  # Jobs that passed threshold + TOP_RESULTS cap
+    near_miss_results: list[MatchResult]   # Top 5 below threshold — only when qualifying is empty
+    total_evaluated: int                   # Total jobs sent to LLM evaluator
+    score_threshold: int                   # Threshold used this run
+    top_results: int | None                # TOP_RESULTS cap used; None when not set
+    query: str                             # Search query used this run
+    location: str                          # Location used this run
+    run_at: datetime                       # Timestamp of run completion
+
+    @property
+    def has_qualifying_results(self) -> bool: ...
+    # Returns True when qualifying_results is non-empty
+
+    @property
+    def suggested_threshold(self) -> int | None: ...
+    # Floors the lowest near-miss score to nearest 5; None when near_miss_results empty
+```
+
 ---
 
 ## 5. Port Interfaces
@@ -290,7 +317,7 @@ class OutputPort(ABC):
 `JobSearchService` is the central orchestrator. It accepts port interfaces as constructor arguments (**dependency injection**) and coordinates the full pipeline.
 
 ```
-JobSearchService.run(query, location, threshold)
+JobSearchService.run(query, location, threshold, top_results)
         │
         ├── 1. Parse resume from PDF
         │
@@ -303,15 +330,21 @@ JobSearchService.run(query, location, threshold)
         ├── 3. Evaluate each job against resume (GPT-4o)
         │       └── OpenAIEvaluatorAdapter.evaluate()
         │
-        ├── 4. Filter results above score threshold
+        ├── 4. Sort all evaluated by score descending
         │
-        ├── 5. Rank results by score — return top 10
+        ├── 5. Filter qualifying — above score threshold
         │
-        ├── 6. Deliver results
-        │       ├── EmailOutputAdapter.deliver()
-        │       └── FileOutputAdapter.deliver()
+        ├── 6. Apply TOP_RESULTS cap if set
         │
-        └── 7. Log completion summary
+        ├── 7. If zero qualifying — collect top 5 near-misses below threshold
+        │
+        ├── 8. Build RunReport
+        │
+        ├── 9. Deliver RunReport to all output adapters
+        │       ├── EmailOutputAdapter.deliver(report)
+        │       └── FileOutputAdapter.deliver(report)
+        │
+        └── 10. Return RunReport
 ```
 
 **Technical Terms:** `Dependency Injection`, `Async Pipeline`, `Score Threshold Filtering`
@@ -485,7 +518,8 @@ All secrets and configuration values are injected at runtime via `.env`. See `do
 | `GMAIL_ADDRESS` | Yes | SMTP sender address |
 | `GMAIL_APP_PASSWORD` | Yes | Gmail App Password for SMTP |
 | `EMAIL_RECIPIENT` | Yes | Results delivery address |
-| `SCORE_THRESHOLD` | Yes | Minimum match score (default: 70) |
+| `SCORE_THRESHOLD` | Yes | Minimum match score (default: 70). When no jobs meet this threshold a zero results report is delivered with top 5 near-miss jobs and a suggested lower threshold value. |
+| `TOP_RESULTS` | No | When set caps qualifying results delivered after score filtering. When not set all jobs above SCORE_THRESHOLD are returned. |
 | `JSEARCH_API_KEY` | Optional | Fallback job listings API |
 | `EVALUATOR_PROVIDER` | Optional | Selects evaluator: `openai` or `anthropic` (default: `openai`) |
 
@@ -625,3 +659,5 @@ calls a real external API.
 | Scraping method — Indeed, Glassdoor, ZipRecruiter | JSearch API (RapidAPI) | Bot detection makes direct scraping non-viable for all three platforms (TLS fingerprinting, Cloudflare, JS cookie challenge) |
 | Consolidated Indeed/Glassdoor/ZipRecruiter into JSearchScraper | Single JSearchScraper with platform parameter | All three platforms block direct scraping. JSearch is the permanent reliable source. Separate adapters were YAGNI — speculative generality with no practical benefit for a personal tool |
 | Dual evaluator provider support | OpenAI GPT-4o (default) + Anthropic claude-sonnet-4-5 (alternative) | Hexagonal Architecture makes adding a second evaluator adapter trivial. Dual provider support enables cost comparison, fallback on API outage, and provider flexibility with zero core logic changes |
+| Always deliver a run report | RunReport delivered on every run including zero-result runs | Silent zero-result runs gave users no feedback when thresholds were aggressive. Always delivering a report with near-miss results and threshold suggestions closes the feedback loop without requiring users to read logs. |
+| TOP_RESULTS is optional | None when not set — all qualifying results returned | TOP_RESULTS is an optional delivery convenience. The app is fully functional without it. Forcing a default cap would silently hide qualifying results from users who never set the variable. |

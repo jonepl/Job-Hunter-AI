@@ -8,6 +8,7 @@ import PyPDF2
 
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
+from src.core.domain.run_report import RunReport
 from src.core.ports.evaluator_port import EvaluatorPort
 from src.core.ports.output_port import OutputPort
 from src.core.ports.scraper_port import ScraperPort
@@ -47,25 +48,32 @@ class JobSearchService:
         query: str,
         location: str,
         threshold: int = 70,
-    ) -> list[MatchResult]:
+        top_results: int | None = None,
+    ) -> RunReport:
         """Execute the full job search pipeline.
 
         Steps:
             1. Parse resume from PDF.
             2. Scrape all platforms concurrently.
             3. Evaluate each job against the resume.
-            4. Filter results below the score threshold.
-            5. Rank by score descending — return top 10.
-            6. Deliver results via all output adapters.
-            7. Log completion summary.
+            4. Sort all evaluated results by score descending.
+            5. Filter qualifying results above score threshold.
+            6. Apply TOP_RESULTS cap if set.
+            7. If zero qualifying — collect top 5 near-misses below threshold.
+            8. Build RunReport.
+            9. Deliver RunReport to all output adapters.
+            10. Return RunReport.
 
         Args:
             query: Job search query string (e.g. "Senior Python Developer").
             location: Location string (e.g. "Remote" or "Miami, FL").
             threshold: Minimum match score to include in results. Defaults to 70.
+            top_results: Optional cap on qualifying results delivered. When None
+                         all qualifying results are returned.
 
         Returns:
-            Top 10 MatchResult entities ranked by score descending.
+            RunReport containing qualifying results, near-miss results, and
+            run metadata.
         """
         logger.info("Pipeline started — query=%r location=%r threshold=%d", query, location, threshold)
 
@@ -88,36 +96,81 @@ class JobSearchService:
         logger.info("Total jobs scraped: %d", len(all_jobs))
 
         # Step 3 — evaluate each job against the resume
-        match_results: list[MatchResult] = []
+        evaluated: list[MatchResult] = []
         for job in all_jobs:
             try:
                 result = await self._evaluator.evaluate(resume, job)
-                match_results.append(result)
+                evaluated.append(result)
                 logger.info("Evaluated %r — score=%d", job.title, result.score)
             except Exception as exc:
                 logger.error("Evaluation failed for %r: %s", job.title, exc)
 
-        # Step 4 — filter below threshold
-        filtered = [r for r in match_results if r.score >= threshold]
-        logger.info("%d results above threshold (%d)", len(filtered), threshold)
+        # Step 4 — sort all evaluated by score descending
+        all_evaluated = sorted(evaluated, key=lambda r: r.score, reverse=True)
 
-        # Step 5 — rank by score descending, cap at top 10
-        ranked = sorted(filtered, key=lambda r: r.score, reverse=True)[:10]
-        logger.info("Returning top %d results", len(ranked))
+        # Step 5 — filter qualifying results above threshold
+        qualifying = [r for r in all_evaluated if r.score >= threshold]
 
-        # Step 6 — deliver via all output adapters
-        await asyncio.gather(*[output.deliver(ranked) for output in self._outputs])
-        logger.info("Results delivered via %d output adapter(s)", len(self._outputs))
+        # Step 6 — apply TOP_RESULTS cap only when set
+        if top_results is not None:
+            pre_cap_count = len(qualifying)
+            qualifying = qualifying[:top_results]
+            if pre_cap_count > top_results:
+                logger.info(
+                    "Top results cap applied — returning %d of %d qualifying jobs",
+                    top_results,
+                    pre_cap_count,
+                )
+            else:
+                logger.info(
+                    "Top results cap — not reached, returning all %d qualifying results",
+                    len(qualifying),
+                )
+        else:
+            logger.info(
+                "Top results cap — not set, returning all %d qualifying results",
+                len(qualifying),
+            )
 
-        # Step 7 — log completion summary
-        logger.info(
-            "Pipeline complete — %d/%d jobs matched (threshold=%d)",
-            len(ranked),
-            len(all_jobs),
-            threshold,
+        # Step 7 — collect near-misses only when zero qualifying results
+        near_misses: list[MatchResult] = []
+        if not qualifying:
+            near_misses = [r for r in all_evaluated if r.score < threshold][:5]
+
+        # Step 8 — build RunReport
+        report = RunReport(
+            qualifying_results=qualifying,
+            near_miss_results=near_misses,
+            total_evaluated=len(evaluated),
+            score_threshold=threshold,
+            top_results=top_results,
+            query=query,
+            location=location,
+            run_at=datetime.now(),
         )
 
-        return ranked
+        # Step 9 — log completion summary
+        if report.has_qualifying_results:
+            logger.info(
+                "Pipeline complete — %d qualifying results (threshold=%d)",
+                len(qualifying),
+                threshold,
+            )
+        else:
+            top_near_miss_score = near_misses[0].score if near_misses else "N/A"
+            logger.warning(
+                "Pipeline complete — 0 qualifying results above threshold %d. "
+                "Top near-miss score: %s. Consider lowering SCORE_THRESHOLD to %s.",
+                threshold,
+                top_near_miss_score,
+                report.suggested_threshold,
+            )
+
+        # Step 10 — deliver via all output adapters
+        await asyncio.gather(*[output.deliver(report) for output in self._outputs])
+        logger.info("Results delivered via %d output adapter(s)", len(self._outputs))
+
+        return report
 
     def _parse_resume(self, path: str) -> Resume:
         """Extract text from a PDF resume using PyPDF2.

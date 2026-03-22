@@ -1,5 +1,9 @@
 # Job Hunter AI
 
+- 0.0.4: Add Anthropic LLM Score Evaluator
+
+- 0.0.3: Refactor job retrieval from Web Scraping to APIS due to bot detection
+
 - 0.0.2: Fix DOM being destroyed in LinkedIn Port class
 
 - 0.0.1: Implement job site scrapying for LinkedIn. Indeed, Glassdoor and Zip Recuriter.

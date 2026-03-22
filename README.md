@@ -9,8 +9,8 @@ A Dockerized Python backend service that scrapes job listings from LinkedIn, Ind
 1. Scrapes job listings concurrently from all four platforms
 2. Parses your resume PDF and sends each job + resume to GPT-4o for scoring
 3. Filters results below a configurable score threshold (default: 70)
-4. Returns the top 10 matches ranked by relevance
-5. Sends results via email and saves them to a timestamped CSV file
+4. Returns all qualifying matches ranked by relevance (or top N when TOP_RESULTS is set)
+5. Always delivers a report via email and CSV — even when zero jobs qualify
 
 ---
 
@@ -45,7 +45,7 @@ EVALUATOR_PROVIDER=openai
 Requires: `OPENAI_API_KEY`
 Uses structured output enforcement via `response_format` json_schema strict mode.
 
-**Anthropic Claude (claude-sonnet-4-5):**
+**Anthropic Claude (claude-sonnet-4-6):**
 ```env
 EVALUATOR_PROVIDER=anthropic
 ```
@@ -59,7 +59,7 @@ Switching providers requires only a `.env` change — no code changes needed.
 ## Requirements
 
 - Docker + Docker Compose
-- An OpenAI API key (GPT-4o access) or Anthropic API key (claude-sonnet-4-5 access)
+- An OpenAI API key (GPT-4o access) or Anthropic API key (claude-sonnet-4-6 access)
 - A Gmail account with an App Password configured
 - Your resume as a PDF file
 
@@ -107,6 +107,9 @@ LOCATION=Remote
 
 # Scoring
 SCORE_THRESHOLD=70
+
+# Optional — remove to return all qualifying results
+# TOP_RESULTS=10
 
 # Optional fallback
 JSEARCH_API_KEY=your_jsearch_key
@@ -166,6 +169,31 @@ Both directories are persisted via Docker volume mounts and survive container re
 
 ---
 
+## Result Filtering
+
+**SCORE_THRESHOLD** (default: 75)
+Jobs scoring below this are excluded from qualifying results.
+When no jobs meet the threshold a zero results report is still delivered with top 5 near-miss jobs and a suggested lower threshold.
+
+**TOP_RESULTS** (optional — not set by default)
+When set caps the number of qualifying results delivered after score filtering.
+When not set all qualifying results above SCORE_THRESHOLD are returned.
+Add to `.env` to enable:
+```env
+TOP_RESULTS=10
+```
+
+**Zero Results Behavior:**
+If no jobs meet SCORE_THRESHOLD the app still delivers a report containing:
+- Explanation of what happened
+- Top 5 near-miss jobs below threshold
+- Suggested lower threshold value
+- Total jobs evaluated this run
+
+You always receive an email and CSV after every run — no silent failures.
+
+---
+
 ## Development
 
 ### Activate the virtual environment
@@ -221,7 +249,7 @@ The short version:
 | Component | Technology |
 |---|---|
 | Language | Python 3.10+ |
-| LLM | OpenAI GPT-4o |
+| LLM | OpenAI GPT-4o OR Claude Sonnet-4-6 |
 | JS-rendered scraping | Playwright (LinkedIn, Glassdoor) |
 | Static scraping | BeautifulSoup + requests (Indeed, ZipRecruiter) |
 | Resume parsing | PyPDF2 |
