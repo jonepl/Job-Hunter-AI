@@ -116,6 +116,8 @@ class OpenAIEvaluator(EvaluatorPort):
             A MatchResult containing score, breakdown, matched skills,
             missing skills, seniority level, and hire recommendation.
         """
+        logger.info("OpenAI — evaluating %r @ %s", job.title, job.company)
+
         prompt = USER_PROMPT.format(
             resume_text=resume.raw_text,
             job_title=job.title,
@@ -222,7 +224,7 @@ class OpenAIEvaluator(EvaluatorPort):
 
             raw = response.choices[0].message.content or ""
             data = json.loads(raw)
-            logger.info("GPT-4o raw response for %r: %s", job.title, data)  # DEBUG — remove after inspection
+            # logger.info("GPT-4o raw response for %r: %s", job.title, data)  # DEBUG — remove after inspection
             evaluated = _EvaluationResponse(**data)
 
             return MatchResult(

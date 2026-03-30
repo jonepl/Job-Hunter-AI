@@ -1,5 +1,6 @@
 """Unit tests for the LinkedIn scraper adapter."""
 
+import logging
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,6 +8,7 @@ import pytest
 
 from src.adapters.scrapers.linkedin import LinkedInScraper
 from src.core.domain.job import Job
+from src.core.domain.work_type import WorkType
 
 
 def make_mock_card(title: str, company: str, location: str, href: str):
@@ -227,3 +229,114 @@ async def test_fetch_jobs_description_navigation_called_after_all_cards_parsed(m
     assert last_card_qs < first_detail_goto, (
         "card.query_selector was called after page.goto — stale-handle bug reintroduced"
     )
+
+
+# ---------------------------------------------------------------------------
+# Work type filter — URL and logging
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_remote_filter_added_to_url(mock_playwright_context):
+    """work_types=[REMOTE] → f_WT=2 is present in the navigated search URL."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs("SE", "Remote", work_types=[WorkType.REMOTE])
+
+    search_url = page.goto.call_args_list[0][0][0]
+    assert "f_WT=2" in search_url
+
+
+@pytest.mark.asyncio
+async def test_hybrid_filter_added_to_url(mock_playwright_context):
+    """work_types=[HYBRID] → f_WT=3 is present in the navigated search URL."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs("SE", "New York", work_types=[WorkType.HYBRID])
+
+    search_url = page.goto.call_args_list[0][0][0]
+    assert "f_WT=3" in search_url
+
+
+@pytest.mark.asyncio
+async def test_onsite_filter_added_to_url(mock_playwright_context):
+    """work_types=[ONSITE] → f_WT=1 is present in the navigated search URL."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs("SE", "Austin, TX", work_types=[WorkType.ONSITE])
+
+    search_url = page.goto.call_args_list[0][0][0]
+    assert "f_WT=1" in search_url
+
+
+@pytest.mark.asyncio
+async def test_multiple_work_types_in_url(mock_playwright_context):
+    """work_types=[REMOTE, HYBRID] → both f_WT=2 and f_WT=3 appear in the search URL."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs(
+                "SE", "New York", work_types=[WorkType.REMOTE, WorkType.HYBRID]
+            )
+
+    search_url = page.goto.call_args_list[0][0][0]
+    assert "f_WT=2" in search_url
+    assert "f_WT=3" in search_url
+
+
+@pytest.mark.asyncio
+async def test_no_work_type_filter_omits_f_wt(mock_playwright_context):
+    """work_types=None → f_WT is not present in the navigated search URL."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs("SE", "Remote", work_types=None)
+
+    search_url = page.goto.call_args_list[0][0][0]
+    assert "f_WT" not in search_url
+
+
+@pytest.mark.asyncio
+async def test_no_work_type_logs_no_filter_message(mock_playwright_context, caplog):
+    """work_types=None → INFO log contains 'no work type filter'."""
+    scraper = LinkedInScraper()
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.linkedin"):
+        with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+            with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+                await scraper.fetch_jobs("SE", "Remote", work_types=None)
+
+    assert any("no work type filter" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_remote_work_type_logs_filter_applied(mock_playwright_context, caplog):
+    """work_types=[REMOTE] → INFO log contains 'remote'."""
+    scraper = LinkedInScraper()
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.linkedin"):
+        with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+            with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+                await scraper.fetch_jobs("SE", "Remote", work_types=[WorkType.REMOTE])
+
+    assert any("remote" in record.message for record in caplog.records)

@@ -132,11 +132,42 @@ docker compose build
 
 ## Running the Agent
 
-Run directly with arguments:
-
+**Remote jobs (location optional — defaults to "United States"):**
 ```bash
-python -m src.main --query "Job Title" --location "Location"
+python -m src.main --query "Senior Software Engineer" --work-type remote
 ```
+
+**Remote jobs with explicit location:**
+```bash
+python -m src.main --query "Senior Software Engineer" --location "United States" --work-type remote
+```
+
+**Hybrid jobs (location required):**
+```bash
+python -m src.main --query "Senior Software Engineer" --location "New York" --work-type hybrid
+```
+
+**On-site jobs (location required):**
+```bash
+python -m src.main --query "Senior Software Engineer" --location "Miami, FL" --work-type onsite
+```
+
+**All types, specific location:**
+```bash
+python -m src.main --query "Senior Software Engineer" --location "Remote"
+```
+
+**Location Rules:**
+
+| `--work-type`       | `--location`     | Behavior                                  |
+|---------------------|------------------|-------------------------------------------|
+| `remote` (only)     | omitted          | defaults to `"United States"`             |
+| `remote` (only)     | provided         | use provided value                        |
+| `hybrid`            | omitted          | error — location required                 |
+| `onsite`            | omitted          | error — location required                 |
+| mixed (e.g. remote hybrid) | omitted   | error — location required                 |
+| not specified       | provided         | use provided value (existing behavior)    |
+| not specified       | omitted          | error — location required                 |
 
 ```bash
 docker compose run agent

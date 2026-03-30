@@ -9,6 +9,7 @@ import PyPDF2
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
 from src.core.domain.run_report import RunReport
+from src.core.domain.work_type import WorkType
 from src.core.ports.evaluator_port import EvaluatorPort
 from src.core.ports.output_port import OutputPort
 from src.core.ports.scraper_port import ScraperPort
@@ -49,6 +50,7 @@ class JobSearchService:
         location: str,
         threshold: int = 70,
         top_results: int | None = None,
+        work_types: set[WorkType] | None = None,
     ) -> RunReport:
         """Execute the full job search pipeline.
 
@@ -82,7 +84,8 @@ class JobSearchService:
         logger.info("Resume parsed from %s", self._resume_path)
 
         # Step 2 — scrape all platforms concurrently
-        scrape_tasks = [scraper.fetch_jobs(query, location) for scraper in self._scrapers]
+        work_types_list = list(work_types) if work_types else None
+        scrape_tasks = [scraper.fetch_jobs(query, location, work_types=work_types_list) for scraper in self._scrapers]
         scrape_results = await asyncio.gather(*scrape_tasks, return_exceptions=True)
 
         all_jobs = []
@@ -101,7 +104,7 @@ class JobSearchService:
             try:
                 result = await self._evaluator.evaluate(resume, job)
                 evaluated.append(result)
-                logger.info("Evaluated %r — score=%d", job.title, result.score)
+                logger.info("Evaluated %r @ %r — score=%d", job.title, job.company, result.score)
             except Exception as exc:
                 logger.error("Evaluation failed for %r: %s", job.title, exc)
 

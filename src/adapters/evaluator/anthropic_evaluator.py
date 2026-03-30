@@ -139,7 +139,7 @@ class ClaudeEvaluator(EvaluatorPort):
             A MatchResult containing score, breakdown, matched skills,
             missing skills, seniority level, and hire recommendation.
         """
-        logger.info("Claude — evaluating %r", job.title)
+        logger.info("Claude — evaluating %r @ %s", job.title, job.company)
 
         prompt = USER_PROMPT.format(
             resume_text=resume.raw_text,
@@ -170,7 +170,7 @@ class ClaudeEvaluator(EvaluatorPort):
                 raise ValueError("Claude returned empty response content")
             data = json.loads(raw)
             data = _rescue_misplaced_fields(data)
-            logger.info("Claude raw response for %r: %s", job.title, data)
+            # logger.info("Claude raw response for %r: %s", job.title, data)
             evaluated = _EvaluationResponse(**data)
 
             return MatchResult(

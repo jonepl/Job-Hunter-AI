@@ -9,11 +9,11 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Page
 from playwright.async_api import async_playwright
 
 from src.core.domain.job import Job
+from src.core.domain.work_type import WorkType
 from src.core.ports.scraper_port import ScraperPort
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://www.linkedin.com/jobs/search/?keywords={query}&location={location}&f_TPR=r604800"
 _RATE_LIMIT_SECONDS = 2
 
 
@@ -25,6 +25,7 @@ class LinkedInScraper(ScraperPort):
         query: str,
         location: str,
         limit: int = 25,
+        work_types: list[WorkType] | None = None,
     ) -> list[Job]:
         """Fetch job listings from LinkedIn.
 
@@ -32,14 +33,25 @@ class LinkedInScraper(ScraperPort):
             query: Job search query string (e.g. "Senior Python Developer").
             location: Location string (e.g. "Remote" or "Miami, FL").
             limit: Maximum number of results to return. Defaults to 25.
+            work_types: Optional list of WorkType values to filter by work
+                        arrangement. When None all types are returned.
 
         Returns:
             A list of validated Job domain entities.
         """
-        url = _BASE_URL.format(
-            query=quote_plus(query),
-            location=quote_plus(location),
+        work_type_param = WorkType.to_linkedin_param(work_types or [])
+        url = (
+            f"https://www.linkedin.com/jobs/search/?"
+            f"keywords={quote_plus(query)}"
+            f"&location={quote_plus(location)}"
+            f"{work_type_param}"
         )
+
+        if work_types:
+            logger.info("LinkedIn — work type filter: %s", [wt.value for wt in work_types])
+        else:
+            logger.info("LinkedIn — no work type filter (all types returned)")
+
         jobs: list[Job] = []
 
         try:

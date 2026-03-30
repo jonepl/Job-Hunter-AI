@@ -60,6 +60,7 @@ class JSearchScraper(ScraperPort):
             "query": f"{query} in {location}",
             "page": "1",
             "num_pages": "1",
+            "country": "US"
         }
         jobs: list[Job] = []
 

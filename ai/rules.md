@@ -100,6 +100,20 @@ Alternative evaluator:
 
 ---
 
+## Work Type Rules
+
+- Valid work types: remote, hybrid, onsite — passed via `--work-type` CLI argument
+- `--location` is optional only when `--work-type remote` is the sole work type
+- When `--location` is omitted with `--work-type remote`, location defaults to "United States"
+- `--location` is required for hybrid, onsite, mixed work types, and when no work type is specified
+- Mixed work types (e.g. `--work-type remote hybrid`) always require explicit `--location`
+- Location resolution is a `main.py` concern only — `JobSearchService.run()` always receives a
+  resolved, non-null location string
+- Log INFO when location is defaulted: "Location not provided — defaulting to 'United States'
+  for remote work type"
+
+---
+
 ## Scraping Rules
 
 - LinkedIn → Playwright (JavaScript-rendered, direct)
