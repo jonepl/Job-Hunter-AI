@@ -10,6 +10,7 @@ from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
 from src.core.domain.run_report import RunReport
+from src.core.domain.scraper_name import ScraperName
 from src.core.services.job_search_service import JobSearchService
 
 
@@ -459,3 +460,42 @@ async def test_date_posted_logged_at_pipeline_start(caplog):
         )
 
     assert any("week" in record.message for record in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# New tests — active_scrapers
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_only_active_scrapers_called():
+    """Only the scrapers passed to the service are called — no extras."""
+    jobs_a = [make_job("Job A")]
+    jobs_b = [make_job("Job B")]
+    service, scrapers, _, _ = make_service(
+        scraper_jobs=[jobs_a, jobs_b],
+        eval_scores=[80, 75],
+    )
+
+    await service.run(query="Python Developer", location="Remote", threshold=70)
+
+    # Both registered scrapers are called exactly once
+    scrapers[0].fetch_jobs.assert_called_once()
+    scrapers[1].fetch_jobs.assert_called_once()
+    # Confirm the service has exactly the two scrapers we passed
+    assert len(service._scrapers) == 2
+
+
+@pytest.mark.asyncio
+async def test_active_scrapers_in_run_report():
+    """RunReport.active_scrapers matches the list passed to run()."""
+    service, _, _, _ = make_service(eval_scores=[80])
+    active = [ScraperName.LINKEDIN, ScraperName.INDEED]
+
+    report = await service.run(
+        query="Python Developer",
+        location="Remote",
+        threshold=70,
+        active_scrapers=active,
+    )
+
+    assert report.active_scrapers == active

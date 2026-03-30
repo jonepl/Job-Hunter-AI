@@ -143,6 +143,14 @@ src/
 - Filter out any jobs below the configured score threshold
 - Returns top TOP_RESULTS ranked job matches above SCORE_THRESHOLD when TOP_RESULTS is set. Returns all qualifying matches when TOP_RESULTS is not set.
 
+### Configurable Scraper Selection
+
+- Control which job platforms are scraped via `ACTIVE_SCRAPERS` in `.env`
+- Override per run via `--scrapers` CLI argument
+- Supports any combination of: `linkedin`, `indeed`, `glassdoor`, `ziprecruiter`
+- Invalid scraper names caught at startup with clear error message
+- Empty scraper list caught at startup with clear error message
+
 ### Always-On Run Report
 
 - A report is always delivered after every run regardless of results

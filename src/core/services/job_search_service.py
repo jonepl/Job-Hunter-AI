@@ -10,6 +10,7 @@ from src.core.domain.date_posted import DatePosted
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
 from src.core.domain.run_report import RunReport
+from src.core.domain.scraper_name import ScraperName
 from src.core.domain.work_type import WorkType
 from src.core.ports.evaluator_port import EvaluatorPort
 from src.core.ports.output_port import OutputPort
@@ -53,6 +54,7 @@ class JobSearchService:
         top_results: int | None = None,
         work_types: set[WorkType] | None = None,
         date_posted: DatePosted | None = None,
+        active_scrapers: list[ScraperName] | None = None,
     ) -> RunReport:
         """Execute the full job search pipeline.
 
@@ -76,6 +78,8 @@ class JobSearchService:
                          all qualifying results are returned.
             date_posted: Optional recency filter applied to all scrapers. When None
                          no date filter is applied.
+            active_scrapers: List of ScraperName values that were active this run.
+                             Recorded in the RunReport for reporting purposes.
 
         Returns:
             RunReport containing qualifying results, near-miss results, and
@@ -163,6 +167,7 @@ class JobSearchService:
             location=location,
             run_at=datetime.now(),
             date_posted=date_posted,
+            active_scrapers=active_scrapers or [],
         )
 
         # Step 9 — log completion summary

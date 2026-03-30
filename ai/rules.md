@@ -179,6 +179,19 @@ Alternative evaluator:
 
 ---
 
+## Scraper Configuration Rules
+
+- `ACTIVE_SCRAPERS` env variable controls which scrapers run by default
+- `--scrapers` CLI argument overrides `.env` for a single run
+- `ScraperName` enum defined in `src/core/domain/scraper_name.py`
+- `ScraperFactory` defined in `src/adapters/scrapers/scraper_factory.py`
+- Never instantiate scrapers directly in `main.py` — always use `ScraperFactory`
+- Always validate scraper names at startup — exit with clear error on invalid name
+- Always log active scrapers and whether source was CLI or `.env`
+- At least one scraper must be active — exit with error if list is empty
+
+---
+
 ## Git Rules
 
 - Never commit .env

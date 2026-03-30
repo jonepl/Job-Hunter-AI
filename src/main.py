@@ -21,9 +21,9 @@ from dotenv import load_dotenv
 from src.adapters.evaluator.factory import build_evaluator
 from src.adapters.output.email_output import EmailOutput
 from src.adapters.output.file_output import FileOutput
-from src.adapters.scrapers.jsearch import JSearchScraper
-from src.adapters.scrapers.linkedin import LinkedInScraper
+from src.adapters.scrapers.scraper_factory import build_scrapers
 from src.core.domain.date_posted import DatePosted
+from src.core.domain.scraper_name import ScraperName
 from src.core.domain.work_type import WorkType
 from src.core.services.job_search_service import JobSearchService
 
@@ -103,6 +103,17 @@ def _parse_args() -> argparse.Namespace:
             "Supported: 24h, 3days, week, month. "
             "Default (.env): 3days. "
             "Example: --date-posted week"
+        ),
+    )
+    parser.add_argument(
+        "--scrapers",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated list of scrapers to use. "
+            "Overrides ACTIVE_SCRAPERS in .env. "
+            "Supported: linkedin, indeed, glassdoor, ziprecruiter. "
+            "Example: --scrapers linkedin,indeed"
         ),
     )
     return parser.parse_args()
@@ -213,6 +224,24 @@ async def main() -> None:
         print(f"Error: {e}")
         sys.exit(1)
 
+    # Resolve active scrapers — CLI overrides .env
+    active_scrapers_env = os.getenv(
+        "ACTIVE_SCRAPERS", "linkedin,indeed,glassdoor,ziprecruiter"
+    )
+    raw_scrapers = args.scrapers if args.scrapers is not None else active_scrapers_env
+    try:
+        active_scraper_names = ScraperName.parse_list(raw_scrapers)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    if not active_scraper_names:
+        print(
+            "Error: No valid scrapers specified. "
+            "Supported: linkedin, indeed, glassdoor, ziprecruiter"
+        )
+        sys.exit(1)
+
     logger.info("Score threshold : %d", score_threshold)
     if top_results is not None:
         logger.info("Top results cap : %d", top_results)
@@ -223,15 +252,17 @@ async def main() -> None:
         logger.info("               (overridden via CLI)")
     else:
         logger.info("               (from .env default)")
+    logger.info(
+        "Active scrapers  : %s",
+        ", ".join(n.value for n in active_scraper_names),
+    )
+    if args.scrapers is not None:
+        logger.info("                  (overridden via CLI)")
+    else:
+        logger.info("                  (from .env)")
 
-    # Instantiate scraper adapters
-    scrapers = [
-        # LinkedInScraper(),
-        JSearchScraper(platform="indeed"),
-        # JSearchScraper(platform="glassdoor"),
-        # JSearchScraper(platform="ziprecruiter"),
-    ]
-    logger.info("Scrapers registered: LinkedIn, Indeed, Glassdoor, ZipRecruiter")
+    # Build scraper adapters via factory
+    scrapers = build_scrapers(active_scraper_names)
 
     # Instantiate evaluator adapter
     evaluator = build_evaluator()
@@ -263,6 +294,7 @@ async def main() -> None:
             top_results=top_results,
             work_types=work_types,
             date_posted=date_posted,
+            active_scrapers=active_scraper_names,
         )
 
         logger.info("=" * 60)

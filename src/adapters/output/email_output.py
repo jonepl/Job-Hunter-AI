@@ -123,13 +123,27 @@ class EmailOutput(OutputPort):
         top_results_label = str(report.top_results) if report.top_results is not None else "not set"
         date_posted_label = report.date_posted.value if report.date_posted else "not set (all dates)"
         run_at_str = report.run_at.strftime("%Y-%m-%d %H:%M:%S")
+        active_scrapers_label = (
+            ", ".join(s.value for s in report.active_scrapers)
+            if report.active_scrapers
+            else "not set"
+        )
 
         if report.has_qualifying_results:
-            return self._build_qualifying_html(report, top_results_label, date_posted_label, run_at_str)
-        return self._build_zero_results_html(report, top_results_label, date_posted_label, run_at_str)
+            return self._build_qualifying_html(
+                report, top_results_label, date_posted_label, run_at_str, active_scrapers_label
+            )
+        return self._build_zero_results_html(
+            report, top_results_label, date_posted_label, run_at_str, active_scrapers_label
+        )
 
     def _build_qualifying_html(
-        self, report: RunReport, top_results_label: str, date_posted_label: str, run_at_str: str
+        self,
+        report: RunReport,
+        top_results_label: str,
+        date_posted_label: str,
+        run_at_str: str,
+        active_scrapers_label: str,
     ) -> str:
         """Build HTML body for a run with qualifying results.
 
@@ -138,6 +152,7 @@ class EmailOutput(OutputPort):
             top_results_label: Display string for the top results cap setting.
             date_posted_label: Display string for the date posted filter setting.
             run_at_str: Formatted run timestamp string.
+            active_scrapers_label: Display string for active scrapers.
 
         Returns:
             An HTML string for the qualifying results email.
@@ -165,6 +180,8 @@ class EmailOutput(OutputPort):
             f"<td>{top_results_label}</td></tr>"
             f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Date posted filter</strong></td>"
             f"<td>{date_posted_label}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Active scrapers</strong></td>"
+            f"<td>{active_scrapers_label}</td></tr>"
             f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Matches found</strong></td>"
             f"<td><strong>{len(report.qualifying_results)}</strong></td></tr>"
             "</table>"
@@ -175,7 +192,12 @@ class EmailOutput(OutputPort):
         )
 
     def _build_zero_results_html(
-        self, report: RunReport, top_results_label: str, date_posted_label: str, run_at_str: str
+        self,
+        report: RunReport,
+        top_results_label: str,
+        date_posted_label: str,
+        run_at_str: str,
+        active_scrapers_label: str,
     ) -> str:
         """Build HTML body for a zero-results run.
 
@@ -184,6 +206,7 @@ class EmailOutput(OutputPort):
             top_results_label: Display string for the top results cap setting.
             date_posted_label: Display string for the date posted filter setting.
             run_at_str: Formatted run timestamp string.
+            active_scrapers_label: Display string for active scrapers.
 
         Returns:
             An HTML string for the zero results email.
@@ -226,6 +249,8 @@ class EmailOutput(OutputPort):
             f"<td>{report.score_threshold}</td></tr>"
             f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Jobs evaluated</strong></td>"
             f"<td>{report.total_evaluated}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Active scrapers</strong></td>"
+            f"<td>{active_scrapers_label}</td></tr>"
             "</table>"
             "<div style=\"background:#fff8e1;border:1px solid #f9c74f;border-radius:6px;"
             "padding:16px;margin-bottom:20px;\">"

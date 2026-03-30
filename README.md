@@ -220,6 +220,48 @@ You always receive an email and CSV after every run — no silent failures.
 
 ---
 
+## Scraper Configuration
+
+Control which platforms are scraped via `.env`:
+
+```env
+ACTIVE_SCRAPERS=linkedin,indeed,glassdoor,ziprecruiter
+```
+
+**Common configurations:**
+
+LinkedIn only (fastest — no JSearch API quota used):
+```env
+ACTIVE_SCRAPERS=linkedin
+```
+
+JSearch platforms only (saves LinkedIn Playwright overhead):
+```env
+ACTIVE_SCRAPERS=indeed,glassdoor,ziprecruiter
+```
+
+LinkedIn + Indeed only:
+```env
+ACTIVE_SCRAPERS=linkedin,indeed
+```
+
+**Override per run via CLI** (does not change `.env`):
+```bash
+python -m src.main \
+  --query "Senior Software Engineer" \
+  --work-type remote \
+  --scrapers linkedin
+
+python -m src.main \
+  --query "Senior Software Engineer" \
+  --work-type remote \
+  --scrapers linkedin,indeed
+```
+
+CLI `--scrapers` overrides `ACTIVE_SCRAPERS` in `.env` for that run only.
+
+---
+
 ## Development
 
 ### Activate the virtual environment

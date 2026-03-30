@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.match_result import MatchResult
+from src.core.domain.scraper_name import ScraperName
 
 
 class RunReport(BaseModel):
@@ -34,6 +35,9 @@ class RunReport(BaseModel):
 
     date_posted: DatePosted | None = None
     """The date posted recency filter used this run. None when no filter was applied."""
+
+    active_scrapers: list[ScraperName] = []
+    """The scrapers that were active this run."""
 
     query: str
     """The search query used this run."""

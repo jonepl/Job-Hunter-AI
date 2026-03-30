@@ -28,6 +28,7 @@ all placeholder values with real credentials before running.
 |---|---|---|
 | TOP_RESULTS | When set caps the number of qualifying results delivered after score filtering. When not set all jobs above SCORE_THRESHOLD are returned. Default: not set — all qualifying results returned when not configured. | Set to any positive integer (e.g. `10`) |
 | DATE_POSTED | Default recency filter for job listings. Controls how far back the app searches for job postings. Can be overridden per run via `--date-posted` CLI argument. Values: `24h` (past 24 hours), `3days` (past 3 days), `week` (past 7 days), `month` (past 30 days). Default: `3days`. | Set to `24h`, `3days`, `week`, or `month` |
+| ACTIVE_SCRAPERS | Comma-separated list of scrapers to use on each run. Controls which platforms are queried. Useful for cost control, quota management, or isolating a specific platform. Can be overridden per run via `--scrapers` CLI argument. Supported values: `linkedin`, `indeed`, `glassdoor`, `ziprecruiter`. Default: `linkedin,indeed,glassdoor,ziprecruiter`. | Set to one or more of: `linkedin`, `indeed`, `glassdoor`, `ziprecruiter` |
 
 ---
 
@@ -64,6 +65,10 @@ EVALUATOR_PROVIDER=openai
 
 # Default date posted filter (24h/3days/week/month)
 DATE_POSTED=3days
+
+# Active scrapers — comma separated
+# Supported: linkedin, indeed, glassdoor, ziprecruiter
+ACTIVE_SCRAPERS=linkedin,indeed,glassdoor,ziprecruiter
 ```
 
 ---

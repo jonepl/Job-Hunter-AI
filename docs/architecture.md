@@ -96,7 +96,8 @@ job-search-agent/
 │   │   │   ├── job.py                   ← Job entity
 │   │   │   ├── resume.py                ← Resume entity
 │   │   │   ├── match_result.py          ← MatchResult entity
-│   │   │   └── run_report.py            ← RunReport entity
+│   │   │   ├── run_report.py            ← RunReport entity
+│   │   │   └── scraper_name.py          ← ScraperName enum
 │   │   │
 │   │   ├── ports/                       ← Abstract Base Class interfaces
 │   │   │   ├── __init__.py
@@ -112,7 +113,8 @@ job-search-agent/
 │       ├── scrapers/                    ← One adapter per platform
 │       │   ├── __init__.py
 │       │   ├── linkedin.py
-│       │   └── jsearch.py
+│       │   ├── jsearch.py
+│       │   └── scraper_factory.py       ← Builds active scraper instances
 │       │
 │       ├── evaluator/                   ← LLM evaluation adapter
 │       │   ├── __init__.py
@@ -131,7 +133,8 @@ tests/
 │   │   │   ├── test_date_posted.py          ← tests for DatePosted enum
 │   │   │   ├── test_job.py                  ← tests for Job entity
 │   │   │   ├── test_resume.py               ← tests for Resume entity
-│   │   │   └── test_match_result.py         ← tests for MatchResult entity
+│   │   │   ├── test_match_result.py         ← tests for MatchResult entity
+│   │   │   └── test_scraper_name.py         ← tests for ScraperName enum
 │   │   │
 │   │   ├── ports/
 │   │   │   ├── test_scraper_port.py         ← tests for ScraperPort ABC
@@ -147,7 +150,8 @@ tests/
 │   └── adapters/
 │       ├── scrapers/
 │       │   ├── test_linkedin.py
-│       │   └── test_jsearch.py
+│       │   ├── test_jsearch.py
+│       │   └── test_scraper_factory.py
 │       ├── evaluator/
 │       │   └── test_openai_evaluator.py
 │       └── output/
@@ -227,6 +231,29 @@ class MatchResult(BaseModel):
     summary: str
 ```
 
+### `ScraperName`
+Enumeration of all supported job platform scrapers. Used to control which platforms are active at runtime via `ACTIVE_SCRAPERS` in `.env` or `--scrapers` CLI argument.
+
+```python
+class ScraperName(str, Enum):
+    LINKEDIN     = "linkedin"
+    INDEED       = "indeed"
+    GLASSDOOR    = "glassdoor"
+    ZIPRECRUITER = "ziprecruiter"
+
+    @classmethod
+    def from_string(cls, value: str) -> "ScraperName": ...
+    # Case-insensitive parse; raises ValueError on unknown name
+
+    @classmethod
+    def parse_list(cls, value: str) -> list["ScraperName"]: ...
+    # Parses comma-separated string, e.g. "linkedin,indeed"
+
+    @classmethod
+    def all(cls) -> list["ScraperName"]: ...
+    # Returns all four ScraperName values
+```
+
 ### `RunReport`
 Represents the full summary of a single pipeline run. Always produced regardless of whether any jobs passed the score threshold.
 
@@ -237,6 +264,7 @@ class RunReport(BaseModel):
     total_evaluated: int                   # Total jobs sent to LLM evaluator
     score_threshold: int                   # Threshold used this run
     top_results: int | None                # TOP_RESULTS cap used; None when not set
+    active_scrapers: list[ScraperName]     # Scrapers active this run
     query: str                             # Search query used this run
     location: str                          # Location used this run
     run_at: datetime                       # Timestamp of run completion
@@ -367,6 +395,8 @@ All scraper adapters:
 - Apply a minimum 2 second delay between requests
 - Handle HTTP errors, timeouts, and malformed responses gracefully
 - Return validated `Job` Pydantic models
+
+Active scrapers are controlled via `ACTIVE_SCRAPERS` in `.env` or the `--scrapers` CLI argument. `ScraperFactory` (`src/adapters/scrapers/scraper_factory.py`) builds the active scraper instances at startup — scrapers are never instantiated directly in `main.py`.
 
 ### Evaluator Adapters
 
@@ -664,3 +694,4 @@ calls a real external API.
 | Always deliver a run report | RunReport delivered on every run including zero-result runs | Silent zero-result runs gave users no feedback when thresholds were aggressive. Always delivering a report with near-miss results and threshold suggestions closes the feedback loop without requiring users to read logs. |
 | TOP_RESULTS is optional | None when not set — all qualifying results returned | TOP_RESULTS is an optional delivery convenience. The app is fully functional without it. Forcing a default cap would silently hide qualifying results from users who never set the variable. |
 | Date posted filter configured via .env with CLI override | `DATE_POSTED=3days` default, `--date-posted` CLI argument overrides | A persistent default prevents stale listings appearing on every run without requiring the user to pass the flag each time. The CLI override allows per-run flexibility without changing `.env`. Default of `3days` balances freshness with coverage. |
+| Scraper selection via ACTIVE_SCRAPERS .env variable and --scrapers CLI override | `ScraperName` enum + `ScraperFactory` pattern | Hardcoded scraper instantiation gave no runtime control. `ScraperName` enum centralises valid scraper names preventing typos. `ScraperFactory` isolates instantiation logic from `main.py` keeping startup code clean. CLI override enables per-run flexibility without `.env` edits. |
