@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from src.adapters.scrapers.jsearch import JSearchScraper
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.job import Job
 from src.core.domain.work_type import WorkType
 
@@ -209,3 +210,85 @@ async def test_platform_label_in_log_messages(caplog):
             await scraper.fetch_jobs("Python Developer", "Remote", work_types=[WorkType.REMOTE])
 
     assert any("indeed" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Date posted filter — params and logging
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_date_posted_added_to_params():
+    """date_posted=DAYS3 → params has date_posted='3days'."""
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+        await scraper.fetch_jobs("Python Developer", "Remote", date_posted=DatePosted.DAYS3)
+
+    assert captured_params.get("date_posted") == "3days"
+
+
+@pytest.mark.asyncio
+async def test_date_posted_week_added_to_params():
+    """date_posted=WEEK → params has date_posted='week'."""
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+        await scraper.fetch_jobs("Python Developer", "Remote", date_posted=DatePosted.WEEK)
+
+    assert captured_params.get("date_posted") == "week"
+
+
+@pytest.mark.asyncio
+async def test_no_date_posted_omits_param():
+    """date_posted=None → date_posted key is absent from params."""
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+        await scraper.fetch_jobs("Python Developer", "Remote", date_posted=None)
+
+    assert "date_posted" not in captured_params
+
+
+@pytest.mark.asyncio
+async def test_date_posted_logged_when_set(caplog):
+    """date_posted=DAYS3 → INFO log contains '3days'."""
+    import logging
+
+    scraper = JSearchScraper(platform="indeed")
+
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get",
+                   return_value=make_mock_response(_JSEARCH_RESPONSE)):
+            await scraper.fetch_jobs("Python Developer", "Remote", date_posted=DatePosted.DAYS3)
+
+    assert any("3days" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_no_date_posted_logged_when_not_set(caplog):
+    """date_posted=None → INFO log contains 'no date posted filter'."""
+    import logging
+
+    scraper = JSearchScraper(platform="indeed")
+
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get",
+                   return_value=make_mock_response(_JSEARCH_RESPONSE)):
+            await scraper.fetch_jobs("Python Developer", "Remote", date_posted=None)
+
+    assert any("no date posted filter" in r.message for r in caplog.records)

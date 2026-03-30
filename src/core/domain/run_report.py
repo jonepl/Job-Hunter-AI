@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.match_result import MatchResult
 
 
@@ -30,6 +31,9 @@ class RunReport(BaseModel):
 
     top_results: int | None = None
     """The TOP_RESULTS cap used this run. None when TOP_RESULTS was not set."""
+
+    date_posted: DatePosted | None = None
+    """The date posted recency filter used this run. None when no filter was applied."""
 
     query: str
     """The search query used this run."""

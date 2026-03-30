@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
@@ -230,8 +231,8 @@ async def test_run_scrapes_all_platforms_concurrently():
 
     await service.run(query="Python Developer", location="Remote", threshold=70)
 
-    scrapers[0].fetch_jobs.assert_called_once_with("Python Developer", "Remote", work_types=None)
-    scrapers[1].fetch_jobs.assert_called_once_with("Python Developer", "Remote", work_types=None)
+    scrapers[0].fetch_jobs.assert_called_once_with("Python Developer", "Remote", work_types=None, date_posted=None)
+    scrapers[1].fetch_jobs.assert_called_once_with("Python Developer", "Remote", work_types=None, date_posted=None)
 
 
 # ---------------------------------------------------------------------------
@@ -384,3 +385,77 @@ async def test_top_results_none_logged_correctly(caplog):
         )
 
     assert any("not set" in record.message for record in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# New tests — date_posted
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_date_posted_passed_to_all_scrapers():
+    """date_posted=WEEK is forwarded to every scraper via fetch_jobs."""
+    jobs_a = [make_job("Job A")]
+    jobs_b = [make_job("Job B")]
+    service, scrapers, _, _ = make_service(
+        scraper_jobs=[jobs_a, jobs_b],
+        eval_scores=[80, 75],
+    )
+
+    await service.run(
+        query="Python Developer", location="Remote", threshold=70, date_posted=DatePosted.WEEK
+    )
+
+    scrapers[0].fetch_jobs.assert_called_once_with(
+        "Python Developer", "Remote", work_types=None, date_posted=DatePosted.WEEK
+    )
+    scrapers[1].fetch_jobs.assert_called_once_with(
+        "Python Developer", "Remote", work_types=None, date_posted=DatePosted.WEEK
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_date_posted_passes_none_to_scrapers():
+    """date_posted=None is forwarded to every scraper via fetch_jobs."""
+    jobs_a = [make_job("Job A")]
+    jobs_b = [make_job("Job B")]
+    service, scrapers, _, _ = make_service(
+        scraper_jobs=[jobs_a, jobs_b],
+        eval_scores=[80, 75],
+    )
+
+    await service.run(
+        query="Python Developer", location="Remote", threshold=70, date_posted=None
+    )
+
+    scrapers[0].fetch_jobs.assert_called_once_with(
+        "Python Developer", "Remote", work_types=None, date_posted=None
+    )
+    scrapers[1].fetch_jobs.assert_called_once_with(
+        "Python Developer", "Remote", work_types=None, date_posted=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_date_posted_in_run_report():
+    """RunReport.date_posted matches the value passed to run()."""
+    service, _, _, _ = make_service(eval_scores=[80])
+
+    report = await service.run(
+        query="Python Developer", location="Remote", threshold=70, date_posted=DatePosted.DAYS3
+    )
+
+    assert report.date_posted == DatePosted.DAYS3
+
+
+@pytest.mark.asyncio
+async def test_date_posted_logged_at_pipeline_start(caplog):
+    """INFO log contains the date_posted value when date_posted is set."""
+    import logging
+    service, _, _, _ = make_service(eval_scores=[80])
+
+    with caplog.at_level(logging.INFO):
+        await service.run(
+            query="Python Developer", location="Remote", threshold=70, date_posted=DatePosted.WEEK
+        )
+
+    assert any("week" in record.message for record in caplog.records)

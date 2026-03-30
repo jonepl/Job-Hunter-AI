@@ -12,6 +12,7 @@ from datetime import datetime
 import requests
 from dotenv import load_dotenv
 
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.job import Job
 from src.core.domain.work_type import WorkType
 from src.core.ports.scraper_port import ScraperPort
@@ -42,6 +43,7 @@ class JSearchScraper(ScraperPort):
         location: str,
         limit: int = 25,
         work_types: list[WorkType] | None = None,
+        date_posted: DatePosted | None = None,
     ) -> list[Job]:
         """Fetch job listings via the JSearch API.
 
@@ -51,6 +53,7 @@ class JSearchScraper(ScraperPort):
             limit: Maximum number of results to return. Defaults to 25.
             work_types: Optional list of WorkType values to filter results by
                         work arrangement. When None all types are returned.
+            date_posted: Optional recency filter. When None no date filter is applied.
 
         Returns:
             A list of validated Job domain entities, or an empty list on any
@@ -88,6 +91,16 @@ class JSearchScraper(ScraperPort):
                 self.platform,
                 [wt.value for wt in work_types],
             )
+
+        if date_posted:
+            params["date_posted"] = date_posted.jsearch_param
+            logger.info("%s — date posted filter: %s", self.platform, date_posted.value)
+        else:
+            logger.info(
+                "%s — no date posted filter (all dates returned)",
+                self.platform,
+            )
+
         jobs: list[Job] = []
 
         try:

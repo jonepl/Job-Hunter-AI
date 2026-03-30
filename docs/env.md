@@ -27,6 +27,7 @@ all placeholder values with real credentials before running.
 | Variable | Description | Where To Get It |
 |---|---|---|
 | TOP_RESULTS | When set caps the number of qualifying results delivered after score filtering. When not set all jobs above SCORE_THRESHOLD are returned. Default: not set — all qualifying results returned when not configured. | Set to any positive integer (e.g. `10`) |
+| DATE_POSTED | Default recency filter for job listings. Controls how far back the app searches for job postings. Can be overridden per run via `--date-posted` CLI argument. Values: `24h` (past 24 hours), `3days` (past 3 days), `week` (past 7 days), `month` (past 30 days). Default: `3days`. | Set to `24h`, `3days`, `week`, or `month` |
 
 ---
 
@@ -60,6 +61,9 @@ EMAIL_RECIPIENT=your_recipient_email@example.com
 
 SCORE_THRESHOLD=70
 EVALUATOR_PROVIDER=openai
+
+# Default date posted filter (24h/3days/week/month)
+DATE_POSTED=3days
 ```
 
 ---

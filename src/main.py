@@ -23,6 +23,7 @@ from src.adapters.output.email_output import EmailOutput
 from src.adapters.output.file_output import FileOutput
 from src.adapters.scrapers.jsearch import JSearchScraper
 from src.adapters.scrapers.linkedin import LinkedInScraper
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.work_type import WorkType
 from src.core.services.job_search_service import JobSearchService
 
@@ -90,6 +91,19 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         dest="work_type",
         help="Job work type filter. One or more of: remote, hybrid, onsite.",
+    )
+    parser.add_argument(
+        "--date-posted",
+        type=str,
+        default=None,
+        dest="date_posted",
+        help=(
+            "Filter jobs by posting recency. "
+            "Overrides DATE_POSTED in .env. "
+            "Supported: 24h, 3days, week, month. "
+            "Default (.env): 3days. "
+            "Example: --date-posted week"
+        ),
     )
     return parser.parse_args()
 
@@ -190,11 +204,25 @@ async def main() -> None:
     top_results_env = os.getenv("TOP_RESULTS")
     top_results = int(top_results_env) if top_results_env else None
 
+    # Resolve date_posted — CLI overrides .env
+    date_posted_env = os.getenv("DATE_POSTED", "3days")
+    raw_date_posted = args.date_posted if args.date_posted else date_posted_env
+    try:
+        date_posted = DatePosted.from_string(raw_date_posted)
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
     logger.info("Score threshold : %d", score_threshold)
     if top_results is not None:
         logger.info("Top results cap : %d", top_results)
     else:
         logger.info("Top results cap : not set (all qualifying results returned)")
+    logger.info("Date posted filter : %s", date_posted.value)
+    if args.date_posted:
+        logger.info("               (overridden via CLI)")
+    else:
+        logger.info("               (from .env default)")
 
     # Instantiate scraper adapters
     scrapers = [
@@ -234,6 +262,7 @@ async def main() -> None:
             threshold=score_threshold,
             top_results=top_results,
             work_types=work_types,
+            date_posted=date_posted,
         )
 
         logger.info("=" * 60)

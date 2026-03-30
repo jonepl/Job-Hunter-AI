@@ -92,6 +92,7 @@ job-search-agent/
 │   ├── core/
 │   │   ├── domain/                      ← Pydantic entities
 │   │   │   ├── __init__.py
+│   │   │   ├── date_posted.py           ← DatePosted enum
 │   │   │   ├── job.py                   ← Job entity
 │   │   │   ├── resume.py                ← Resume entity
 │   │   │   ├── match_result.py          ← MatchResult entity
@@ -127,6 +128,7 @@ tests/
 ├── unit/                                    ← mirrors src/ exactly
 │   ├── core/
 │   │   ├── domain/
+│   │   │   ├── test_date_posted.py          ← tests for DatePosted enum
 │   │   │   ├── test_job.py                  ← tests for Job entity
 │   │   │   ├── test_resume.py               ← tests for Resume entity
 │   │   │   └── test_match_result.py         ← tests for MatchResult entity
@@ -355,10 +357,10 @@ JobSearchService.run(query, location, threshold, top_results)
 
 ### Scraper Adapters
 
-| Adapter | Platform | Method | Reason |
+| Adapter | Platform | Method | Notes |
 |---|---|---|---|
-| `LinkedInScraper` | LinkedIn | Playwright | JavaScript-rendered page |
-| `JSearchScraper` | Indeed, Glassdoor, ZipRecruiter | JSearch API (RapidAPI) | Bot detection makes direct scraping non-viable for all three platforms |
+| `LinkedInScraper` | LinkedIn | Playwright | JavaScript-rendered page. Supports `f_TPR` date posted filter and `f_WT` work type filter. |
+| `JSearchScraper` | Indeed, Glassdoor, ZipRecruiter | JSearch API (RapidAPI) | Bot detection makes direct scraping non-viable for all three platforms. Supports `date_posted` param. `remote_jobs_only` for work type. |
 
 All scraper adapters:
 - Implement `ScraperPort`
@@ -661,3 +663,4 @@ calls a real external API.
 | Dual evaluator provider support | OpenAI GPT-4o (default) + Anthropic claude-sonnet-4-5 (alternative) | Hexagonal Architecture makes adding a second evaluator adapter trivial. Dual provider support enables cost comparison, fallback on API outage, and provider flexibility with zero core logic changes |
 | Always deliver a run report | RunReport delivered on every run including zero-result runs | Silent zero-result runs gave users no feedback when thresholds were aggressive. Always delivering a report with near-miss results and threshold suggestions closes the feedback loop without requiring users to read logs. |
 | TOP_RESULTS is optional | None when not set — all qualifying results returned | TOP_RESULTS is an optional delivery convenience. The app is fully functional without it. Forcing a default cap would silently hide qualifying results from users who never set the variable. |
+| Date posted filter configured via .env with CLI override | `DATE_POSTED=3days` default, `--date-posted` CLI argument overrides | A persistent default prevents stale listings appearing on every run without requiring the user to pass the flag each time. The CLI override allows per-run flexibility without changing `.env`. Default of `3days` balances freshness with coverage. |

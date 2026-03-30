@@ -121,20 +121,22 @@ class EmailOutput(OutputPort):
             An HTML string suitable for email delivery.
         """
         top_results_label = str(report.top_results) if report.top_results is not None else "not set"
+        date_posted_label = report.date_posted.value if report.date_posted else "not set (all dates)"
         run_at_str = report.run_at.strftime("%Y-%m-%d %H:%M:%S")
 
         if report.has_qualifying_results:
-            return self._build_qualifying_html(report, top_results_label, run_at_str)
-        return self._build_zero_results_html(report, top_results_label, run_at_str)
+            return self._build_qualifying_html(report, top_results_label, date_posted_label, run_at_str)
+        return self._build_zero_results_html(report, top_results_label, date_posted_label, run_at_str)
 
     def _build_qualifying_html(
-        self, report: RunReport, top_results_label: str, run_at_str: str
+        self, report: RunReport, top_results_label: str, date_posted_label: str, run_at_str: str
     ) -> str:
         """Build HTML body for a run with qualifying results.
 
         Args:
             report: The RunReport to render.
             top_results_label: Display string for the top results cap setting.
+            date_posted_label: Display string for the date posted filter setting.
             run_at_str: Formatted run timestamp string.
 
         Returns:
@@ -161,6 +163,8 @@ class EmailOutput(OutputPort):
             f"<td>{report.score_threshold}</td></tr>"
             f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Top results cap</strong></td>"
             f"<td>{top_results_label}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Date posted filter</strong></td>"
+            f"<td>{date_posted_label}</td></tr>"
             f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Matches found</strong></td>"
             f"<td><strong>{len(report.qualifying_results)}</strong></td></tr>"
             "</table>"
@@ -171,13 +175,14 @@ class EmailOutput(OutputPort):
         )
 
     def _build_zero_results_html(
-        self, report: RunReport, top_results_label: str, run_at_str: str
+        self, report: RunReport, top_results_label: str, date_posted_label: str, run_at_str: str
     ) -> str:
         """Build HTML body for a zero-results run.
 
         Args:
             report: The RunReport to render.
             top_results_label: Display string for the top results cap setting.
+            date_posted_label: Display string for the date posted filter setting.
             run_at_str: Formatted run timestamp string.
 
         Returns:
@@ -232,6 +237,7 @@ class EmailOutput(OutputPort):
             "<p style=\"color:#666;font-size:12px;margin-top:24px;\">"
             f"Total jobs evaluated: {report.total_evaluated} &nbsp;·&nbsp; "
             f"Score threshold: {report.score_threshold} &nbsp;·&nbsp; "
+            f"Date posted: {date_posted_label} &nbsp;·&nbsp; "
             f"Top results cap: {top_results_label}</p>"
             "</body></html>"
         )

@@ -6,6 +6,7 @@ from datetime import datetime
 
 import PyPDF2
 
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
 from src.core.domain.run_report import RunReport
@@ -51,6 +52,7 @@ class JobSearchService:
         threshold: int = 70,
         top_results: int | None = None,
         work_types: set[WorkType] | None = None,
+        date_posted: DatePosted | None = None,
     ) -> RunReport:
         """Execute the full job search pipeline.
 
@@ -72,6 +74,8 @@ class JobSearchService:
             threshold: Minimum match score to include in results. Defaults to 70.
             top_results: Optional cap on qualifying results delivered. When None
                          all qualifying results are returned.
+            date_posted: Optional recency filter applied to all scrapers. When None
+                         no date filter is applied.
 
         Returns:
             RunReport containing qualifying results, near-miss results, and
@@ -79,13 +83,21 @@ class JobSearchService:
         """
         logger.info("Pipeline started — query=%r location=%r threshold=%d", query, location, threshold)
 
+        if date_posted:
+            logger.info("Date posted filter: %s", date_posted.value)
+        else:
+            logger.info("Date posted filter: not set (all dates returned)")
+
         # Step 1 — parse resume
         resume = self._parse_resume(self._resume_path)
         logger.info("Resume parsed from %s", self._resume_path)
 
         # Step 2 — scrape all platforms concurrently
         work_types_list = list(work_types) if work_types else None
-        scrape_tasks = [scraper.fetch_jobs(query, location, work_types=work_types_list) for scraper in self._scrapers]
+        scrape_tasks = [
+            scraper.fetch_jobs(query, location, work_types=work_types_list, date_posted=date_posted)
+            for scraper in self._scrapers
+        ]
         scrape_results = await asyncio.gather(*scrape_tasks, return_exceptions=True)
 
         all_jobs = []
@@ -150,6 +162,7 @@ class JobSearchService:
             query=query,
             location=location,
             run_at=datetime.now(),
+            date_posted=date_posted,
         )
 
         # Step 9 — log completion summary

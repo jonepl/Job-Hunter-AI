@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.adapters.scrapers.linkedin import LinkedInScraper
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.job import Job
 from src.core.domain.work_type import WorkType
 
@@ -340,3 +341,79 @@ async def test_remote_work_type_logs_filter_applied(mock_playwright_context, cap
                 await scraper.fetch_jobs("SE", "Remote", work_types=[WorkType.REMOTE])
 
     assert any("remote" in record.message for record in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Date posted filter — URL and logging
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_date_posted_filter_added_to_url(mock_playwright_context):
+    """date_posted=DAYS3 → f_TPR=r259200 is present in the navigated search URL."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs("SE", "Remote", date_posted=DatePosted.DAYS3)
+
+    search_url = page.goto.call_args_list[0][0][0]
+    assert "f_TPR=r259200" in search_url
+
+
+@pytest.mark.asyncio
+async def test_date_posted_week_added_to_url(mock_playwright_context):
+    """date_posted=WEEK → f_TPR=r604800 is present in the navigated search URL."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs("SE", "Remote", date_posted=DatePosted.WEEK)
+
+    search_url = page.goto.call_args_list[0][0][0]
+    assert "f_TPR=r604800" in search_url
+
+
+@pytest.mark.asyncio
+async def test_no_date_posted_omits_f_tpr(mock_playwright_context):
+    """date_posted=None → f_TPR is not present in the navigated search URL."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            await scraper.fetch_jobs("SE", "Remote", date_posted=None)
+
+    search_url = page.goto.call_args_list[0][0][0]
+    assert "f_TPR" not in search_url
+
+
+@pytest.mark.asyncio
+async def test_date_posted_logged_when_set(mock_playwright_context, caplog):
+    """date_posted=DAYS3 → INFO log contains '3days'."""
+    scraper = LinkedInScraper()
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.linkedin"):
+        with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+            with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+                await scraper.fetch_jobs("SE", "Remote", date_posted=DatePosted.DAYS3)
+
+    assert any("3days" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_no_date_posted_logged_when_not_set(mock_playwright_context, caplog):
+    """date_posted=None → INFO log contains 'no date posted filter'."""
+    scraper = LinkedInScraper()
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.linkedin"):
+        with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+            with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+                await scraper.fetch_jobs("SE", "Remote", date_posted=None)
+
+    assert any("no date posted filter" in record.message for record in caplog.records)

@@ -8,6 +8,7 @@ from urllib.parse import quote_plus
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Page
 from playwright.async_api import async_playwright
 
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.job import Job
 from src.core.domain.work_type import WorkType
 from src.core.ports.scraper_port import ScraperPort
@@ -26,6 +27,7 @@ class LinkedInScraper(ScraperPort):
         location: str,
         limit: int = 25,
         work_types: list[WorkType] | None = None,
+        date_posted: DatePosted | None = None,
     ) -> list[Job]:
         """Fetch job listings from LinkedIn.
 
@@ -35,22 +37,35 @@ class LinkedInScraper(ScraperPort):
             limit: Maximum number of results to return. Defaults to 25.
             work_types: Optional list of WorkType values to filter by work
                         arrangement. When None all types are returned.
+            date_posted: Optional recency filter. When None no date filter is applied.
 
         Returns:
             A list of validated Job domain entities.
         """
+        encoded_query = quote_plus(query)
+        encoded_location = quote_plus(location)
         work_type_param = WorkType.to_linkedin_param(work_types or [])
+        date_posted_param = (
+            f"&f_TPR={date_posted.linkedin_param}"
+            if date_posted else ""
+        )
         url = (
             f"https://www.linkedin.com/jobs/search/?"
-            f"keywords={quote_plus(query)}"
-            f"&location={quote_plus(location)}"
+            f"keywords={encoded_query}"
+            f"&location={encoded_location}"
             f"{work_type_param}"
+            f"{date_posted_param}"
         )
 
         if work_types:
             logger.info("LinkedIn — work type filter: %s", [wt.value for wt in work_types])
         else:
             logger.info("LinkedIn — no work type filter (all types returned)")
+
+        if date_posted:
+            logger.info("LinkedIn — date posted filter: %s", date_posted.value)
+        else:
+            logger.info("LinkedIn — no date posted filter (all dates returned)")
 
         jobs: list[Job] = []
 
