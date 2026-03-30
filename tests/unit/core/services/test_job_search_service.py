@@ -230,8 +230,8 @@ async def test_run_scrapes_all_platforms_concurrently():
 
     await service.run(query="Python Developer", location="Remote", threshold=70)
 
-    scrapers[0].fetch_jobs.assert_called_once_with("Python Developer", "Remote")
-    scrapers[1].fetch_jobs.assert_called_once_with("Python Developer", "Remote")
+    scrapers[0].fetch_jobs.assert_called_once_with("Python Developer", "Remote", work_types=None)
+    scrapers[1].fetch_jobs.assert_called_once_with("Python Developer", "Remote", work_types=None)
 
 
 # ---------------------------------------------------------------------------

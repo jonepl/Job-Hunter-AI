@@ -13,6 +13,7 @@ import requests
 from dotenv import load_dotenv
 
 from src.core.domain.job import Job
+from src.core.domain.work_type import WorkType
 from src.core.ports.scraper_port import ScraperPort
 
 load_dotenv()
@@ -40,6 +41,7 @@ class JSearchScraper(ScraperPort):
         query: str,
         location: str,
         limit: int = 25,
+        work_types: list[WorkType] | None = None,
     ) -> list[Job]:
         """Fetch job listings via the JSearch API.
 
@@ -47,6 +49,8 @@ class JSearchScraper(ScraperPort):
             query: Job search query string (e.g. "Senior Python Developer").
             location: Location string (e.g. "Remote" or "Miami, FL").
             limit: Maximum number of results to return. Defaults to 25.
+            work_types: Optional list of WorkType values to filter results by
+                        work arrangement. When None all types are returned.
 
         Returns:
             A list of validated Job domain entities, or an empty list on any
@@ -62,6 +66,28 @@ class JSearchScraper(ScraperPort):
             "num_pages": "1",
             "country": "US"
         }
+
+        if work_types is None:
+            pass  # no filter — all types returned
+        elif work_types == [WorkType.REMOTE]:
+            params["remote_jobs_only"] = "true"
+            logger.info("%s — work type filter: remote only", self.platform)
+        elif work_types == [WorkType.ONSITE]:
+            params["remote_jobs_only"] = "false"
+            logger.info("%s — work type filter: onsite only", self.platform)
+        elif work_types == [WorkType.HYBRID]:
+            logger.warning(
+                "%s — hybrid work type filter not natively supported by JSearch. "
+                "Results may include non-hybrid roles.",
+                self.platform,
+            )
+        else:
+            logger.info(
+                "%s — multiple work types requested (%s). JSearch does not support "
+                "multi-type filtering — all work types will be returned.",
+                self.platform,
+                [wt.value for wt in work_types],
+            )
         jobs: list[Job] = []
 
         try:

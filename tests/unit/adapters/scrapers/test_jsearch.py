@@ -7,6 +7,7 @@ import requests
 
 from src.adapters.scrapers.jsearch import JSearchScraper
 from src.core.domain.job import Job
+from src.core.domain.work_type import WorkType
 
 _JSEARCH_RESPONSE = {
     "data": [
@@ -102,3 +103,109 @@ async def test_fetch_jobs_returns_empty_list_when_no_results():
         results = await scraper.fetch_jobs("Python Developer", "Remote")
 
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_remote_only_sets_remote_jobs_only_true():
+    """Work type filter — remote only sets remote_jobs_only=true in params."""
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+        await scraper.fetch_jobs("Python Developer", "Remote", work_types=[WorkType.REMOTE])
+
+    assert captured_params.get("remote_jobs_only") == "true"
+
+
+@pytest.mark.asyncio
+async def test_onsite_only_sets_remote_jobs_only_false():
+    """Work type filter — onsite only sets remote_jobs_only=false in params."""
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+        await scraper.fetch_jobs("Python Developer", "New York", work_types=[WorkType.ONSITE])
+
+    assert captured_params.get("remote_jobs_only") == "false"
+
+
+@pytest.mark.asyncio
+async def test_hybrid_omits_remote_jobs_only_with_warning(caplog):
+    """Work type filter — hybrid omits remote_jobs_only and logs a WARNING."""
+    import logging
+
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with caplog.at_level(logging.WARNING, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+            await scraper.fetch_jobs("Python Developer", "New York", work_types=[WorkType.HYBRID])
+
+    assert "remote_jobs_only" not in captured_params
+    assert any("hybrid work type filter not natively supported" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_multiple_work_types_omits_remote_jobs_only(caplog):
+    """Work type filter — multiple types omit remote_jobs_only and log INFO."""
+    import logging
+
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+            await scraper.fetch_jobs(
+                "Python Developer", "Remote",
+                work_types=[WorkType.REMOTE, WorkType.HYBRID],
+            )
+
+    assert "remote_jobs_only" not in captured_params
+    assert any("multiple work types" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_no_work_type_omits_remote_jobs_only():
+    """Work type filter — None work_types omits remote_jobs_only entirely."""
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+        await scraper.fetch_jobs("Python Developer", "Remote", work_types=None)
+
+    assert "remote_jobs_only" not in captured_params
+
+
+@pytest.mark.asyncio
+async def test_platform_label_in_log_messages(caplog):
+    """Work type filter — platform label appears in work type log messages."""
+    import logging
+
+    scraper = JSearchScraper(platform="indeed")
+
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get",
+                   return_value=make_mock_response(_JSEARCH_RESPONSE)):
+            await scraper.fetch_jobs("Python Developer", "Remote", work_types=[WorkType.REMOTE])
+
+    assert any("indeed" in r.message for r in caplog.records)

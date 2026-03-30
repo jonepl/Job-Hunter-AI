@@ -12,7 +12,7 @@ def test_location_defaults_to_united_states_for_remote():
     """Remote only, no --location → resolved location is 'United States'."""
     with patch("sys.argv", ["prog", "--query", "SE", "--work-type", "remote"]):
         args = _parse_args()
-    location, defaulted = _resolve_location(args)
+    location, defaulted, _ = _resolve_location(args)
     assert location == "United States"
     assert defaulted is True
 
@@ -21,7 +21,7 @@ def test_location_used_as_provided_for_remote():
     """Remote only, --location provided → resolved location is the provided value."""
     with patch("sys.argv", ["prog", "--query", "SE", "--location", "New York", "--work-type", "remote"]):
         args = _parse_args()
-    location, defaulted = _resolve_location(args)
+    location, defaulted, _ = _resolve_location(args)
     assert location == "New York"
     assert defaulted is False
 
@@ -63,7 +63,7 @@ def test_location_used_when_provided_no_work_type():
     """No --work-type, --location provided → resolved location is the provided value."""
     with patch("sys.argv", ["prog", "--query", "SE", "--location", "Remote"]):
         args = _parse_args()
-    location, defaulted = _resolve_location(args)
+    location, defaulted, _ = _resolve_location(args)
     assert location == "Remote"
     assert defaulted is False
 
@@ -81,6 +81,6 @@ def test_location_provided_for_remote_hybrid_mix():
     """Mixed remote+hybrid with --location provided → resolved location is the provided value."""
     with patch("sys.argv", ["prog", "--query", "SE", "--location", "New York", "--work-type", "remote", "hybrid"]):
         args = _parse_args()
-    location, defaulted = _resolve_location(args)
+    location, defaulted, _ = _resolve_location(args)
     assert location == "New York"
     assert defaulted is False
