@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.cli.args import parse_args
 from src.core.domain.scraper_name import ScraperName
-from src.main import _parse_args, main
+from src.main import main
 
 
 # ---------------------------------------------------------------------------
@@ -17,42 +18,42 @@ from src.main import _parse_args, main
 def test_parse_args_query_optional():
     """--query is optional in the new profile-based design."""
     with patch("sys.argv", ["prog"]):
-        args = _parse_args()
+        args = parse_args()
     assert args.query is None
 
 
 def test_parse_args_query_accepted():
     """--query value is parsed correctly."""
     with patch("sys.argv", ["prog", "--query", "Senior Engineer"]):
-        args = _parse_args()
+        args = parse_args()
     assert args.query == "Senior Engineer"
 
 
 def test_parse_args_location_optional():
     """--location is optional — can come from .env."""
     with patch("sys.argv", ["prog"]):
-        args = _parse_args()
+        args = parse_args()
     assert args.location is None
 
 
 def test_parse_args_work_type_accepted():
     """--work-type accepts one or more valid values."""
     with patch("sys.argv", ["prog", "--work-type", "remote"]):
-        args = _parse_args()
+        args = parse_args()
     assert args.work_type == ["remote"]
 
 
 def test_parse_args_date_posted_accepted():
     """--date-posted value is stored under date_posted attribute."""
     with patch("sys.argv", ["prog", "--date-posted", "week"]):
-        args = _parse_args()
+        args = parse_args()
     assert args.date_posted == "week"
 
 
 def test_parse_args_scrapers_accepted():
     """--scrapers value is stored as a raw string."""
     with patch("sys.argv", ["prog", "--scrapers", "linkedin,indeed"]):
-        args = _parse_args()
+        args = parse_args()
     assert args.scrapers == "linkedin,indeed"
 
 
@@ -94,7 +95,7 @@ async def test_scrapers_cli_overrides_env():
     with patch("sys.argv", ["prog", "--scrapers", "indeed"]), \
          patch.dict("os.environ", env, clear=True), \
          patch("src.main.load_dotenv"), \
-         patch("src.main._configure_logging"), \
+         patch("src.main.configure_logging"), \
          patch("src.main.build_service", side_effect=capture_build_service):
         await main()
 
@@ -110,7 +111,7 @@ async def test_scrapers_invalid_name_exits():
     with patch("sys.argv", ["prog", "--scrapers", "linkedin,monster"]), \
          patch.dict("os.environ", env, clear=True), \
          patch("src.main.load_dotenv"), \
-         patch("src.main._configure_logging"), \
+         patch("src.main.configure_logging"), \
          patch("builtins.print") as mock_print:
         with pytest.raises(SystemExit) as exc_info:
             await main()
@@ -128,7 +129,7 @@ async def test_scrapers_empty_string_exits():
     with patch("sys.argv", ["prog", "--scrapers", ""]), \
          patch.dict("os.environ", env, clear=True), \
          patch("src.main.load_dotenv"), \
-         patch("src.main._configure_logging"), \
+         patch("src.main.configure_logging"), \
          patch("builtins.print"):
         with pytest.raises(SystemExit) as exc_info:
             await main()
@@ -152,7 +153,7 @@ async def test_query_cli_overrides_env():
     with patch("sys.argv", ["prog", "--query", "Full Stack Engineer"]), \
          patch.dict("os.environ", env, clear=True), \
          patch("src.main.load_dotenv"), \
-         patch("src.main._configure_logging"), \
+         patch("src.main.configure_logging"), \
          patch("src.main.build_service", side_effect=capture_build_service):
         await main()
 

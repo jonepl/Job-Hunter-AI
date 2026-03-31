@@ -206,6 +206,20 @@ Alternative evaluator:
 
 ---
 
+## Entrypoint Architecture
+
+- main.py is a thin entrypoint — 30-40 lines maximum
+- main.py contains no logic — only wires and dispatches
+- CLI concerns live in src/cli/
+- Logging config lives in src/infra/logging.py
+- Profile loading lives in src/bootstrap.py
+- Immediate run logic lives in src/runner.py
+- bootstrap.py and runner.py have no CLI or argparse dependency — they accept plain Python objects
+- src/api/ is reserved for future FastAPI implementation
+- Never add logic directly to main.py
+
+---
+
 ## Git Rules
 
 - Never commit .env

@@ -89,8 +89,24 @@ job-search-agent/
 │       └── resume.pdf                   ← Candidate resume (volume mounted)
 │
 ├── src/
+│   ├── main.py                          ← thin CLI entrypoint
+│   ├── bootstrap.py                     ← profile loading
+│   ├── runner.py                        ← immediate run logic
 │   ├── scheduler.py                     ← APScheduler — cron-based multi-profile runner
 │   ├── service_factory.py               ← Builds JobSearchService from SearchProfile
+│   │
+│   ├── api/                             ← future FastAPI entrypoint
+│   │   └── __init__.py
+│   │
+│   ├── cli/                             ← CLI concerns
+│   │   ├── __init__.py
+│   │   ├── args.py                      ← argparse definition
+│   │   └── overrides.py                 ← CLI override logic
+│   │
+│   ├── infra/                           ← infrastructure
+│   │   ├── __init__.py
+│   │   └── logging.py                   ← logging config
+│   │
 │   ├── core/
 │   │   ├── domain/                      ← Pydantic entities
 │   │   │   ├── __init__.py
@@ -131,7 +147,14 @@ job-search-agent/
 tests/
 │
 ├── unit/                                    ← mirrors src/ exactly
+│   ├── test_bootstrap.py                    ← tests for load_profiles()
+│   ├── test_runner.py                       ← tests for run_immediate()
 │   ├── test_scheduler.py                    ← tests for run_all_profiles()
+│   ├── cli/
+│   │   ├── test_args.py                     ← tests for parse_args()
+│   │   └── test_overrides.py               ← tests for apply_cli_overrides()
+│   ├── infra/
+│   │   └── test_logging.py                 ← tests for configure_logging()
 │   ├── core/
 │   │   ├── domain/
 │   │   │   ├── test_date_posted.py          ← tests for DatePosted enum
@@ -719,3 +742,5 @@ calls a real external API.
 | APScheduler for in-process scheduling | BlockingScheduler with CronTrigger | Keeps scheduling inside the container with no host cron dependency. Cron syntax is more expressive than interval-based scheduling. Timezone support handles daylight saving correctly. |
 | Multiple search profiles via PROFILE_N_ prefix pattern | Numbered env var prefix with PROFILE_COUNT | Enables multiple independent searches per run without code changes. Each profile delivers its own report making results easy to distinguish. Numbered prefix is readable and extensible. |
 | SCHEDULE_ENABLED controls mode — not a CLI flag | .env variable only | Scheduled Docker containers have no interactive CLI. .env is the correct configuration surface for containerized workloads. |
+| main.py refactored into focused single-responsibility modules | cli/, infra/, bootstrap.py, runner.py as extracted modules | main.py had grown to ~170 lines handling logging, arg parsing, CLI overrides, profile loading, immediate run, and result logging. Extracting into focused modules enables reuse by a future API entrypoint, improves testability, and makes each concern independently maintainable. bootstrap.py and runner.py have no CLI dependency so they can be called from both CLI and API entrypoints. |
+| api/ module created as placeholder | src/api/__init__.py only — no implementation yet | Reserving the module structure now ensures future API development follows the established pattern and does not require structural changes to existing code. |

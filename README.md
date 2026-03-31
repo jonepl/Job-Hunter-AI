@@ -20,12 +20,20 @@ Built on **Hexagonal Architecture (Ports and Adapters)**. Core domain logic is f
 
 ```
 src/
+├── main.py            ← thin CLI entrypoint
+├── bootstrap.py       ← profile loading
+├── runner.py          ← immediate run logic
+├── scheduler.py       ← APScheduler scheduled mode
+├── service_factory.py ← composition root
+├── api/               ← future FastAPI entrypoint
+├── cli/               ← argparse definitions and CLI overrides
+├── infra/             ← logging configuration
 ├── core/
 │   ├── domain/        ← Pydantic entities: Job, Resume, MatchResult
 │   ├── ports/         ← Abstract interfaces: ScraperPort, EvaluatorPort, OutputPort
 │   └── services/      ← JobSearchService (pipeline orchestration)
 └── adapters/
-    ├── scrapers/       ← linkedin.py, indeed.py, glassdoor.py, ziprecruiter.py
+    ├── scrapers/       ← linkedin.py, jsearch.py
     ├── evaluator/      ← openai_evaluator.py, anthropic_evaluator.py
     └── output/         ← email_output.py, file_output.py
 ```
@@ -367,7 +375,7 @@ Follow the skill in [ai/skills/add-job-source.md](ai/skills/add-job-source.md) o
 
 The short version:
 1. Create `src/adapters/scrapers/<platform>.py` implementing `ScraperPort`
-2. Add the scraper to the `scrapers` list in `src/main.py`
+2. Register the scraper in `src/adapters/scrapers/scraper_factory.py`
 3. Write unit tests in `tests/unit/adapters/scrapers/test_<platform>.py`
 
 ---
