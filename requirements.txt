@@ -19,3 +19,7 @@ pytest-asyncio
 
 # Utilities
 lxml
+
+# Scheduling
+apscheduler
+pytz

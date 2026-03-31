@@ -1,12 +1,17 @@
 """Entry point for the Job Hunter AI Agent.
 
-Loads environment variables, wires all adapters into JobSearchService,
-and executes the full pipeline from the command line.
+Loads environment variables, resolves search profiles, and runs all profiles
+either immediately or on a cron schedule depending on SCHEDULE_ENABLED in .env.
 
-Usage:
+Usage (immediate mode):
+    python -m src.main
     python -m src.main --query "Senior Python Developer" --work-type remote
     python -m src.main --query "Senior Python Developer" --location "New York" --work-type hybrid
-    python -m src.main --query "Senior Python Developer" --location "Remote"
+
+Usage (scheduled mode):
+    Set SCHEDULE_ENABLED=true in .env, then:
+    python -m src.main
+    docker-compose up -d
 """
 
 import argparse
@@ -18,14 +23,12 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
-from src.adapters.evaluator.factory import build_evaluator
-from src.adapters.output.email_output import EmailOutput
-from src.adapters.output.file_output import FileOutput
-from src.adapters.scrapers.scraper_factory import build_scrapers
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.scraper_name import ScraperName
+from src.core.domain.search_profile import SearchProfile
 from src.core.domain.work_type import WorkType
-from src.core.services.job_search_service import JobSearchService
+from src.scheduler import start_scheduler
+from src.service_factory import build_service
 
 _logger = logging.getLogger(__name__)
 
@@ -60,27 +63,32 @@ def _configure_logging() -> None:
 def _parse_args() -> argparse.Namespace:
     """Parse command line arguments.
 
+    All arguments are optional — values can come from .env via SearchProfile.
+    CLI args override .env values for all profiles when provided.
+
     Returns:
-        Namespace with query, location, and work_type attributes.
+        Namespace with optional query, location, work_type, date_posted,
+        and scrapers attributes.
     """
     parser = argparse.ArgumentParser(
         description="Job Hunter AI Agent — scrapes, evaluates, and ranks job listings."
     )
     parser.add_argument(
         "--query",
-        required=True,
-        help='Job search query (e.g. "Senior Python Developer")',
+        type=str,
+        default=None,
+        help=(
+            "Job search query. Overrides SEARCH_QUERY or PROFILE_N_QUERY "
+            "in .env for all profiles."
+        ),
     )
     parser.add_argument(
         "--location",
         type=str,
-        required=False,
         default=None,
         help=(
-            "Job search location. "
-            "Required for --work-type hybrid and --work-type onsite. "
-            "Optional for --work-type remote — defaults to 'United States' when not provided. "
-            "Example: --location 'New York'"
+            "Job search location. Overrides SEARCH_LOCATION or "
+            "PROFILE_N_LOCATION in .env."
         ),
     )
     parser.add_argument(
@@ -100,9 +108,7 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Filter jobs by posting recency. "
             "Overrides DATE_POSTED in .env. "
-            "Supported: 24h, 3days, week, month. "
-            "Default (.env): 3days. "
-            "Example: --date-posted week"
+            "Supported: 24h, 3days, week, month."
         ),
     )
     parser.add_argument(
@@ -111,62 +117,11 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Comma-separated list of scrapers to use. "
-            "Overrides ACTIVE_SCRAPERS in .env. "
-            "Supported: linkedin, indeed, glassdoor, ziprecruiter. "
-            "Example: --scrapers linkedin,indeed"
+            "Overrides ACTIVE_SCRAPERS or PROFILE_N_SCRAPERS in .env. "
+            "Supported: linkedin, indeed, glassdoor, ziprecruiter."
         ),
     )
     return parser.parse_args()
-
-
-def _resolve_location(args: argparse.Namespace) -> tuple[str, bool, set[WorkType] | None]:
-    """Resolve the effective location from parsed CLI arguments.
-
-    Applies the following rules:
-    - --work-type remote only, no --location → defaults to "United States"
-    - --work-type remote only, --location provided → use as-is
-    - --work-type hybrid/onsite or mixed, no --location → error + exit
-    - No --work-type, no --location → error + exit
-    - No --work-type, --location provided → use as-is
-
-    Args:
-        args: Parsed argparse namespace containing location and work_type.
-
-    Returns:
-        Tuple of (resolved_location, was_defaulted) where was_defaulted is True
-        when the location was automatically set to "United States".
-    """
-    location = args.location
-    work_types = (
-        {WorkType(wt) for wt in args.work_type}
-        if args.work_type is not None
-        else None
-    )
-
-    if work_types is not None:
-        if WorkType.REMOTE in work_types and len(work_types) == 1:
-            if location is None:
-                location = "United States"
-                _logger.info(
-                    "Location not provided — defaulting to 'United States' for remote work type"
-                )
-                return location, True, work_types
-        else:
-            if location is None:
-                print(
-                    "Error: --location is required for --work-type hybrid and --work-type onsite.\n"
-                    "Example: --location 'New York'"
-                )
-                sys.exit(1)
-    else:
-        if location is None:
-            print(
-                "Error: --location is required when --work-type is not specified.\n"
-                "Example: --location 'Remote' or --location 'United States'"
-            )
-            sys.exit(1)
-
-    return location, False, work_types
 
 
 def _require_env(key: str) -> str:
@@ -189,156 +144,140 @@ def _require_env(key: str) -> str:
 
 
 async def main() -> None:
-    """Wire adapters, build the service, and run the full pipeline."""
+    """Wire adapters, load profiles, and run the pipeline in immediate or scheduled mode."""
     load_dotenv()
     _configure_logging()
 
     logger = logging.getLogger(__name__)
     args = _parse_args()
-    location, location_defaulted, work_types = _resolve_location(args)
 
-    logger.info("=" * 60)
-    logger.info("Job Search Agent — starting run")
-    logger.info("Query    : %s", args.query)
-    logger.info("Location : %s", location)
-    if location_defaulted:
-        logger.info("           (defaulted from --work-type remote)")
-    logger.info("=" * 60)
-
-    # Load required environment variables
-    gmail_address = _require_env("GMAIL_ADDRESS")
-    gmail_app_password = _require_env("GMAIL_APP_PASSWORD")
-    email_recipient = _require_env("EMAIL_RECIPIENT")
-    score_threshold = int(os.getenv("SCORE_THRESHOLD", "70"))
-
-    # Load optional TOP_RESULTS
-    top_results_env = os.getenv("TOP_RESULTS")
-    top_results = int(top_results_env) if top_results_env else None
-
-    # Resolve date_posted — CLI overrides .env
-    date_posted_env = os.getenv("DATE_POSTED", "3days")
-    raw_date_posted = args.date_posted if args.date_posted else date_posted_env
+    # Load all profiles from .env
     try:
-        date_posted = DatePosted.from_string(raw_date_posted)
+        profiles = SearchProfile.load_all()
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
 
-    # Resolve active scrapers — CLI overrides .env
-    active_scrapers_env = os.getenv(
-        "ACTIVE_SCRAPERS", "linkedin,indeed,glassdoor,ziprecruiter"
-    )
-    raw_scrapers = args.scrapers if args.scrapers is not None else active_scrapers_env
-    try:
-        active_scraper_names = ScraperName.parse_list(raw_scrapers)
-    except ValueError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+    # Apply CLI overrides to all profiles when args are provided
+    if args.query:
+        for p in profiles:
+            p.query = args.query
 
-    if not active_scraper_names:
-        print(
-            "Error: No valid scrapers specified. "
-            "Supported: linkedin, indeed, glassdoor, ziprecruiter"
-        )
-        sys.exit(1)
+    if args.location:
+        for p in profiles:
+            p.location = args.location
 
-    logger.info("Score threshold : %d", score_threshold)
-    if top_results is not None:
-        logger.info("Top results cap : %d", top_results)
-    else:
-        logger.info("Top results cap : not set (all qualifying results returned)")
-    logger.info("Date posted filter : %s", date_posted.value)
+    if args.work_type:
+        work_types = [WorkType(w.lower()) for w in args.work_type]
+        for p in profiles:
+            p.work_types = work_types
+
     if args.date_posted:
-        logger.info("               (overridden via CLI)")
-    else:
-        logger.info("               (from .env default)")
-    logger.info(
-        "Active scrapers  : %s",
-        ", ".join(n.value for n in active_scraper_names),
-    )
-    if args.scrapers is not None:
-        logger.info("                  (overridden via CLI)")
-    else:
-        logger.info("                  (from .env)")
+        try:
+            date_posted = DatePosted.from_string(args.date_posted)
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+        for p in profiles:
+            p.date_posted = date_posted
 
-    # Build scraper adapters via factory
-    scrapers = build_scrapers(active_scraper_names)
+    if args.scrapers:
+        try:
+            scrapers = ScraperName.parse_list(args.scrapers)
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+        for p in profiles:
+            p.active_scrapers = scrapers
 
-    # Instantiate evaluator adapter
-    evaluator = build_evaluator()
+    # Check SCHEDULE_ENABLED
+    schedule_enabled = os.getenv("SCHEDULE_ENABLED", "false").lower() == "true"
 
-    # Instantiate output adapters
-    outputs = [
-        EmailOutput(
-            sender=gmail_address,
-            password=gmail_app_password,
-            recipient=email_recipient,
-        ),
-        FileOutput(output_dir="output"),
-    ]
-    logger.info("Outputs registered: EmailOutput, FileOutput")
-
-    # Wire into JobSearchService
-    service = JobSearchService(
-        scrapers=scrapers,
-        evaluator=evaluator,
-        outputs=outputs,
-        resume_path="docs/resume/resume.pdf",
-    )
-
-    try:
-        report = await service.run(
-            query=args.query,
-            location=location,
-            threshold=score_threshold,
-            top_results=top_results,
-            work_types=work_types,
-            date_posted=date_posted,
-            active_scrapers=active_scraper_names,
+    if schedule_enabled:
+        cron = os.getenv("SCHEDULE_CRON", "0 8 * * 1-5")
+        timezone = os.getenv("SCHEDULE_TIMEZONE", "America/New_York")
+        logger.info("Scheduler mode enabled")
+        logger.info("Cron       : %s", cron)
+        logger.info("Timezone   : %s", timezone)
+        logger.info("Profiles   : %d", len(profiles))
+        start_scheduler(
+            profiles=profiles,
+            service_factory=build_service,
+            cron_expression=cron,
+            timezone=timezone,
         )
+    else:
+        logger.info("Immediate run mode")
+        logger.info("Profiles : %d", len(profiles))
 
-        logger.info("=" * 60)
-        if report.has_qualifying_results:
+        for profile in profiles:
             logger.info(
-                "Run complete — %d result(s) returned",
-                len(report.qualifying_results),
+                "Profile %d: %s | %s",
+                profile.profile_id,
+                profile.query,
+                profile.location,
             )
-            for i, result in enumerate(report.qualifying_results, start=1):
-                logger.info(
-                    "  %d. [%d] %s @ %s (%s) — %s",
-                    i,
-                    result.score,
-                    result.job.title,
-                    result.job.company,
-                    result.job.platform,
-                    result.hire_recommendation,
+            try:
+                service = build_service(profile)
+                report = await service.run(
+                    query=profile.query,
+                    location=profile.location,
+                    threshold=profile.score_threshold,
+                    top_results=profile.top_results,
+                    work_types=profile.work_types,
+                    date_posted=profile.date_posted,
+                    active_scrapers=profile.active_scrapers,
                 )
-        else:
-            logger.warning("Run complete — 0 qualifying results above threshold %d", score_threshold)
-            logger.warning(
-                "Score threshold %d was not met by any evaluated job", score_threshold
-            )
-            if report.near_miss_results:
-                top = report.near_miss_results[0]
-                logger.warning(
-                    "Top near-miss: [%d] %s @ %s",
-                    top.score,
-                    top.job.title,
-                    top.job.company,
-                )
-                logger.warning(
-                    "Consider lowering SCORE_THRESHOLD to %d in your .env file",
-                    report.suggested_threshold,
-                )
-        logger.info("=" * 60)
 
-    except FileNotFoundError as exc:
-        logger.critical("Resume file not found: %s", exc)
-        logger.critical("Mount your resume PDF to docs/resume/resume.pdf and try again.")
-        sys.exit(1)
-    except Exception as exc:
-        logger.critical("Unexpected error during pipeline: %s", exc, exc_info=True)
-        sys.exit(1)
+                logger.info("=" * 60)
+                if report.has_qualifying_results:
+                    logger.info(
+                        "Profile %d complete — %d result(s) returned",
+                        profile.profile_id,
+                        len(report.qualifying_results),
+                    )
+                    for i, result in enumerate(report.qualifying_results, start=1):
+                        logger.info(
+                            "  %d. [%d] %s @ %s (%s) — %s",
+                            i,
+                            result.score,
+                            result.job.title,
+                            result.job.company,
+                            result.job.platform,
+                            result.hire_recommendation,
+                        )
+                else:
+                    logger.warning(
+                        "Profile %d complete — 0 qualifying results above threshold %d",
+                        profile.profile_id,
+                        profile.score_threshold,
+                    )
+                    if report.near_miss_results:
+                        top = report.near_miss_results[0]
+                        logger.warning(
+                            "Top near-miss: [%d] %s @ %s",
+                            top.score,
+                            top.job.title,
+                            top.job.company,
+                        )
+                        logger.warning(
+                            "Consider lowering SCORE_THRESHOLD to %d in your .env file",
+                            report.suggested_threshold,
+                        )
+                logger.info("=" * 60)
+
+            except FileNotFoundError as exc:
+                logger.critical("Resume file not found: %s", exc)
+                logger.critical("Mount your resume PDF to docs/resume/resume.pdf and try again.")
+                sys.exit(1)
+            except Exception as exc:
+                logger.critical(
+                    "Unexpected error during profile %d pipeline: %s",
+                    profile.profile_id,
+                    exc,
+                    exc_info=True,
+                )
+                sys.exit(1)
 
 
 if __name__ == "__main__":

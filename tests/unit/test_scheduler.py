@@ -1,0 +1,83 @@
+"""Unit tests for scheduler.run_all_profiles()."""
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from src.core.domain.date_posted import DatePosted
+from src.core.domain.scraper_name import ScraperName
+from src.core.domain.search_profile import SearchProfile
+from src.scheduler import run_all_profiles
+
+
+def _make_profile(profile_id: int, query: str = "Engineer", location: str = "Remote") -> SearchProfile:
+    """Build a minimal SearchProfile for testing."""
+    return SearchProfile(
+        profile_id=profile_id,
+        query=query,
+        location=location,
+        active_scrapers=[ScraperName.LINKEDIN],
+        score_threshold=75,
+        date_posted=DatePosted.DAYS3,
+    )
+
+
+class TestRunAllProfiles:
+    """Tests for run_all_profiles()."""
+
+    @pytest.mark.asyncio
+    async def test_run_all_profiles_runs_each_profile(self):
+        """run_all_profiles() calls service.run() once per profile."""
+        profiles = [_make_profile(1), _make_profile(2)]
+
+        mock_service = MagicMock()
+        mock_service.run = AsyncMock(return_value=MagicMock())
+
+        mock_factory = MagicMock(return_value=mock_service)
+
+        await run_all_profiles(profiles, mock_factory)
+
+        assert mock_service.run.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_run_all_profiles_continues_on_error(self):
+        """run_all_profiles() catches exceptions and continues to the next profile."""
+        profiles = [_make_profile(1), _make_profile(2)]
+
+        failing_service = MagicMock()
+        failing_service.run = AsyncMock(side_effect=Exception("scraper failure"))
+
+        succeeding_service = MagicMock()
+        succeeding_service.run = AsyncMock(return_value=MagicMock())
+
+        call_count = 0
+
+        def factory(profile: SearchProfile):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return failing_service
+            return succeeding_service
+
+        await run_all_profiles(profiles, factory)
+
+        assert succeeding_service.run.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_run_all_profiles_logs_profile_details(self, caplog):
+        """run_all_profiles() logs INFO messages with profile query and location."""
+        import logging
+
+        profiles = [_make_profile(1, query="Senior Engineer", location="United States")]
+
+        mock_service = MagicMock()
+        mock_service.run = AsyncMock(return_value=MagicMock())
+        mock_factory = MagicMock(return_value=mock_service)
+
+        with caplog.at_level(logging.INFO, logger="src.scheduler"):
+            await run_all_profiles(profiles, mock_factory)
+
+        log_text = " ".join(caplog.messages)
+        assert "Senior Engineer" in log_text
+        assert "United States" in log_text

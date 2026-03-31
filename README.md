@@ -38,7 +38,7 @@ See [docs/architecture.md](docs/architecture.md) for the full architecture docum
 
 This app supports two evaluation providers. Configure via `EVALUATOR_PROVIDER` in `.env`.
 
-**OpenAI GPT-4o (default):**
+**OpenAI GPT-4o:**
 ```env
 EVALUATOR_PROVIDER=openai
 ```
@@ -217,6 +217,78 @@ If no jobs meet SCORE_THRESHOLD the app still delivers a report containing:
 - Total jobs evaluated this run
 
 You always receive an email and CSV after every run — no silent failures.
+
+---
+
+## Scheduled Docker Execution
+
+Set `SCHEDULE_ENABLED=true` in `.env` to run on a schedule inside Docker:
+
+```env
+SCHEDULE_ENABLED=true
+SCHEDULE_CRON=0 8 * * 1-5
+SCHEDULE_TIMEZONE=America/New_York
+```
+
+Start the container:
+
+```bash
+docker-compose up -d
+```
+
+The container runs indefinitely and executes all profiles on the cron schedule.
+Results delivered via email and CSV after each run.
+
+To stop:
+```bash
+docker-compose down
+```
+
+View logs:
+```bash
+docker-compose logs -f agent
+```
+
+Immediate run (no scheduler):
+```bash
+# Set SCHEDULE_ENABLED=false in .env, then:
+docker-compose run agent
+# or
+python -m src.main
+```
+
+---
+
+## Multiple Search Profiles
+
+Define multiple searches in `.env`:
+
+```env
+PROFILE_COUNT=2
+
+PROFILE_1_QUERY=Senior Software Engineer
+PROFILE_1_WORK_TYPE=remote
+PROFILE_1_SCORE_THRESHOLD=75
+
+PROFILE_2_QUERY=Full Stack Engineer
+PROFILE_2_LOCATION=New York
+PROFILE_2_WORK_TYPE=hybrid
+PROFILE_2_SCORE_THRESHOLD=80
+```
+
+Each profile runs independently and delivers its own email and CSV report.
+
+Profile fields:
+
+| Variable | Required |
+|---|---|
+| `PROFILE_N_QUERY` | Yes |
+| `PROFILE_N_LOCATION` | Required unless work type is remote only |
+| `PROFILE_N_WORK_TYPE` | Optional |
+| `PROFILE_N_DATE_POSTED` | Optional (default: `3days`) |
+| `PROFILE_N_SCRAPERS` | Optional (default: all four) |
+| `PROFILE_N_SCORE_THRESHOLD` | Optional (default: `75`) |
+| `PROFILE_N_TOP_RESULTS` | Optional (default: all qualifying) |
 
 ---
 

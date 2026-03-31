@@ -9,7 +9,7 @@ Read this file before making any changes to the project.
 
 This is a Dockerized Python backend service that scrapes job listings
 from LinkedIn, Indeed, Glassdoor, and ZipRecruiter, evaluates them
-against a candidate resume using GPT-4o, and delivers ranked matches
+against a candidate resume using GPT-4o and Sonnet-4.5, and delivers ranked matches
 via email and CSV file output.
 
 ---
@@ -56,9 +56,9 @@ via email and CSV file output.
 
 ## LLM Provider
 
-- Use OpenAI GPT-4o as the primary LLM
-- Model name: gpt-4o
-- Use the openai Python SDK for all LLM calls
+- The EVALUATOR_PROVIDER environmennt variables must be provided to use an LLM
+- Models: gpt-4o, sonnnet-4.5
+- Use the openai & anthropic Python SDKs for all LLM calls
 - All LLM responses must be validated as Pydantic models
 - Handle API errors gracefully — return default low-score
   MatchResult on failure
@@ -189,6 +189,20 @@ Alternative evaluator:
 - Always validate scraper names at startup — exit with clear error on invalid name
 - Always log active scrapers and whether source was CLI or `.env`
 - At least one scraper must be active — exit with error if list is empty
+
+---
+
+## Scheduler Rules
+
+- `SCHEDULE_ENABLED=true` activates APScheduler mode
+- Scheduler defined in `src/scheduler.py`
+- ServiceFactory defined in `src/service_factory.py`
+- `SearchProfile` defined in `src/core/domain/search_profile.py`
+- Each profile gets its own service instance via `build_service()`
+- Profiles run sequentially not concurrently — prevents API flooding
+- Profile failures are caught and logged — never stop remaining profiles
+- CLI args override all profiles when provided — use for testing only
+- `SCHEDULE_ENABLED` is a `.env` concern only — never a CLI argument
 
 ---
 

@@ -151,6 +151,23 @@ src/
 - Invalid scraper names caught at startup with clear error message
 - Empty scraper list caught at startup with clear error message
 
+### Multi-Profile Search
+
+- Multiple search profiles configured via `PROFILE_N_` variables in `.env`
+- Each profile runs independently with its own query, location, work type, scrapers, and thresholds
+- Each profile delivers its own RunReport email and CSV
+- `PROFILE_COUNT` sets the number of active profiles
+- Falls back to legacy `SEARCH_QUERY` single search mode when `PROFILE_COUNT` is not set
+
+### Scheduled Execution
+
+- In-process APScheduler activated via `SCHEDULE_ENABLED=true` in `.env`
+- Cron expression configured via `SCHEDULE_CRON` in `.env`
+- Timezone configured via `SCHEDULE_TIMEZONE` in `.env`
+- Runs all profiles on each scheduled trigger
+- Container runs indefinitely with `restart: unless-stopped`
+- Immediate mode (`SCHEDULE_ENABLED=false`) runs all profiles once and exits
+
 ### Always-On Run Report
 
 - A report is always delivered after every run regardless of results
@@ -204,7 +221,7 @@ A sequential linear pipeline deployed locally via docker-compose:
 6. Save results to output file
 7. Deliver results via email
 
-Execution is manual — no scheduling or automation.
+Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED controls which mode runs.
 
 ### Phase 2 — Cloud Deployment + Orchestration
 
@@ -219,6 +236,5 @@ Execution is manual — no scheduling or automation.
 - No web UI or dashboard
 - No database — file output only
 - No user authentication
-- No scheduled or automated runs
 - No Kubernetes or cloud infrastructure
 - No LangGraph orchestration

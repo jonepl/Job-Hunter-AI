@@ -89,6 +89,8 @@ job-search-agent/
 │       └── resume.pdf                   ← Candidate resume (volume mounted)
 │
 ├── src/
+│   ├── scheduler.py                     ← APScheduler — cron-based multi-profile runner
+│   ├── service_factory.py               ← Builds JobSearchService from SearchProfile
 │   ├── core/
 │   │   ├── domain/                      ← Pydantic entities
 │   │   │   ├── __init__.py
@@ -97,7 +99,8 @@ job-search-agent/
 │   │   │   ├── resume.py                ← Resume entity
 │   │   │   ├── match_result.py          ← MatchResult entity
 │   │   │   ├── run_report.py            ← RunReport entity
-│   │   │   └── scraper_name.py          ← ScraperName enum
+│   │   │   ├── scraper_name.py          ← ScraperName enum
+│   │   │   └── search_profile.py        ← SearchProfile — per-profile config model
 │   │   │
 │   │   ├── ports/                       ← Abstract Base Class interfaces
 │   │   │   ├── __init__.py
@@ -128,21 +131,21 @@ job-search-agent/
 tests/
 │
 ├── unit/                                    ← mirrors src/ exactly
+│   ├── test_scheduler.py                    ← tests for run_all_profiles()
 │   ├── core/
 │   │   ├── domain/
 │   │   │   ├── test_date_posted.py          ← tests for DatePosted enum
 │   │   │   ├── test_job.py                  ← tests for Job entity
 │   │   │   ├── test_resume.py               ← tests for Resume entity
 │   │   │   ├── test_match_result.py         ← tests for MatchResult entity
-│   │   │   └── test_scraper_name.py         ← tests for ScraperName enum
+│   │   │   ├── test_run_report.py           ← tests for RunReport entity
+│   │   │   ├── test_scraper_name.py         ← tests for ScraperName enum
+│   │   │   └── test_search_profile.py       ← tests for SearchProfile model
 │   │   │
 │   │   ├── ports/
 │   │   │   ├── test_scraper_port.py         ← tests for ScraperPort ABC
 │   │   │   ├── test_evaluator_port.py       ← tests for EvaluatorPort ABC
 │   │   │   └── test_output_port.py          ← tests for OutputPort ABC
-│   │   │
-│   │   ├── domain/
-│   │   │   └── test_run_report.py           ← tests for RunReport entity
 │   │   │
 │   │   └── services/
 │   │       └── test_job_search_service.py   ← tests for orchestration logic
@@ -347,6 +350,21 @@ class OutputPort(ABC):
 `JobSearchService` is the central orchestrator. It accepts port interfaces as constructor arguments (**dependency injection**) and coordinates the full pipeline.
 
 ```
+Scheduler (if SCHEDULE_ENABLED=true)
+    → On cron trigger
+    → For each SearchProfile
+    → build_service(profile)
+    → service.run(profile params)
+    → RunReport delivered per profile
+
+Immediate mode (SCHEDULE_ENABLED=false)
+    → Load all profiles
+    → For each SearchProfile
+    → build_service(profile)
+    → service.run(profile params)
+    → RunReport delivered per profile
+    → Exit
+
 JobSearchService.run(query, location, threshold, top_results)
         │
         ├── 1. Parse resume from PDF
@@ -445,16 +463,18 @@ results = await asyncio.gather(
 
 ## 9. Trigger Mechanism
 
-The agent supports two trigger modes in Phase 1:
+The agent supports two trigger modes:
 
 | Mode | Mechanism | How To Use |
 |---|---|---|
-| **Manual** | Run docker-compose directly | `docker-compose run agent` |
-| **Scheduled** | Cron job on host machine | `cron` triggers `docker-compose run agent` |
+| **Immediate** | Run once and exit | `python -m src.main` (SCHEDULE_ENABLED=false or not set) |
+| **Scheduled** | APScheduler inside container runs indefinitely | `docker-compose up` (SCHEDULE_ENABLED=true) |
 
-Phase 2 will introduce native scheduling inside the container or via a cloud scheduler.
+Immediate mode is used for local testing and manual runs. Scheduled mode is
+used for Docker-based automated execution — APScheduler runs on SCHEDULE_CRON
+indefinitely inside the container with no host cron dependency.
 
-**Technical Terms:** `Manual Trigger`, `Cron Job`, `Host Scheduler`
+**Technical Terms:** `Immediate Mode`, `APScheduler`, `BlockingScheduler`, `CronTrigger`
 
 ---
 
@@ -658,8 +678,9 @@ calls a real external API.
 ### Phase 1 — Local Docker (Current)
 - Linear async Python pipeline
 - Single Docker container
-- Manual + cron-scheduled triggers
-- CSV file + Gmail SMTP output
+- Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED controls which mode runs.
+- Multi-profile search via PROFILE_N_ variables in .env
+- CSV file + Gmail SMTP output per profile
 - All four platform scrapers
 
 ### Phase 2 — Cloud Deployment + Orchestration
@@ -684,7 +705,7 @@ calls a real external API.
 | Output format | CSV | Simple, portable, human-readable |
 | Containerization | Single Docker container | Simplicity for Phase 1 local development |
 | Logging | Console + file | Full observability during development and scheduled runs |
-| Trigger | Manual + cron | Flexible for Phase 1 without added infrastructure |
+| Trigger | Immediate mode + APScheduler scheduled mode | Both modes supported. SCHEDULE_ENABLED in .env controls which runs. |
 | Test structure | Mirror `src/` in both `unit/` and `integration/` | Easy module location, clear coverage mapping per module |
 | Shared test fixtures | `conftest.py` + `fixtures/` directory | Eliminates repeated setup, ensures consistent test data |
 | Scraping method — LinkedIn | Playwright | JavaScript-rendered page — requires real browser execution |
@@ -695,3 +716,6 @@ calls a real external API.
 | TOP_RESULTS is optional | None when not set — all qualifying results returned | TOP_RESULTS is an optional delivery convenience. The app is fully functional without it. Forcing a default cap would silently hide qualifying results from users who never set the variable. |
 | Date posted filter configured via .env with CLI override | `DATE_POSTED=3days` default, `--date-posted` CLI argument overrides | A persistent default prevents stale listings appearing on every run without requiring the user to pass the flag each time. The CLI override allows per-run flexibility without changing `.env`. Default of `3days` balances freshness with coverage. |
 | Scraper selection via ACTIVE_SCRAPERS .env variable and --scrapers CLI override | `ScraperName` enum + `ScraperFactory` pattern | Hardcoded scraper instantiation gave no runtime control. `ScraperName` enum centralises valid scraper names preventing typos. `ScraperFactory` isolates instantiation logic from `main.py` keeping startup code clean. CLI override enables per-run flexibility without `.env` edits. |
+| APScheduler for in-process scheduling | BlockingScheduler with CronTrigger | Keeps scheduling inside the container with no host cron dependency. Cron syntax is more expressive than interval-based scheduling. Timezone support handles daylight saving correctly. |
+| Multiple search profiles via PROFILE_N_ prefix pattern | Numbered env var prefix with PROFILE_COUNT | Enables multiple independent searches per run without code changes. Each profile delivers its own report making results easy to distinguish. Numbered prefix is readable and extensible. |
+| SCHEDULE_ENABLED controls mode — not a CLI flag | .env variable only | Scheduled Docker containers have no interactive CLI. .env is the correct configuration surface for containerized workloads. |

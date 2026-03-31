@@ -6,4 +6,4 @@ services:
       - ./docs/resume:/app/docs/resume
       - ./output:/app/output
       - ./logs:/app/logs
-    restart: "no"
+    restart: unless-stopped
