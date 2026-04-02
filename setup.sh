@@ -177,14 +177,35 @@ if [ -f ".env" ]; then
     warn ".env already exists — skipping (your keys are safe)"
 else
 cat > .env << 'EOF'
-# LLM Provider
+
+# -- Scheduler --
+SCHEDULE_ENABLED=false
+SCHEDULE_CRON=*/6 * * * * #0 10 * * 1,4
+SCHEDULE_TIMEZONE=America/New_York
+
+# ── API Keys & Evaluator ──
+EVALUATOR_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key_here
-
-# Claude Code (Anthropic)
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
-
-# Job Search APIs
 JSEARCH_API_KEY=your_jsearch_api_key_here
+
+# ── Email ──
+GMAIL_ADDRESS=your_sender_email_address
+GMAIL_APP_PASSWORD=your_gmail_password
+EMAIL_RECIPIENT=your_recipient_email_address
+
+# ── Search Profiles ──
+PROFILE_COUNT=1
+
+# Search Profile 1
+PROFILE_1_QUERY=Senior Software Engineer
+PROFILE_1_WORK_TYPE=remote
+# PROFILE_1_LOCATION=New York, US
+PROFILE_1_DATE_POSTED=3days # 24h, 3days, week, month. Default: `3days`.
+PROFILE_1_SCORE_THRESHOLD=80 # 0 - 100 
+PROFILE_1_SCRAPERS=indeed #linkedin,indeed,glassdoor,ziprecruiter
+PROFILE_1_SCORE_THRESHOLD=75
+
 EOF
 success ".env created with placeholder values"
 warn "ACTION REQUIRED: Replace placeholder values in .env with your real API keys"
