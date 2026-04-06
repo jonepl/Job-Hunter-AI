@@ -200,6 +200,13 @@ GMAIL_ADDRESS=your_sender_email_address
 GMAIL_APP_PASSWORD=your_gmail_password
 EMAIL_RECIPIENT=your_recipient_email_address
 
+# -- Evaluator Costs ───────────────────────────────────────────────────────
+SHOW_COST_ESTIMATE=false
+OPENAI_INPUT_COST_PER_1M=2.50
+OPENAI_OUTPUT_COST_PER_1M=10.00
+ANTHROPIC_INPUT_COST_PER_1M=3.00
+ANTHROPIC_OUTPUT_COST_PER_1M=15.00
+
 # ── Search Profiles ──
 PROFILE_COUNT=1
 
@@ -210,7 +217,7 @@ PROFILE_1_WORK_TYPE=remote
 PROFILE_1_DATE_POSTED=3days # 24h, 3days, week, month. Default: `3days`.
 PROFILE_1_SCORE_THRESHOLD=80 # 0 - 100 
 PROFILE_1_SCRAPERS=indeed #linkedin,indeed,glassdoor,ziprecruiter
-PROFILE_1_SCORE_THRESHOLD=75
+PROFILE_1_SCORE_THRESHOLD=90
 
 EOF
 success ".env created with placeholder values"
