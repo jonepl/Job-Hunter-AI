@@ -162,6 +162,8 @@ class EmailOutput(OutputPort):
             for i, result in enumerate(report.qualifying_results, start=1)
         )
 
+        cost_section = self._build_cost_section(report)
+
         return (
             "<html>"
             "<body style=\"font-family:Arial,sans-serif;font-size:13px;color:#333;"
@@ -188,6 +190,7 @@ class EmailOutput(OutputPort):
             f"{cards}"
             f"<p style=\"color:#666;font-size:12px;\">Total jobs evaluated: "
             f"{report.total_evaluated}</p>"
+            f"{cost_section}"
             "</body></html>"
         )
 
@@ -211,6 +214,7 @@ class EmailOutput(OutputPort):
         Returns:
             An HTML string for the zero results email.
         """
+        cost_section = self._build_cost_section(report)
         near_miss_section = ""
         if report.near_miss_results:
             near_miss_cards = "".join(
@@ -264,6 +268,7 @@ class EmailOutput(OutputPort):
             f"Score threshold: {report.score_threshold} &nbsp;·&nbsp; "
             f"Date posted: {date_posted_label} &nbsp;·&nbsp; "
             f"Top results cap: {top_results_label}</p>"
+            f"{cost_section}"
             "</body></html>"
         )
 
@@ -378,6 +383,45 @@ class EmailOutput(OutputPort):
             f"<a href=\"{result.job.url}\" style=\"color:#0969da;\">View Job Posting →</a></p>"
 
             "</div>"
+        )
+
+    def _build_cost_section(self, report) -> str:
+        """Build an HTML cost summary section for the email footer.
+
+        Returns an HTML block with LLM cost details when run_cost is present.
+        Returns an empty string when run_cost is None.
+
+        Args:
+            report: The RunReport to render cost data from.
+
+        Returns:
+            An HTML string for the cost section, or empty string when disabled.
+        """
+        if report.run_cost is None:
+            return ""
+
+        rc = report.run_cost
+        est_row = ""
+        if report.cost_estimate is not None:
+            est_row = (
+                f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Est. cost range</strong></td>"
+                f"<td>{report.cost_estimate.formatted_range}</td></tr>"
+            )
+
+        return (
+            "<hr style=\"border:none;border-top:1px solid #e1e4e8;margin:24px 0 16px;\">"
+            "<h4 style=\"color:#1a1a2e;margin:0 0 8px;\">LLM Cost Summary</h4>"
+            "<table style=\"margin-bottom:8px;\">"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Provider</strong></td>"
+            f"<td>{rc.provider}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Jobs evaluated</strong></td>"
+            f"<td>{rc.jobs_evaluated}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Total tokens</strong></td>"
+            f"<td>{rc.total_input_tokens} in / {rc.total_output_tokens} out</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Actual LLM cost</strong></td>"
+            f"<td>{rc.formatted_total}</td></tr>"
+            f"{est_row}"
+            "</table>"
         )
 
     def _build_breakdown_rows(self, result) -> str:

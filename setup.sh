@@ -189,6 +189,12 @@ OPENAI_API_KEY=your_openai_api_key_here
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 JSEARCH_API_KEY=your_jsearch_api_key_here
 
+# ── Evaluator Cost ──
+OPENAI_INPUT_COST_PER_1M=2.50
+OPENAI_OUTPUT_COST_PER_1M=10.00
+ANTHROPIC_INPUT_COST_PER_1M=3.00
+ANTHROPIC_OUTPUT_COST_PER_1M=15.00
+
 # ── Email ──
 GMAIL_ADDRESS=your_sender_email_address
 GMAIL_APP_PASSWORD=your_gmail_password

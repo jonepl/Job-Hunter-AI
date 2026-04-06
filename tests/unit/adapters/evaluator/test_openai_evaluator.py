@@ -63,14 +63,22 @@ def _full_payload(
     }
 
 
-def make_mock_openai_response(payload: dict) -> MagicMock:
-    """Build a mock OpenAI chat completion response."""
+def make_mock_openai_response(
+    payload: dict,
+    prompt_tokens: int = 3000,
+    completion_tokens: int = 400,
+) -> MagicMock:
+    """Build a mock OpenAI chat completion response with usage data."""
     message = MagicMock()
     message.content = json.dumps(payload)
     choice = MagicMock()
     choice.message = message
+    usage = MagicMock()
+    usage.prompt_tokens = prompt_tokens
+    usage.completion_tokens = completion_tokens
     response = MagicMock()
     response.choices = [choice]
+    response.usage = usage
     return response
 
 
@@ -85,7 +93,7 @@ async def test_evaluate_returns_valid_match_result(sample_resume, sample_job):
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert isinstance(result, MatchResult)
     assert result.score == 85
@@ -110,7 +118,7 @@ async def test_evaluate_null_years_experience_detected(sample_resume, sample_job
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.years_experience_detected is None
 
@@ -126,7 +134,7 @@ async def test_evaluate_returns_default_result_on_api_error(sample_resume, sampl
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
     assert result.matched_skills == []
@@ -145,7 +153,7 @@ async def test_evaluate_default_result_has_safe_new_field_values(sample_resume, 
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.seniority_level == "Unknown"
     assert result.years_experience_detected is None
@@ -161,8 +169,12 @@ async def test_evaluate_returns_default_result_on_malformed_json(sample_resume, 
     message.content = "This is not JSON at all"
     choice = MagicMock()
     choice.message = message
+    usage = MagicMock()
+    usage.prompt_tokens = 100
+    usage.completion_tokens = 10
     response = MagicMock()
     response.choices = [choice]
+    response.usage = usage
 
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(return_value=response)
@@ -170,7 +182,7 @@ async def test_evaluate_returns_default_result_on_malformed_json(sample_resume, 
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
 
@@ -188,7 +200,7 @@ async def test_evaluate_returns_default_result_on_invalid_schema(sample_resume, 
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
 
@@ -209,7 +221,68 @@ async def test_evaluate_returns_default_result_on_invalid_hire_recommendation(
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
     assert result.hire_recommendation == "No"
+
+
+# ---------------------------------------------------------------------------
+# New tests — tuple return with token counts
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_tuple(sample_resume, sample_job):
+    """evaluate() returns a tuple of (MatchResult, int, int)."""
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=make_mock_openai_response(_full_payload())
+    )
+
+    evaluator = OpenAIEvaluator(api_key="test-key")
+    evaluator._client = mock_client
+
+    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+
+    assert isinstance(result, tuple)
+    assert len(result) == 3
+    assert isinstance(result[0], MatchResult)
+    assert isinstance(result[1], int)
+    assert isinstance(result[2], int)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_token_counts(sample_resume, sample_job):
+    """evaluate() extracts prompt_tokens and completion_tokens from response.usage."""
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=make_mock_openai_response(_full_payload(), prompt_tokens=3000, completion_tokens=400)
+    )
+
+    evaluator = OpenAIEvaluator(api_key="test-key")
+    evaluator._client = mock_client
+
+    _, input_tokens, output_tokens = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+
+    assert input_tokens == 3000
+    assert output_tokens == 400
+
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_zero_tokens_on_failure(sample_resume, sample_job):
+    """evaluate() returns (default_result, 0, 0) when API raises an exception."""
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=APIError("API unavailable", request=MagicMock(), body=None)
+    )
+
+    evaluator = OpenAIEvaluator(api_key="test-key")
+    evaluator._client = mock_client
+
+    result, input_tokens, output_tokens = await evaluator.evaluate(
+        resume=sample_resume, job=sample_job
+    )
+
+    assert result.score == 0
+    assert input_tokens == 0
+    assert output_tokens == 0

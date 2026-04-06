@@ -63,12 +63,20 @@ def _full_payload(
     }
 
 
-def make_mock_anthropic_response(payload: dict) -> MagicMock:
-    """Build a mock Anthropic messages response."""
+def make_mock_anthropic_response(
+    payload: dict,
+    input_tokens: int = 2000,
+    output_tokens: int = 300,
+) -> MagicMock:
+    """Build a mock Anthropic messages response with usage data."""
     content_block = MagicMock()
     content_block.text = json.dumps(payload)
+    usage = MagicMock()
+    usage.input_tokens = input_tokens
+    usage.output_tokens = output_tokens
     response = MagicMock()
     response.content = [content_block]
+    response.usage = usage
     return response
 
 
@@ -83,7 +91,7 @@ async def test_evaluate_returns_valid_match_result(sample_resume, sample_job):
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert isinstance(result, MatchResult)
     assert result.score == 85
@@ -112,7 +120,7 @@ async def test_evaluate_returns_default_on_api_error(sample_resume, sample_job):
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
     assert result.matched_skills == []
@@ -125,8 +133,12 @@ async def test_evaluate_returns_default_on_invalid_json(sample_resume, sample_jo
     """Error handling — returns score 0 MatchResult when Claude returns malformed JSON."""
     content_block = MagicMock()
     content_block.text = "This is not JSON at all"
+    usage = MagicMock()
+    usage.input_tokens = 100
+    usage.output_tokens = 10
     response = MagicMock()
     response.content = [content_block]
+    response.usage = usage
 
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=response)
@@ -134,7 +146,7 @@ async def test_evaluate_returns_default_on_invalid_json(sample_resume, sample_jo
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
 
@@ -152,7 +164,7 @@ async def test_evaluate_returns_default_on_validation_error(sample_resume, sampl
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
 
@@ -190,7 +202,7 @@ async def test_rescue_fields_misplaced_in_score_breakdown(sample_resume, sample_
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert isinstance(result, MatchResult)
     assert result.score == 75
@@ -206,8 +218,12 @@ async def test_strips_markdown_json_code_fence_from_response(sample_resume, samp
     payload = _full_payload()
     content_block = MagicMock()
     content_block.text = f"```json\n{json.dumps(payload)}\n```"
+    usage = MagicMock()
+    usage.input_tokens = 2000
+    usage.output_tokens = 300
     response = MagicMock()
     response.content = [content_block]
+    response.usage = usage
 
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=response)
@@ -215,7 +231,7 @@ async def test_strips_markdown_json_code_fence_from_response(sample_resume, samp
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert isinstance(result, MatchResult)
     assert result.score == 85
@@ -228,8 +244,12 @@ async def test_strips_plain_code_fence_from_response(sample_resume, sample_job):
     payload = _full_payload()
     content_block = MagicMock()
     content_block.text = f"```\n{json.dumps(payload)}\n```"
+    usage = MagicMock()
+    usage.input_tokens = 2000
+    usage.output_tokens = 300
     response = MagicMock()
     response.content = [content_block]
+    response.usage = usage
 
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=response)
@@ -237,7 +257,7 @@ async def test_strips_plain_code_fence_from_response(sample_resume, sample_job):
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert isinstance(result, MatchResult)
     assert result.score == 85
@@ -251,8 +271,12 @@ async def test_returns_default_on_empty_response(sample_resume, sample_job, capl
 
     content_block = MagicMock()
     content_block.text = ""
+    usage = MagicMock()
+    usage.input_tokens = 0
+    usage.output_tokens = 0
     response = MagicMock()
     response.content = [content_block]
+    response.usage = usage
 
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=response)
@@ -261,7 +285,7 @@ async def test_returns_default_on_empty_response(sample_resume, sample_job, capl
     evaluator._client = mock_client
 
     with caplog.at_level(logging.ERROR):
-        result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+        result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
     assert "failed" in result.summary.lower()
@@ -273,8 +297,12 @@ async def test_returns_default_on_none_response(sample_resume, sample_job):
     """Error handling — returns score 0 MatchResult when response text is None."""
     content_block = MagicMock()
     content_block.text = None
+    usage = MagicMock()
+    usage.input_tokens = 0
+    usage.output_tokens = 0
     response = MagicMock()
     response.content = [content_block]
+    response.usage = usage
 
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(return_value=response)
@@ -282,7 +310,7 @@ async def test_returns_default_on_none_response(sample_resume, sample_job):
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
 
-    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+    result, _, _ = await evaluator.evaluate(resume=sample_resume, job=sample_job)
 
     assert result.score == 0
     assert result.matched_skills == []
@@ -303,3 +331,68 @@ async def test_evaluate_uses_correct_model(sample_resume, sample_job):
 
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "claude-sonnet-4-5"
+
+
+# ---------------------------------------------------------------------------
+# New tests — tuple return with token counts
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_tuple(sample_resume, sample_job):
+    """evaluate() returns a tuple of (MatchResult, int, int)."""
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        return_value=make_mock_anthropic_response(_full_payload())
+    )
+
+    evaluator = ClaudeEvaluator(api_key="test-key")
+    evaluator._client = mock_client
+
+    result = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+
+    assert isinstance(result, tuple)
+    assert len(result) == 3
+    assert isinstance(result[0], MatchResult)
+    assert isinstance(result[1], int)
+    assert isinstance(result[2], int)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_token_counts(sample_resume, sample_job):
+    """evaluate() extracts input_tokens and output_tokens from response.usage."""
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        return_value=make_mock_anthropic_response(_full_payload(), input_tokens=2500, output_tokens=450)
+    )
+
+    evaluator = ClaudeEvaluator(api_key="test-key")
+    evaluator._client = mock_client
+
+    _, input_tokens, output_tokens = await evaluator.evaluate(resume=sample_resume, job=sample_job)
+
+    assert input_tokens == 2500
+    assert output_tokens == 450
+
+
+@pytest.mark.asyncio
+async def test_evaluate_returns_zero_tokens_on_failure(sample_resume, sample_job):
+    """evaluate() returns (default_result, 0, 0) when API raises an exception."""
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=anthropic.APIStatusError(
+            "API unavailable",
+            response=MagicMock(),
+            body=None,
+        )
+    )
+
+    evaluator = ClaudeEvaluator(api_key="test-key")
+    evaluator._client = mock_client
+
+    result, input_tokens, output_tokens = await evaluator.evaluate(
+        resume=sample_resume, job=sample_job
+    )
+
+    assert result.score == 0
+    assert input_tokens == 0
+    assert output_tokens == 0

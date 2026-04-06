@@ -49,6 +49,12 @@ _CSV_FIELDS = [
     "search_location",
     "score_threshold",
     "top_results_cap",
+    "llm_provider",
+    "total_input_tokens",
+    "total_output_tokens",
+    "total_cost_usd",
+    "est_min_cost_usd",
+    "est_max_cost_usd",
 ]
 
 
@@ -88,6 +94,16 @@ class FileOutput(OutputPort):
             rows_to_write = report.near_miss_results
             result_type_label = "near_miss"
             path = os.path.join(self._output_dir, f"no_results_{timestamp}.csv")
+
+        # Pre-compute cost fields — empty string when tracking disabled
+        run_cost = report.run_cost
+        cost_estimate = report.cost_estimate
+        llm_provider = run_cost.provider if run_cost else ""
+        total_input_tokens = run_cost.total_input_tokens if run_cost else ""
+        total_output_tokens = run_cost.total_output_tokens if run_cost else ""
+        total_cost_usd = run_cost.total_cost_usd if run_cost else ""
+        est_min_cost_usd = cost_estimate.est_min_cost_usd if cost_estimate else ""
+        est_max_cost_usd = cost_estimate.est_max_cost_usd if cost_estimate else ""
 
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
@@ -134,6 +150,12 @@ class FileOutput(OutputPort):
                         "search_location": report.location,
                         "score_threshold": report.score_threshold,
                         "top_results_cap": top_results_cap_label,
+                        "llm_provider": llm_provider,
+                        "total_input_tokens": total_input_tokens,
+                        "total_output_tokens": total_output_tokens,
+                        "total_cost_usd": total_cost_usd,
+                        "est_min_cost_usd": est_min_cost_usd,
+                        "est_max_cost_usd": est_max_cost_usd,
                     })
 
             if report.has_qualifying_results:

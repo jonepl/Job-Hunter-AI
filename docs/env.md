@@ -31,6 +31,8 @@ all placeholder values with real credentials before running.
 | DATE_POSTED | Default recency filter for job listings. Values: `24h`, `3days`, `week`, `month`. Used in legacy single search mode. | `3days` |
 | ACTIVE_SCRAPERS | Comma-separated list of scrapers. Used in legacy single search mode. Supported: `linkedin`, `indeed`, `glassdoor`, `ziprecruiter`. | all four |
 | JSEARCH_MAX_PAGES | Number of result pages fetched per JSearch API call. Each page contains up to 10 job listings. Multiple pages are bundled into a single API request and do not increase free tier quota consumption. Valid range: 1–10. Values outside this range are clamped automatically. Examples: 1 → 10 jobs, 2 → 20 jobs (default), 5 → 50 jobs, 10 → 100 jobs. | `2` |
+| MAX_CONCURRENT_EVALUATIONS | Maximum number of LLM evaluation calls running at the same time. Reduce if hitting provider concurrency limits. | `2` |
+| EVALUATION_DELAY_SECONDS | Seconds to wait after each evaluation call before releasing the semaphore slot. Spreads token consumption over time to stay within TPM rate limits. | `1.0` |
 
 ---
 
@@ -163,7 +165,8 @@ EMAIL_RECIPIENT=your@email.com
 
 # ── Evaluator ─────────────────────────────────────────────────────────────────
 EVALUATOR_PROVIDER=openai
-MAX_CONCURRENT_EVALUATIONS=3
+MAX_CONCURRENT_EVALUATIONS=2
+EVALUATION_DELAY_SECONDS=1.0
 
 # ── JSearch (Default to us) ───────────────────────────────────────────────────────────────────
 JSEARCH_COUNTRY=us
@@ -172,7 +175,30 @@ JSEARCH_COUNTRY=us
 # Each page = 10 jobs, 1 API request
 # Valid range: 1-10 (default: 2)
 JSEARCH_MAX_PAGES=2
+
+# ── Cost Tracking ─────────────────────────────────────────────────────────────
+SHOW_COST_ESTIMATE=false
+
+# Token pricing — update when providers adjust rates (USD per 1M tokens)
+OPENAI_INPUT_COST_PER_1M=2.50
+OPENAI_OUTPUT_COST_PER_1M=10.00
+ANTHROPIC_INPUT_COST_PER_1M=3.00
+ANTHROPIC_OUTPUT_COST_PER_1M=15.00
 ```
+
+---
+
+---
+
+## Cost Tracking
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| SHOW_COST_ESTIMATE | No | `false` | When `true` shows a pre-run cost estimate at startup and tracks actual token usage and cost per evaluation. Results included in logs, email footer, and CSV output. Set to `false` for zero performance overhead. |
+| OPENAI_INPUT_COST_PER_1M | No | `2.50` | OpenAI input token cost per million tokens in USD. Update when OpenAI adjusts pricing. |
+| OPENAI_OUTPUT_COST_PER_1M | No | `10.00` | OpenAI output token cost per million tokens in USD. |
+| ANTHROPIC_INPUT_COST_PER_1M | No | `3.00` | Anthropic input token cost per million tokens in USD. |
+| ANTHROPIC_OUTPUT_COST_PER_1M | No | `15.00` | Anthropic output token cost per million tokens in USD. |
 
 ---
 

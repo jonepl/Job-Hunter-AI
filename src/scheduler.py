@@ -2,12 +2,15 @@
 
 import asyncio
 import logging
+import os
 
 import pytz
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.core.domain.search_profile import SearchProfile
+from src.infra.cost_estimator import estimate_run_cost
+from src.infra.cost_tracker import CostTracker
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,18 @@ async def run_all_profiles(
                          a configured JobSearchService.
     """
     logger.info("Scheduler — starting run for %d profile(s)", len(profiles))
+
+    # Load cost tracking config once per scheduled run
+    show_cost = os.getenv("SHOW_COST_ESTIMATE", "false").lower() == "true"
+    provider = os.getenv("EVALUATOR_PROVIDER", "").lower()
+
+    if provider == "openai":
+        input_rate = float(os.getenv("OPENAI_INPUT_COST_PER_1M", "2.50"))
+        output_rate = float(os.getenv("OPENAI_OUTPUT_COST_PER_1M", "10.00"))
+    else:
+        input_rate = float(os.getenv("ANTHROPIC_INPUT_COST_PER_1M", "3.00"))
+        output_rate = float(os.getenv("ANTHROPIC_OUTPUT_COST_PER_1M", "15.00"))
+
     for profile in profiles:
         logger.info(
             "Running profile %d: %s | %s",
@@ -34,16 +49,62 @@ async def run_all_profiles(
             profile.query,
             profile.location,
         )
+
+        if show_cost:
+            estimate = estimate_run_cost(
+                profile=profile,
+                provider=provider,
+                input_cost_per_1m=input_rate,
+                output_cost_per_1m=output_rate,
+            )
+            logger.info("=" * 60)
+            logger.info("Cost Estimate — Profile %d", profile.profile_id)
+            logger.info("Max jobs to evaluate : %d", estimate.max_jobs)
+            logger.info("Est. cost range      : %s", estimate.formatted_range)
+            logger.info("=" * 60)
+            cost_tracker = CostTracker(
+                provider=provider,
+                input_cost_per_1m=input_rate,
+                output_cost_per_1m=output_rate,
+                enabled=True,
+            )
+        else:
+            estimate = None
+            cost_tracker = CostTracker(
+                provider=provider,
+                input_cost_per_1m=input_rate,
+                output_cost_per_1m=output_rate,
+                enabled=False,
+            )
+
         try:
             service = service_factory(profile)
-            await service.run(
+            report = await service.run(
                 query=profile.query,
                 location=profile.location,
                 threshold=profile.score_threshold,
                 top_results=profile.top_results,
                 work_types=profile.work_types,
                 date_posted=profile.date_posted,
+                active_scrapers=profile.active_scrapers,
+                cost_tracker=cost_tracker,
             )
+
+            # Attach pre-run estimate to report
+            report.cost_estimate = estimate
+
+            if show_cost and report.run_cost:
+                logger.info("=" * 60)
+                logger.info("Actual LLM Cost — Profile %d", profile.profile_id)
+                logger.info("Jobs evaluated  : %d", report.run_cost.jobs_evaluated)
+                logger.info(
+                    "Total tokens    : %d in / %d out",
+                    report.run_cost.total_input_tokens,
+                    report.run_cost.total_output_tokens,
+                )
+                logger.info("Actual LLM cost : %s", report.run_cost.formatted_total)
+                logger.info("=" * 60)
+
         except Exception as e:
             logger.error("Profile %d failed: %s", profile.profile_id, e)
             continue

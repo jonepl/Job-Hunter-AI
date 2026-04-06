@@ -1,5 +1,6 @@
 """Unit tests for JobSearchService orchestration logic."""
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -95,7 +96,7 @@ def make_service(
     jobs_flat = [job for jobs in scraper_jobs for job in jobs]
     evaluator = MagicMock()
     evaluator.evaluate = AsyncMock(
-        side_effect=[make_match_result(job, score) for job, score in zip(jobs_flat, eval_scores)]
+        side_effect=[(make_match_result(job, score), 100, 50) for job, score in zip(jobs_flat, eval_scores)]
     )
 
     output = MagicMock()
@@ -186,7 +187,7 @@ async def test_run_calls_all_output_adapters():
     scraper = MagicMock()
     scraper.fetch_jobs = AsyncMock(return_value=[job])
     evaluator = MagicMock()
-    evaluator.evaluate = AsyncMock(return_value=make_match_result(job, 80))
+    evaluator.evaluate = AsyncMock(return_value=(make_match_result(job, 80), 100, 50))
 
     service = JobSearchService(
         scrapers=[scraper],
@@ -499,3 +500,142 @@ async def test_active_scrapers_in_run_report():
     )
 
     assert report.active_scrapers == active
+
+
+# ---------------------------------------------------------------------------
+# New tests — cost_tracker integration
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_cost_tracker_called_per_evaluation():
+    """cost_tracker.record() is called once per evaluated job."""
+    from unittest.mock import MagicMock as MM
+
+    jobs = [make_job("Job A"), make_job("Job B"), make_job("Job C")]
+    service, _, _, _ = make_service(
+        scraper_jobs=[jobs],
+        eval_scores=[80, 75, 72],
+    )
+
+    cost_tracker = MM()
+    cost_tracker.record = MM(return_value=None)
+    cost_tracker.build_run_cost = MM(return_value=None)
+
+    await service.run(
+        query="Python Developer",
+        location="Remote",
+        threshold=70,
+        cost_tracker=cost_tracker,
+    )
+
+    assert cost_tracker.record.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_cost_tracker_not_called_when_none():
+    """Passing cost_tracker=None does not raise AttributeError."""
+    service, _, _, _ = make_service(eval_scores=[80])
+
+    # Should complete without error
+    report = await service.run(
+        query="Python Developer",
+        location="Remote",
+        threshold=70,
+        cost_tracker=None,
+    )
+
+    assert isinstance(report, RunReport)
+
+
+@pytest.mark.asyncio
+async def test_run_report_includes_run_cost():
+    """RunReport.run_cost is populated when cost_tracker returns a RunCost."""
+    from unittest.mock import MagicMock as MM
+    from src.core.domain.run_cost import RunCost, EvaluationCost
+
+    jobs = [make_job()]
+    service, _, _, _ = make_service(scraper_jobs=[jobs], eval_scores=[80])
+
+    mock_run_cost = RunCost(
+        evaluations=[EvaluationCost(
+            job_title="Engineer", company="Acme",
+            input_tokens=100, output_tokens=50, cost_usd=0.001,
+        )],
+        total_input_tokens=100,
+        total_output_tokens=50,
+        total_cost_usd=0.001,
+        provider="openai",
+        jobs_evaluated=1,
+    )
+
+    cost_tracker = MM()
+    cost_tracker.record = MM(return_value=None)
+    cost_tracker.build_run_cost = MM(return_value=mock_run_cost)
+
+    report = await service.run(
+        query="Python Developer",
+        location="Remote",
+        threshold=70,
+        cost_tracker=cost_tracker,
+    )
+
+    assert report.run_cost is not None
+    assert report.run_cost.jobs_evaluated == 1
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_evaluation_delay_applied():
+    """asyncio.sleep is called with EVALUATION_DELAY_SECONDS after each evaluation."""
+    jobs = [make_job("Job A"), make_job("Job B")]
+    service, _, _, _ = make_service(scraper_jobs=[jobs], eval_scores=[80, 75])
+
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch.dict("os.environ", {"EVALUATION_DELAY_SECONDS": "2.5"}):
+            await service.run(
+                query="Python Developer",
+                location="Remote",
+                threshold=70,
+            )
+
+    assert mock_sleep.call_count == len(jobs)
+    mock_sleep.assert_called_with(2.5)
+
+
+@pytest.mark.asyncio
+async def test_max_concurrent_default_is_two():
+    """MAX_CONCURRENT_EVALUATIONS defaults to 2 when env var is not set."""
+    jobs = [make_job()]
+    service, _, _, _ = make_service(scraper_jobs=[jobs], eval_scores=[80])
+
+    with patch("asyncio.Semaphore", wraps=asyncio.Semaphore) as mock_semaphore:
+        with patch.dict("os.environ", {}, clear=False):
+            import os
+            os.environ.pop("MAX_CONCURRENT_EVALUATIONS", None)
+            await service.run(
+                query="Python Developer",
+                location="Remote",
+                threshold=70,
+            )
+
+    mock_semaphore.assert_called_once_with(2)
+
+
+@pytest.mark.asyncio
+async def test_max_concurrent_loaded_from_env():
+    """MAX_CONCURRENT_EVALUATIONS is read from env when set."""
+    jobs = [make_job()]
+    service, _, _, _ = make_service(scraper_jobs=[jobs], eval_scores=[80])
+
+    with patch("asyncio.Semaphore", wraps=asyncio.Semaphore) as mock_semaphore:
+        with patch.dict("os.environ", {"MAX_CONCURRENT_EVALUATIONS": "5"}):
+            await service.run(
+                query="Python Developer",
+                location="Remote",
+                threshold=70,
+            )
+
+    mock_semaphore.assert_called_once_with(5)

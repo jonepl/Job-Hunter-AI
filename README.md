@@ -354,6 +354,71 @@ JSEARCH_MAX_PAGES=5   # 50 jobs per JSearch platform per run
 
 ---
 
+## LLM Cost Tracking
+
+Enable cost visibility by setting `SHOW_COST_ESTIMATE=true` in `.env`.
+
+**Before each run — startup estimate:**
+```
+════════════════════════════════════
+Cost Estimate — Profile 1
+Max jobs to evaluate : 85
+Est. cost range      : $0.0042 - $0.0106
+════════════════════════════════════
+```
+
+**During evaluation — per job:**
+```
+Evaluated 'Sr SWE' @ 'Disney' score=92 | tokens=3241/412 | $0.0122
+```
+
+**After evaluation — run total:**
+```
+════════════════════════════════════
+Actual LLM Cost — Profile 1
+Jobs evaluated  : 18
+Total tokens    : 58,241 in / 7,476 out
+Actual LLM cost : $0.2209
+════════════════════════════════════
+```
+
+Email footer includes a cost summary section. CSV includes cost columns per row.
+
+**Configuration:**
+```env
+SHOW_COST_ESTIMATE=true
+OPENAI_INPUT_COST_PER_1M=2.50
+OPENAI_OUTPUT_COST_PER_1M=10.00
+ANTHROPIC_INPUT_COST_PER_1M=3.00
+ANTHROPIC_OUTPUT_COST_PER_1M=15.00
+```
+
+Update rates when providers adjust pricing — no code change needed.
+
+---
+
+## Rate Limiting
+
+The app controls LLM API concurrency to prevent TPM rate limit errors.
+
+**Configure in `.env`:**
+```env
+MAX_CONCURRENT_EVALUATIONS=2
+EVALUATION_DELAY_SECONDS=1.0
+```
+
+**Recommended values by OpenAI tier:**
+
+| Tier | MAX_CONCURRENT_EVALUATIONS | EVALUATION_DELAY_SECONDS |
+|---|---|---|
+| Free tier | `1` | `2.0` |
+| Tier 1 | `2` | `1.0` |
+| Tier 2 | `5` | `0.5` |
+
+If you see `429 TPM` errors: lower `MAX_CONCURRENT_EVALUATIONS` or increase `EVALUATION_DELAY_SECONDS`.
+
+---
+
 ## Development
 
 ### Activate the virtual environment

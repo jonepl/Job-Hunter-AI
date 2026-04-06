@@ -11,6 +11,7 @@ from src.adapters.evaluator.prompts import SYSTEM_PROMPT, USER_PROMPT
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
+from src.core.domain.work_type import WorkType
 from src.core.ports.evaluator_port import EvaluatorPort
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,8 @@ class ClaudeEvaluator(EvaluatorPort):
         self,
         resume: Resume,
         job: Job,
-    ) -> MatchResult:
+        work_types: list[WorkType] | None = None,
+    ) -> tuple[MatchResult, int, int]:
         """Evaluate a job listing against a resume using Claude.
 
         Sends the resume text and job description to claude-sonnet-4-5 and
@@ -134,10 +136,11 @@ class ClaudeEvaluator(EvaluatorPort):
         Args:
             resume: The parsed candidate resume.
             job: The job listing to evaluate.
+            work_types: Optional work type filter context (unused in scoring).
 
         Returns:
-            A MatchResult containing score, breakdown, matched skills,
-            missing skills, seniority level, and hire recommendation.
+            Tuple of (MatchResult, input_tokens, output_tokens).
+            On failure returns (default_result, 0, 0).
         """
         logger.info("Claude — evaluating %r @ %s", job.title, job.company)
 
@@ -173,6 +176,9 @@ class ClaudeEvaluator(EvaluatorPort):
             # logger.info("Claude raw response for %r: %s", job.title, data)
             evaluated = _EvaluationResponse(**data)
 
+            input_tokens = response.usage.input_tokens
+            output_tokens = response.usage.output_tokens
+
             return MatchResult(
                 job=job,
                 score=evaluated.score,
@@ -183,14 +189,14 @@ class ClaudeEvaluator(EvaluatorPort):
                 missing_skills=evaluated.missing_skills,
                 summary=evaluated.summary,
                 hire_recommendation=evaluated.hire_recommendation,
-            )
+            ), input_tokens, output_tokens
 
         except anthropic.APIError as exc:
             logger.error("Claude API error evaluating %r: %s", job.title, exc)
-            return _default_result(job)
+            return _default_result(job), 0, 0
         except (json.JSONDecodeError, ValidationError) as exc:
             logger.error("Invalid Claude response for %r: %s", job.title, exc)
-            return _default_result(job)
+            return _default_result(job), 0, 0
         except Exception as exc:
             logger.error("Unexpected error evaluating %r: %s", job.title, exc)
-            return _default_result(job)
+            return _default_result(job), 0, 0

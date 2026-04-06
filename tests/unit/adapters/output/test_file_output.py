@@ -105,9 +105,9 @@ async def test_deliver_writes_csv_file(tmp_path, sample_report):
 
 
 @pytest.mark.asyncio
-async def test_deliver_csv_has_38_columns(tmp_path, sample_report):
-    """Happy path — CSV file has exactly 38 columns."""
-    assert len(_CSV_FIELDS) == 38
+async def test_deliver_csv_has_44_columns(tmp_path, sample_report):
+    """Happy path — CSV file has exactly 44 columns (38 base + 6 cost columns)."""
+    assert len(_CSV_FIELDS) == 44
 
     output = FileOutput(output_dir=str(tmp_path))
     await output.deliver(sample_report)
@@ -117,7 +117,7 @@ async def test_deliver_csv_has_38_columns(tmp_path, sample_report):
         reader = csv.DictReader(f)
         headers = reader.fieldnames or []
 
-    assert len(headers) == 38
+    assert len(headers) == 44
 
 
 @pytest.mark.asyncio

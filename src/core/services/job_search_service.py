@@ -2,11 +2,14 @@
 
 import asyncio
 import logging
+import os
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import PyPDF2
 
 from src.core.domain.date_posted import DatePosted
+from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
 from src.core.domain.run_report import RunReport
@@ -15,6 +18,9 @@ from src.core.domain.work_type import WorkType
 from src.core.ports.evaluator_port import EvaluatorPort
 from src.core.ports.output_port import OutputPort
 from src.core.ports.scraper_port import ScraperPort
+
+if TYPE_CHECKING:
+    from src.infra.cost_tracker import CostTracker
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +61,7 @@ class JobSearchService:
         work_types: set[WorkType] | None = None,
         date_posted: DatePosted | None = None,
         active_scrapers: list[ScraperName] | None = None,
+        cost_tracker: "CostTracker | None" = None,
     ) -> RunReport:
         """Execute the full job search pipeline.
 
@@ -80,6 +87,8 @@ class JobSearchService:
                          no date filter is applied.
             active_scrapers: List of ScraperName values that were active this run.
                              Recorded in the RunReport for reporting purposes.
+            cost_tracker: Optional CostTracker instance. When provided, token
+                          usage is recorded per evaluation and a RunCost is built.
 
         Returns:
             RunReport containing qualifying results, near-miss results, and
@@ -114,15 +123,57 @@ class JobSearchService:
 
         logger.info("Total jobs scraped: %d", len(all_jobs))
 
-        # Step 3 — evaluate each job against the resume
-        evaluated: list[MatchResult] = []
-        for job in all_jobs:
-            try:
-                result = await self._evaluator.evaluate(resume, job)
-                evaluated.append(result)
-                logger.info("Evaluated %r @ %r — score=%d", job.title, job.company, result.score)
-            except Exception as exc:
-                logger.error("Evaluation failed for %r: %s", job.title, exc)
+        # Step 3 — evaluate each job against the resume with semaphore-controlled concurrency
+        max_concurrent = int(os.getenv("MAX_CONCURRENT_EVALUATIONS", "2"))
+        evaluation_delay = float(os.getenv("EVALUATION_DELAY_SECONDS", "1.0"))
+        semaphore = asyncio.Semaphore(max_concurrent)
+        logger.info("Evaluation concurrency : %d concurrent", max_concurrent)
+        logger.info("Evaluation delay       : %ss between calls", evaluation_delay)
+
+        async def evaluate_with_limit(job: Job) -> MatchResult | None:
+            """Evaluate a single job with semaphore-controlled concurrency."""
+            async with semaphore:
+                try:
+                    result, input_tokens, output_tokens = (
+                        await self._evaluator.evaluate(
+                            resume,
+                            job,
+                            work_types=work_types_list,
+                        )
+                    )
+                    await asyncio.sleep(evaluation_delay)
+                    if cost_tracker:
+                        eval_cost = cost_tracker.record(
+                            job_title=job.title,
+                            company=job.company,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                        )
+                        if eval_cost:
+                            logger.info(
+                                "Evaluated '%s' @ '%s' — score=%d"
+                                " | tokens=%d/%d | cost=%s",
+                                job.title,
+                                job.company,
+                                result.score,
+                                input_tokens,
+                                output_tokens,
+                                f"${eval_cost.cost_usd:.4f}",
+                            )
+                    else:
+                        logger.info(
+                            "Evaluated '%s' @ '%s' — score=%d",
+                            job.title,
+                            job.company,
+                            result.score,
+                        )
+                    return result
+                except Exception as exc:
+                    logger.error("Evaluation failed for %r: %s", job.title, exc)
+                    return None
+
+        eval_results = await asyncio.gather(*[evaluate_with_limit(job) for job in all_jobs])
+        evaluated = [r for r in eval_results if r is not None]
 
         # Step 4 — sort all evaluated by score descending
         all_evaluated = sorted(evaluated, key=lambda r: r.score, reverse=True)
@@ -156,7 +207,10 @@ class JobSearchService:
         if not qualifying:
             near_misses = [r for r in all_evaluated if r.score < threshold][:5]
 
-        # Step 8 — build RunReport
+        # Step 8 — build run cost summary
+        run_cost = cost_tracker.build_run_cost() if cost_tracker else None
+
+        # Step 9 — build RunReport
         report = RunReport(
             qualifying_results=qualifying,
             near_miss_results=near_misses,
@@ -168,9 +222,10 @@ class JobSearchService:
             run_at=datetime.now(),
             date_posted=date_posted,
             active_scrapers=active_scrapers or [],
+            run_cost=run_cost,
         )
 
-        # Step 9 — log completion summary
+        # Step 10 — log completion summary
         if report.has_qualifying_results:
             logger.info(
                 "Pipeline complete — %d qualifying results (threshold=%d)",
@@ -187,7 +242,7 @@ class JobSearchService:
                 report.suggested_threshold,
             )
 
-        # Step 10 — deliver via all output adapters
+        # Step 11 — deliver via all output adapters
         await asyncio.gather(*[output.deliver(report) for output in self._outputs])
         logger.info("Results delivered via %d output adapter(s)", len(self._outputs))
 

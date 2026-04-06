@@ -220,6 +220,30 @@ Alternative evaluator:
 
 ---
 
+## Cost Tracking Rules
+
+- `SHOW_COST_ESTIMATE` controls all cost visibility — `false` by default
+- `CostTracker` lives in `src/infra/cost_tracker.py`
+- `CostEstimator` lives in `src/infra/cost_estimator.py`
+- `EvaluatorPort` `evaluate()` returns `tuple[MatchResult, int, int]`
+  — `(result, input_tokens, output_tokens)`
+- Token rates are configurable via `.env` — never hardcode pricing values in code
+- Cost columns always present in CSV — empty string when tracking disabled
+- Cost section in email only when `report.run_cost` is not None
+- `CostTracker.enabled=False` has zero performance impact — all tracking
+  bypassed entirely
+
+---
+
+## Rate Limiting Rules
+
+- `MAX_CONCURRENT_EVALUATIONS` controls semaphore size — default `2`
+- `EVALUATION_DELAY_SECONDS` applied after each evaluation inside semaphore — default `1.0`
+- Both loaded from `.env` — never hardcoded
+- Log both values at pipeline start
+
+---
+
 ## Git Rules
 
 - Never commit .env

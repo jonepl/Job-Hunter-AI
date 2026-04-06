@@ -10,6 +10,7 @@ from src.adapters.evaluator.prompts import SYSTEM_PROMPT, USER_PROMPT
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
+from src.core.domain.work_type import WorkType
 from src.core.ports.evaluator_port import EvaluatorPort
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,8 @@ class OpenAIEvaluator(EvaluatorPort):
         self,
         resume: Resume,
         job: Job,
-    ) -> MatchResult:
+        work_types: list[WorkType] | None = None,
+    ) -> tuple[MatchResult, int, int]:
         """Evaluate a job listing against a resume using GPT-4o.
 
         Sends the resume text and job description to GPT-4o and parses the
@@ -111,10 +113,11 @@ class OpenAIEvaluator(EvaluatorPort):
         Args:
             resume: The parsed candidate resume.
             job: The job listing to evaluate.
+            work_types: Optional work type filter context (unused in scoring).
 
         Returns:
-            A MatchResult containing score, breakdown, matched skills,
-            missing skills, seniority level, and hire recommendation.
+            Tuple of (MatchResult, input_tokens, output_tokens).
+            On failure returns (default_result, 0, 0).
         """
         logger.info("OpenAI — evaluating %r @ %s", job.title, job.company)
 
@@ -227,6 +230,9 @@ class OpenAIEvaluator(EvaluatorPort):
             # logger.info("GPT-4o raw response for %r: %s", job.title, data)  # DEBUG — remove after inspection
             evaluated = _EvaluationResponse(**data)
 
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+
             return MatchResult(
                 job=job,
                 score=evaluated.score,
@@ -237,14 +243,14 @@ class OpenAIEvaluator(EvaluatorPort):
                 missing_skills=evaluated.missing_skills,
                 summary=evaluated.summary,
                 hire_recommendation=evaluated.hire_recommendation,
-            )
+            ), input_tokens, output_tokens
 
         except APIError as exc:
             logger.error("OpenAI API error evaluating %r: %s", job.title, exc)
-            return _default_result(job)
+            return _default_result(job), 0, 0
         except (json.JSONDecodeError, ValidationError) as exc:
             logger.error("Invalid GPT-4o response for %r: %s", job.title, exc)
-            return _default_result(job)
+            return _default_result(job), 0, 0
         except Exception as exc:
             logger.error("Unexpected error evaluating %r: %s", job.title, exc)
-            return _default_result(job)
+            return _default_result(job), 0, 0

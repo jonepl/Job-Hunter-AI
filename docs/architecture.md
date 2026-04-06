@@ -105,7 +105,9 @@ job-search-agent/
 │   │
 │   ├── infra/                           ← infrastructure
 │   │   ├── __init__.py
-│   │   └── logging.py                   ← logging config
+│   │   ├── logging.py                   ← logging config
+│   │   ├── cost_tracker.py              ← Accumulates LLM token usage per run
+│   │   └── cost_estimator.py            ← Pre-run static cost estimate
 │   │
 │   ├── core/
 │   │   ├── domain/                      ← Pydantic entities
@@ -115,6 +117,8 @@ job-search-agent/
 │   │   │   ├── resume.py                ← Resume entity
 │   │   │   ├── match_result.py          ← MatchResult entity
 │   │   │   ├── run_report.py            ← RunReport entity
+│   │   │   ├── cost_estimate.py         ← CostEstimate — pre-run cost prediction
+│   │   │   ├── run_cost.py              ← RunCost + EvaluationCost — actual run cost
 │   │   │   ├── scraper_name.py          ← ScraperName enum
 │   │   │   └── search_profile.py        ← SearchProfile — per-profile config model
 │   │   │
@@ -154,7 +158,9 @@ tests/
 │   │   ├── test_args.py                     ← tests for parse_args()
 │   │   └── test_overrides.py               ← tests for apply_cli_overrides()
 │   ├── infra/
-│   │   └── test_logging.py                 ← tests for configure_logging()
+│   │   ├── test_logging.py                 ← tests for configure_logging()
+│   │   ├── test_cost_tracker.py            ← tests for CostTracker
+│   │   └── test_cost_estimator.py          ← tests for estimate_run_cost()
 │   ├── core/
 │   │   ├── domain/
 │   │   │   ├── test_date_posted.py          ← tests for DatePosted enum
@@ -162,6 +168,8 @@ tests/
 │   │   │   ├── test_resume.py               ← tests for Resume entity
 │   │   │   ├── test_match_result.py         ← tests for MatchResult entity
 │   │   │   ├── test_run_report.py           ← tests for RunReport entity
+│   │   │   ├── test_cost_estimate.py        ← tests for CostEstimate entity
+│   │   │   ├── test_run_cost.py             ← tests for RunCost / EvaluationCost entities
 │   │   │   ├── test_scraper_name.py         ← tests for ScraperName enum
 │   │   │   └── test_search_profile.py       ← tests for SearchProfile model
 │   │   │
@@ -280,6 +288,59 @@ class ScraperName(str, Enum):
     # Returns all four ScraperName values
 ```
 
+### `CostEstimate`
+Represents a pre-run static cost estimate calculated from config before any API calls are made. Predicts the cost range based on maximum possible evaluations.
+
+```python
+class CostEstimate(BaseModel):
+    max_jobs: int
+    est_min_cost_usd: float
+    est_max_cost_usd: float
+    provider: str
+    input_cost_per_1m: float
+    output_cost_per_1m: float
+
+    @property
+    def formatted_range(self) -> str: ...
+    # Returns "$0.1234 - $0.5678"
+```
+
+### `EvaluationCost`
+Represents the token usage and cost for a single job evaluation.
+
+```python
+class EvaluationCost(BaseModel):
+    job_title: str
+    company: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+```
+
+### `RunCost`
+Represents the accumulated LLM cost across an entire pipeline run. Built from a list of `EvaluationCost` instances after all evaluations complete.
+
+```python
+class RunCost(BaseModel):
+    evaluations: list[EvaluationCost]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_usd: float
+    provider: str
+    jobs_evaluated: int
+
+    @property
+    def formatted_total(self) -> str: ...
+    # Returns "$0.2134"
+
+    @classmethod
+    def from_evaluations(
+        cls,
+        evaluations: list[EvaluationCost],
+        provider: str
+    ) -> "RunCost": ...
+```
+
 ### `RunReport`
 Represents the full summary of a single pipeline run. Always produced regardless of whether any jobs passed the score threshold.
 
@@ -294,6 +355,9 @@ class RunReport(BaseModel):
     query: str                             # Search query used this run
     location: str                          # Location used this run
     run_at: datetime                       # Timestamp of run completion
+
+    cost_estimate: CostEstimate | None   # None when SHOW_COST_ESTIMATE=false
+    run_cost: RunCost | None             # None when SHOW_COST_ESTIMATE=false
 
     @property
     def has_qualifying_results(self) -> bool: ...
@@ -343,9 +407,15 @@ class EvaluatorPort(ABC):
     async def evaluate(
         self,
         resume: Resume,
-        job: Job
-    ) -> MatchResult:
-        """Evaluate a job listing against a resume."""
+        job: Job,
+        work_types: list[WorkType] | None = None,
+    ) -> tuple[MatchResult, int, int]:
+        """Evaluate a job listing against a resume.
+
+        Returns a tuple of (MatchResult, input_tokens, output_tokens).
+        Token counts are extracted from the API response metadata at
+        no extra cost and made available for cost tracking.
+        """
         ...
 ```
 
@@ -399,7 +469,11 @@ JobSearchService.run(query, location, threshold, top_results)
         │       └── ZipRecruiterAdapter.fetch_jobs()
         │
         ├── 3. Evaluate each job against resume (GPT-4o)
-        │       └── OpenAIEvaluatorAdapter.evaluate()
+        │       ├── Semaphore limits concurrent calls to MAX_CONCURRENT_EVALUATIONS
+        │       ├── EVALUATION_DELAY_SECONDS applied after each evaluation
+        │       ├── Token usage extracted from API response metadata
+        │       ├── CostTracker.record() called per job when SHOW_COST_ESTIMATE=true
+        │       └── OpenAIEvaluatorAdapter.evaluate() → tuple[MatchResult, int, int]
         │
         ├── 4. Sort all evaluated by score descending
         │
@@ -597,6 +671,13 @@ All secrets and configuration values are injected at runtime via `.env`. See `do
 | `TOP_RESULTS` | No | When set caps qualifying results delivered after score filtering. When not set all jobs above SCORE_THRESHOLD are returned. |
 | `JSEARCH_API_KEY` | Optional | Fallback job listings API |
 | `EVALUATOR_PROVIDER` | Optional | Selects evaluator: `openai` or `anthropic` (default: `openai`) |
+| `MAX_CONCURRENT_EVALUATIONS` | No | Max concurrent LLM evaluation requests (default: `2`) |
+| `EVALUATION_DELAY_SECONDS` | No | Seconds delay between evaluations to manage TPM rate limits (default: `1.0`) |
+| `SHOW_COST_ESTIMATE` | No | Enable cost tracking and visibility (default: `false`) |
+| `OPENAI_INPUT_COST_PER_1M` | No | GPT-4o input token rate per million tokens in USD (default: `2.50`) |
+| `OPENAI_OUTPUT_COST_PER_1M` | No | GPT-4o output token rate per million tokens in USD (default: `10.00`) |
+| `ANTHROPIC_INPUT_COST_PER_1M` | No | claude-sonnet-4-5 input token rate per million tokens in USD (default: `3.00`) |
+| `ANTHROPIC_OUTPUT_COST_PER_1M` | No | claude-sonnet-4-5 output token rate per million tokens in USD (default: `15.00`) |
 
 ---
 
@@ -744,3 +825,7 @@ calls a real external API.
 | SCHEDULE_ENABLED controls mode — not a CLI flag | .env variable only | Scheduled Docker containers have no interactive CLI. .env is the correct configuration surface for containerized workloads. |
 | main.py refactored into focused single-responsibility modules | cli/, infra/, bootstrap.py, runner.py as extracted modules | main.py had grown to ~170 lines handling logging, arg parsing, CLI overrides, profile loading, immediate run, and result logging. Extracting into focused modules enables reuse by a future API entrypoint, improves testability, and makes each concern independently maintainable. bootstrap.py and runner.py have no CLI dependency so they can be called from both CLI and API entrypoints. |
 | api/ module created as placeholder | src/api/__init__.py only — no implementation yet | Reserving the module structure now ensures future API development follows the established pattern and does not require structural changes to existing code. |
+| Cost tracking via CostTracker accumulating EvaluatorPort token usage | Tuple return from evaluate() carrying MatchResult + token counts | OpenAI and Anthropic both return token usage in API responses at no extra cost. Extracting it at the evaluator level keeps cost tracking out of core domain logic. CostTracker in infra/ owns accumulation and calculation. SHOW_COST_ESTIMATE=false has zero performance impact — all tracking is bypassed entirely. |
+| Cost tracking disabled by default via SHOW_COST_ESTIMATE=false | Opt-in via .env flag | Zero overhead when disabled. Users who do not need cost visibility pay no performance penalty. All tracking code is bypassed entirely when flag is false. |
+| Token rates configurable via .env variables | OPENAI_INPUT_COST_PER_1M, OPENAI_OUTPUT_COST_PER_1M, ANTHROPIC_INPUT_COST_PER_1M, ANTHROPIC_OUTPUT_COST_PER_1M | LLM providers adjust pricing frequently. Configurable rates mean no code change is needed when pricing changes — just update .env. |
+| Evaluation concurrency and delay configurable via .env | MAX_CONCURRENT_EVALUATIONS=2 and EVALUATION_DELAY_SECONDS=1.0 as defaults | TPM rate limits are tier-dependent. A fixed concurrency value would be wrong for many users. Configurable defaults allow tuning without code changes as API tier improves. |

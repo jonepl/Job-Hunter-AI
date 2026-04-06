@@ -181,6 +181,24 @@ src/
 - Save ranked results to a structured output file persisted via Docker volume mount
 - Deliver results via SMTP email to the configured recipient
 
+### LLM Cost Visibility
+
+- Pre-run cost estimate shown at startup per profile when `SHOW_COST_ESTIMATE=true`
+- Estimate shows max jobs to evaluate and predicted cost range in USD
+- Actual token usage tracked per evaluation from API response metadata
+- Per-job cost logged during evaluation
+- Cumulative cost summary logged at run completion
+- Cost summary included in email footer
+- Cost columns included in CSV output
+- All cost tracking disabled by default (`SHOW_COST_ESTIMATE=false`) for zero performance overhead
+- Token rates configurable via `.env` — no code change needed when providers adjust pricing
+
+### LLM Rate Limiting
+
+- Concurrent evaluation requests controlled via `MAX_CONCURRENT_EVALUATIONS`
+- Configurable delay between evaluations via `EVALUATION_DELAY_SECONDS`
+- Prevents TPM rate limit errors when evaluating large job sets
+
 ---
 
 ## 8. Success Criteria
@@ -193,6 +211,9 @@ src/
 - Saves results to an output file that persists after the container stops
 - Core domain logic is fully testable without real scrapers or APIs
 - All LLM calls handle API errors gracefully with try/except
+- When `SHOW_COST_ESTIMATE=true` cost estimate appears before each profile run
+- Actual LLM cost appears in run completion log, email footer, and CSV
+- No 429 TPM rate limit errors under normal operating conditions
 
 ---
 
@@ -204,6 +225,7 @@ src/
 - Resume and output files are managed via Docker volume mounts — not baked into the image
 - No cloud infrastructure costs in Phase 1
 - No more than 50 results scraped per platform per run
+- LLM API rate limits managed via configurable concurrency and delay settings — no manual intervention needed
 
 ---
 
