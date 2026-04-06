@@ -1,5 +1,7 @@
 # Job Hunter AI
 
+- 0.0.5: Add JSEARCH_MAX_PAGES env var for configurable JSearch pagination
+
 - 0.0.4: Add Anthropic LLM Score Evaluator
 
 - 0.0.3: Refactor job retrieval from Web Scraping to APIS due to bot detection

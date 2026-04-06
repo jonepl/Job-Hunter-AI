@@ -59,6 +59,16 @@ class JSearchScraper(ScraperPort):
             A list of validated Job domain entities, or an empty list on any
             HTTP error, timeout, or unexpected exception.
         """
+        max_pages = int(os.getenv("JSEARCH_MAX_PAGES", "2"))
+        clamped = max(1, min(max_pages, 10))
+        if clamped != max_pages:
+            logger.warning(
+                "%s — JSEARCH_MAX_PAGES clamped to %d (valid range: 1-10)",
+                self.platform,
+                clamped,
+            )
+        max_pages = clamped
+
         headers = {
             "X-RapidAPI-Key": os.getenv("JSEARCH_API_KEY", ""),
             "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
@@ -66,7 +76,7 @@ class JSearchScraper(ScraperPort):
         params = {
             "query": f"{query} in {location}",
             "page": "1",
-            "num_pages": "1",
+            "num_pages": str(max_pages),
             "country": "US"
         }
 
@@ -100,6 +110,13 @@ class JSearchScraper(ScraperPort):
                 "%s — no date posted filter (all dates returned)",
                 self.platform,
             )
+
+        logger.info(
+            "%s — fetching %d page(s) (%d jobs max)",
+            self.platform,
+            max_pages,
+            max_pages * 10,
+        )
 
         jobs: list[Job] = []
 

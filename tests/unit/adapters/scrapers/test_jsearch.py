@@ -292,3 +292,142 @@ async def test_no_date_posted_logged_when_not_set(caplog):
             await scraper.fetch_jobs("Python Developer", "Remote", date_posted=None)
 
     assert any("no date posted filter" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# JSEARCH_MAX_PAGES — pagination configuration
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_num_pages_default_is_two(monkeypatch):
+    """JSEARCH_MAX_PAGES not set → params has num_pages='2'."""
+    monkeypatch.delenv("JSEARCH_MAX_PAGES", raising=False)
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+        await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert captured_params.get("num_pages") == "2"
+
+
+@pytest.mark.asyncio
+async def test_num_pages_loaded_from_env(monkeypatch):
+    """JSEARCH_MAX_PAGES=5 → params has num_pages='5'."""
+    monkeypatch.setenv("JSEARCH_MAX_PAGES", "5")
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+        await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert captured_params.get("num_pages") == "5"
+
+
+@pytest.mark.asyncio
+async def test_num_pages_clamped_to_minimum(monkeypatch, caplog):
+    """JSEARCH_MAX_PAGES=0 → clamped to 1, WARNING logged containing 'clamped'."""
+    import logging
+
+    monkeypatch.setenv("JSEARCH_MAX_PAGES", "0")
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with caplog.at_level(logging.WARNING, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+            await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert captured_params.get("num_pages") == "1"
+    assert any("clamped" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_num_pages_clamped_to_maximum(monkeypatch, caplog):
+    """JSEARCH_MAX_PAGES=15 → clamped to 10, WARNING logged containing 'clamped'."""
+    import logging
+
+    monkeypatch.setenv("JSEARCH_MAX_PAGES", "15")
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with caplog.at_level(logging.WARNING, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+            await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert captured_params.get("num_pages") == "10"
+    assert any("clamped" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_num_pages_one_is_valid(monkeypatch, caplog):
+    """JSEARCH_MAX_PAGES=1 → params has num_pages='1', no WARNING logged."""
+    import logging
+
+    monkeypatch.setenv("JSEARCH_MAX_PAGES", "1")
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with caplog.at_level(logging.WARNING, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+            await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert captured_params.get("num_pages") == "1"
+    assert not any("clamped" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_num_pages_ten_is_valid(monkeypatch, caplog):
+    """JSEARCH_MAX_PAGES=10 → params has num_pages='10', no WARNING logged."""
+    import logging
+
+    monkeypatch.setenv("JSEARCH_MAX_PAGES", "10")
+    scraper = JSearchScraper(platform="indeed")
+    captured_params = {}
+
+    def capture_get(url, headers, params, timeout):
+        captured_params.update(params)
+        return make_mock_response(_JSEARCH_RESPONSE)
+
+    with caplog.at_level(logging.WARNING, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
+            await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert captured_params.get("num_pages") == "10"
+    assert not any("clamped" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_log_message_includes_page_count(monkeypatch, caplog):
+    """JSEARCH_MAX_PAGES=3 → INFO log contains '3 page(s)' and '30 jobs max'."""
+    import logging
+
+    monkeypatch.setenv("JSEARCH_MAX_PAGES", "3")
+    scraper = JSearchScraper(platform="indeed")
+
+    with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
+        with patch("src.adapters.scrapers.jsearch.requests.get",
+                   return_value=make_mock_response(_JSEARCH_RESPONSE)):
+            await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert any("3 page(s)" in r.message for r in caplog.records)
+    assert any("30 jobs max" in r.message for r in caplog.records)

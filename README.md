@@ -118,6 +118,9 @@ SCORE_THRESHOLD=70
 
 # Optional — remove to return all qualifying results
 # TOP_RESULTS=10
+
+# Optional — JSearch pages per API call (1-10, each page = 10 jobs, default: 2)
+# JSEARCH_MAX_PAGES=2
 ```
 
 See [docs/env.md](docs/env.md) for descriptions of every variable and how to generate a Gmail App Password.
@@ -339,6 +342,15 @@ python -m src.main \
 ```
 
 CLI `--scrapers` overrides `ACTIVE_SCRAPERS` in `.env` for that run only.
+
+**JSearch result volume** (`JSEARCH_MAX_PAGES`, default: `2`)
+Controls how many pages are fetched per JSearch API call. Each page returns up to 10 jobs.
+Multiple pages are bundled into a single API request — increasing this does not consume
+additional free-tier quota. Valid range: `1`–`10`. Values outside this range are clamped automatically.
+Add to `.env` to override:
+```env
+JSEARCH_MAX_PAGES=5   # 50 jobs per JSearch platform per run
+```
 
 ---
 

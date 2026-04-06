@@ -30,6 +30,7 @@ all placeholder values with real credentials before running.
 | TOP_RESULTS | When set caps the number of qualifying results delivered after score filtering. | not set — all qualifying results returned |
 | DATE_POSTED | Default recency filter for job listings. Values: `24h`, `3days`, `week`, `month`. Used in legacy single search mode. | `3days` |
 | ACTIVE_SCRAPERS | Comma-separated list of scrapers. Used in legacy single search mode. Supported: `linkedin`, `indeed`, `glassdoor`, `ziprecruiter`. | all four |
+| JSEARCH_MAX_PAGES | Number of result pages fetched per JSearch API call. Each page contains up to 10 job listings. Multiple pages are bundled into a single API request and do not increase free tier quota consumption. Valid range: 1–10. Values outside this range are clamped automatically. Examples: 1 → 10 jobs, 2 → 20 jobs (default), 5 → 50 jobs, 10 → 100 jobs. | `2` |
 
 ---
 
@@ -166,6 +167,11 @@ MAX_CONCURRENT_EVALUATIONS=3
 
 # ── JSearch (Default to us) ───────────────────────────────────────────────────────────────────
 JSEARCH_COUNTRY=us
+
+# JSearch result pages per API call
+# Each page = 10 jobs, 1 API request
+# Valid range: 1-10 (default: 2)
+JSEARCH_MAX_PAGES=2
 ```
 
 ---
