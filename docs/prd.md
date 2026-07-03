@@ -260,3 +260,66 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
 - No user authentication
 - No Kubernetes or cloud infrastructure
 - No LangGraph orchestration
+
+---
+
+## 12. Implementation Divergences
+
+This section records where the current codebase diverges from the requirements
+above. It is a living audit intended to keep the PRD honest; each item is either
+a contradiction to reconcile, undocumented behavior to fold into the spec, or a
+stale PRD section to refresh.
+
+### 12.1 Contradictions (code does not match the PRD)
+
+| # | PRD requirement | Actual behavior | Location |
+|---|---|---|---|
+| C1 | "Cache extracted resume text — do not re-parse on every run" (§7, §8) | Resume PDF is re-opened and re-parsed on **every** `run()` call — once per profile and again on every scheduled trigger. No cache layer exists. | `JobSearchService._parse_resume` |
+| C2 | "Cap results at 50 listings per platform per run" / "No more than 50 results scraped per platform" (§7, §9) | Both scrapers default to `limit=25` and the service never overrides it, so the effective cap is **25/platform**. JSearch additionally fetches up to `JSEARCH_MAX_PAGES` (clamped 1–10 → up to 100 raw results) then discards down to 25, paying for pages it throws away. The number 50 appears nowhere in code. | `LinkedInScraper`, `JSearchScraper`, `JobSearchService` |
+| C3 | Default score threshold is `70` (§3, §7) | Real user-facing default is `75` (`SearchProfile.score_threshold` default and env default). The `run()` signature default of 70 is always overridden by profiles. | `SearchProfile` |
+
+### 12.2 Implemented but undocumented (code does more than the PRD)
+
+- **Work-type filtering** — `WORK_TYPE` / `PROFILE_N_WORK_TYPE` (remote/onsite/hybrid)
+  is mapped to LinkedIn URL params and JSearch `remote_jobs_only`. Not listed in
+  §7 Inputs. Side effect: location auto-resolves to `"United States"` when work
+  type is remote-only and no location is supplied.
+- **Date-posted filtering** — `DATE_POSTED` / `PROFILE_N_DATE_POSTED`
+  (24h / 3days / week / month, default `3days`) applied to both scrapers. Absent
+  from the PRD entirely.
+- **Rich scoring rubric** — §7 states a result contains only title, company,
+  location, URL, score, matched/missing skills, and summary. `MatchResult` also
+  carries `seniority_level`, `years_experience_detected`, `hire_recommendation`,
+  and a 9-category `score_breakdown` (role alignment, technical stack match,
+  system design/architecture, impact & metrics, domain/industry experience,
+  problem-space relevance, ownership & leadership, resume signal quality, career
+  trajectory). This rubric is undocumented.
+- **Broader CLI overrides** — §7 mentions only `--scrapers`. The CLI also
+  supports `--query` and `--work-type`.
+
+### 12.3 Stale PRD sections to refresh
+
+- **Project structure (§5)** omits much of the codebase: `anthropic_evaluator.py`,
+  the evaluator and scraper factories, `bootstrap.py`, `runner.py`, `scheduler.py`,
+  `service_factory.py`, the entire `cli/` and `infra/` packages, and most domain
+  models (`SearchProfile`, `RunReport`, `RunCost`, `CostEstimate`, `WorkType`,
+  `DatePosted`, `ScraperName`). The diagram lists only Job/Resume/MatchResult.
+- **Phase boundaries (§10)** are stale. Phase 2 lists "parallel scraping" and
+  "scheduling for automated runs" as future work, but scraping is already
+  concurrent (`asyncio.gather` over scrapers) and APScheduler scheduling already
+  ships in Phase 1. Only LangGraph remains correctly deferred.
+- **Tech stack (§6)** does not list `beautifulsoup4`, `lxml`, `requests`, or
+  `pytz` (all in `requirements.txt`). `beautifulsoup4` / `lxml` appear **unused**
+  — LinkedIn scraping uses Playwright selectors, not BeautifulSoup — and are
+  candidates for removal.
+
+### 12.4 Minor oversights
+
+- **Empty stub packages** `src/api/`, `src/evaluator/`, `src/scraper/`, and
+  `src/tools/` contain only `__init__.py`. `src/evaluator` and `src/scraper` are
+  leftover scaffolding (real code lives under `adapters/`); `src/api` is a
+  placeholder for the future API entrypoint referenced in runner/bootstrap
+  docstrings.
+- **"Minimum 2-second delay between requests" (§7)** is enforced only for
+  LinkedIn. JSearch issues a single batched request per platform, so no
+  inter-request delay applies there.

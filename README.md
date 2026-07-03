@@ -1,14 +1,14 @@
 # Job Search Automation Agent
 
-A Dockerized Python backend service that scrapes job listings from LinkedIn, Indeed, Glassdoor, and ZipRecruiter, evaluates each listing against a candidate resume using OpenAI GPT-4o, and delivers the top ranked matches via email and CSV file.
+A Dockerized Python backend service that collects job listings from LinkedIn (scraped directly via Playwright) and from Indeed, Glassdoor, and ZipRecruiter (via the JSearch API), evaluates each listing against a candidate resume using an LLM (OpenAI GPT-4o or Anthropic Claude), and delivers the top ranked matches via email and CSV file.
 
 ---
 
 ## How It Works
 
-1. Scrapes job listings concurrently from all four platforms
-2. Parses your resume PDF and sends each job + resume to GPT-4o for scoring
-3. Filters results below a configurable score threshold (default: 70)
+1. Collects job listings concurrently from all four platforms (LinkedIn via Playwright; Indeed, Glassdoor, and ZipRecruiter via the JSearch API)
+2. Parses your resume PDF and sends each job + resume to the configured LLM for scoring
+3. Filters results below a configurable score threshold (default: 75)
 4. Returns all qualifying matches ranked by relevance (or top N when TOP_RESULTS is set)
 5. Always delivers a report via email and CSV — even when zero jobs qualify
 
@@ -53,7 +53,7 @@ EVALUATOR_PROVIDER=openai
 Requires: `OPENAI_API_KEY`
 Uses structured output enforcement via `response_format` json_schema strict mode.
 
-**Anthropic Claude (claude-sonnet-4-6):**
+**Anthropic Claude (claude-sonnet-4-5):**
 ```env
 EVALUATOR_PROVIDER=anthropic
 ```
@@ -67,7 +67,7 @@ Switching providers requires only a `.env` change — no code changes needed.
 ## Requirements
 
 - Docker + Docker Compose
-- An OpenAI API key (GPT-4o access) or Anthropic API key (claude-sonnet-4-6 access)
+- An OpenAI API key (GPT-4o access) or Anthropic API key (claude-sonnet-4-5 access)
 - A Gmail account with an App Password configured
 - Your resume as a PDF file
 
@@ -114,7 +114,7 @@ GMAIL_APP_PASSWORD=your_16_char_app_password
 EMAIL_RECIPIENT=recipient@example.com
 
 # Scoring
-SCORE_THRESHOLD=70
+SCORE_THRESHOLD=75
 
 # Optional — remove to return all qualifying results
 # TOP_RESULTS=10
@@ -474,9 +474,9 @@ The short version:
 | Component | Technology |
 |---|---|
 | Language | Python 3.10+ |
-| LLM | OpenAI GPT-4o OR Claude Sonnet-4-6 |
-| JS-rendered scraping | Playwright (LinkedIn, Glassdoor) |
-| Static scraping | BeautifulSoup + requests (Indeed, ZipRecruiter) |
+| LLM | OpenAI GPT-4o OR Claude Sonnet-4-5 |
+| Browser scraping | Playwright (LinkedIn) |
+| Job aggregator API | JSearch (RapidAPI) via requests (Indeed, Glassdoor, ZipRecruiter) |
 | Resume parsing | PyPDF2 |
 | Config management | python-dotenv |
 | Containerization | Docker + docker-compose |

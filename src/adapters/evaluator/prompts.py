@@ -109,3 +109,18 @@ Do not wrap the response in markdown code fences.
 Do not include ```json or ``` anywhere in your response.
 Begin your response with {{ and end with }}.
 """
+
+"""
+Resume Generation Notes:
+
+- Key Skills
+- Keywords
+- ATS Compliant
+- Skills present in bullets
+- No hyphens
+- No Orchestrated, Championed, Pioneered, Helmed, Realm, Comprehensive, Demonstrating, showcasing, Measurable, meticulous
+- No em dash, use comma
+- what is the hiring manager looking fot
+
+Generating Results is pretty slow
+"""
