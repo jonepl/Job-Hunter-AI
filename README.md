@@ -448,7 +448,7 @@ All tests mock external dependencies — no real API calls, no live network, no 
 
 ## Adding a New Job Platform
 
-Follow the skill in [ai/skills/add-job-source.md](ai/skills/add-job-source.md) or run `/add-job-source [platform]` in Claude Code.
+Follow the skill in [.claude/skills/add-job-source/SKILL.md](.claude/skills/add-job-source/SKILL.md) or run `/add-job-source [platform]` in Claude Code.
 
 The short version:
 1. Create `src/adapters/scrapers/<platform>.py` implementing `ScraperPort`
@@ -464,8 +464,10 @@ The short version:
 | [docs/prd.md](docs/prd.md) | Product requirements |
 | [docs/architecture.md](docs/architecture.md) | Architecture decisions and diagrams |
 | [docs/env.md](docs/env.md) | Environment variable reference |
-| [ai/rules.md](ai/rules.md) | Coding conventions — read before making changes |
-| [ai/commands.md](ai/commands.md) | Claude Code command shortcuts |
+| [docs/adr.md](docs/adr.md) | Architecture Decision Records (living log) |
+| [CLAUDE.md](CLAUDE.md) | Agent guide — auto-loaded by Claude Code every session |
+| [.claude/rules/](.claude/rules/) | Coding conventions by topic — read before making changes |
+| [.claude/commands/](.claude/commands/) | Claude Code slash commands |
 
 ---
 

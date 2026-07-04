@@ -28,14 +28,14 @@ Hexagonal Architecture organizes the application into three distinct layers:
 │  └──────┬──────┘         │                 │           │
 │         │                │                 │           │
 ├─────────┼────────────────┼─────────────────┼───────────┤
-│         │           PORTS (Interfaces)      │          │
+│         │           PORTS (Interfaces)     │           │
 │         ▼                ▼                 ▼           │
 │  ┌─────────────┐  ┌─────────────┐  ┌────────────────┐  │
 │  │ ScraperPort │  │EvaluatorPort│  │  OutputPort    │  │
 │  └──────┬──────┘  └──────┬──────┘  └───────┬────────┘  │
 │         │                │                 │           │
 ├─────────┼────────────────┼─────────────────┼───────────┤
-│         │            CORE DOMAIN            │          │
+│         │            CORE DOMAIN           │           │
 │         ▼                ▼                 ▼           │
 │  ┌─────────────────────────────────────────────────┐   │
 │  │              JobSearchService                   │   │
@@ -70,20 +70,31 @@ No core domain code imports from adapters. All dependencies point inward — ada
 ```
 job-search-agent/
 │
-├── ai/                                  ← Agent Control System
-│   ├── rules.md
-│   ├── commands.md
-│   └── skills/
-│       ├── environment-setup.md
-│       ├── feature-development.md
-│       ├── debugging.md
-│       ├── testing.md
-│       ├── add-job-source.md
-│       └── resume-evaluation.md
+├── CLAUDE.md                            ← Auto-loaded agent guide (start here)
+│
+├── .claude/                             ← Agent Control System (Claude Code)
+│   ├── rules/                           ← Topic-scoped conventions
+│   │   ├── architecture.md
+│   │   ├── scraping.md
+│   │   ├── evaluation.md
+│   │   ├── output-and-scheduling.md
+│   │   ├── testing.md
+│   │   ├── code-style.md
+│   │   └── docker.md
+│   ├── commands/                        ← Slash commands (setup, run-agent, …)
+│   └── skills/                          ← Bundled workflows
+│       ├── environment-setup/SKILL.md
+│       ├── feature-development/SKILL.md
+│       ├── add-job-source/SKILL.md
+│       ├── debugging/SKILL.md
+│       ├── testing/SKILL.md
+│       ├── resume-evaluation/SKILL.md
+│       └── docker/SKILL.md
 │
 ├── docs/
 │   ├── prd.md                           ← Product Requirements Document
 │   ├── architecture.md                  ← This file
+│   ├── adr.md                           ← Architecture Decision Records (living log)
 │   ├── env.md                           ← Environment variable reference
 │   └── resume/
 │       └── resume.pdf                   ← Candidate resume (volume mounted)
@@ -139,9 +150,12 @@ job-search-agent/
 │       │   ├── jsearch.py
 │       │   └── scraper_factory.py       ← Builds active scraper instances
 │       │
-│       ├── evaluator/                   ← LLM evaluation adapter
+│       ├── evaluator/                   ← LLM evaluation adapters
 │       │   ├── __init__.py
-│       │   └── openai_evaluator.py
+│       │   ├── openai_evaluator.py
+│       │   ├── anthropic_evaluator.py
+│       │   ├── prompts.py               ← Shared evaluation prompt text
+│       │   └── factory.py               ← Selects evaluator from EVALUATOR_PROVIDER
 │       │
 │       └── output/                      ← Delivery adapters
 │           ├── __init__.py
@@ -154,6 +168,7 @@ tests/
 │   ├── test_bootstrap.py                    ← tests for load_profiles()
 │   ├── test_runner.py                       ← tests for run_immediate()
 │   ├── test_scheduler.py                    ← tests for run_all_profiles()
+│   ├── test_main_args.py                    ← tests for main() argument wiring
 │   ├── cli/
 │   │   ├── test_args.py                     ← tests for parse_args()
 │   │   └── test_overrides.py               ← tests for apply_cli_overrides()
@@ -187,31 +202,17 @@ tests/
 │       │   ├── test_jsearch.py
 │       │   └── test_scraper_factory.py
 │       ├── evaluator/
-│       │   └── test_openai_evaluator.py
-│       └── output/
-│           ├── test_email_output.py
-│           └── test_file_output.py
-│
-├── integration/                             ← mirrors src/ exactly
-│   ├── core/
-│   │   └── services/
-│   │       └── test_job_search_service.py   ← full pipeline integration test
-│   │
-│   └── adapters/
-│       ├── scrapers/
-│       │   ├── test_linkedin.py
-│       │   └── test_jsearch.py
-│       ├── evaluator/
-│       │   └── test_openai_evaluator.py
+│       │   ├── test_openai_evaluator.py
+│       │   ├── test_anthropic_evaluator.py
+│       │   └── test_factory.py
 │       └── output/
 │           ├── test_email_output.py
 │           └── test_file_output.py
 │
 ├── conftest.py                              ← shared fixtures for all tests
-└── fixtures/                               ← static test data
-│   ├── sample_resume.pdf                   ← test resume
-│   ├── sample_job.json                     ← sample job listing
-│   └── sample_match_result.json            ← sample evaluation result
+│
+│   (No integration/ suite or fixtures/ directory exists yet — unit tests only.
+│    Integration coverage is deferred; see §13 and docs/prd.md §12.)
 │
 ├── logs/                                ← Persistent log output (volume mounted)
 ├── output/                              ← CSV results output (volume mounted)
@@ -634,7 +635,7 @@ RUN playwright install --with-deps
 # Copy application source
 COPY src/ ./src/
 
-CMD ["python", "-m", "src.core.services.job_search_service"]
+CMD ["python", "-m", "src.main"]
 ```
 
 ### `docker-compose.yml` (outline)
@@ -663,11 +664,11 @@ All secrets and configuration values are injected at runtime via `.env`. See `do
 | Variable | Required | Purpose |
 |---|---|---|
 | `OPENAI_API_KEY` | Yes | GPT-4o evaluation |
-| `ANTHROPIC_API_KEY` | Yes | Claude Code authentication |
+| `ANTHROPIC_API_KEY` | Conditional | Required when `EVALUATOR_PROVIDER=anthropic` — API access for `AnthropicEvaluator` (claude-sonnet-4-5) |
 | `GMAIL_ADDRESS` | Yes | SMTP sender address |
 | `GMAIL_APP_PASSWORD` | Yes | Gmail App Password for SMTP |
 | `EMAIL_RECIPIENT` | Yes | Results delivery address |
-| `SCORE_THRESHOLD` | Yes | Minimum match score (default: 70). When no jobs meet this threshold a zero results report is delivered with top 5 near-miss jobs and a suggested lower threshold value. |
+| `SCORE_THRESHOLD` | Yes | Minimum match score (default: 75). When no jobs meet this threshold a zero results report is delivered with top 5 near-miss jobs and a suggested lower threshold value. |
 | `TOP_RESULTS` | No | When set caps qualifying results delivered after score filtering. When not set all jobs above SCORE_THRESHOLD are returned. |
 | `JSEARCH_API_KEY` | Optional | Fallback job listings API |
 | `EVALUATOR_PROVIDER` | Optional | Selects evaluator: `openai` or `anthropic` (default: `openai`) |
@@ -683,13 +684,16 @@ All secrets and configuration values are injected at runtime via `.env`. See `do
 
 ## 13. Testing Strategy
 
-The test suite mirrors the `src/` directory structure exactly inside
-both `unit/` and `integration/` directories. Every module has a
-corresponding unit test and integration test.
+**As-built:** the current suite is **unit tests only**, under `tests/unit/`,
+mirroring the `src/` directory structure exactly. There is no `tests/integration/`
+suite and no `tests/fixtures/` directory today — integration coverage is a
+deferred goal (see Known Divergences and `docs/prd.md` §12). The unit convention
+below is enforced; the integration column describes the intended shape if/when it
+is added.
 
 ### Test Type Responsibilities
 
-| | Unit Test | Integration Test |
+| | Unit Test (as-built) | Integration Test (deferred) |
 |---|---|---|
 | **What it tests** | Module in complete isolation | Module interacting with its dependencies |
 | **External calls** | All mocked — no real APIs or files | Real file I/O, real API response shapes |
@@ -697,22 +701,15 @@ corresponding unit test and integration test.
 | **Scope** | One function or class | One adapter end-to-end |
 | **Failures reveal** | Logic bugs in your code | Compatibility bugs with external systems |
 
-### Example — LinkedInAdapter
+### Example — LinkedInScraper unit test
 
-**Unit test** (`tests/unit/adapters/scrapers/test_linkedin.py`):
-- Mock Playwright browser entirely
-- Test fetch_jobs() returns a list of validated Job Pydantic models
-- Test fetch_jobs() handles a timeout gracefully
-- Test fetch_jobs() handles malformed HTML gracefully
-- Test that the 2 second rate limit delay is applied
+`tests/unit/adapters/scrapers/test_linkedin.py`:
+- Mock the Playwright browser entirely
+- `fetch_jobs()` returns a list of validated `Job` Pydantic models
+- `fetch_jobs()` handles a timeout gracefully
+- `fetch_jobs()` handles malformed HTML gracefully
+- The 2-second rate-limit delay is applied
 - No real browser, no real network call
-
-**Integration test** (`tests/integration/adapters/scrapers/test_linkedin.py`):
-- Use a saved HTML fixture of a real LinkedIn results page
-- Run fetch_jobs() against the fixture HTML
-- Assert correct fields are extracted
-- Assert Pydantic validation passes on real-world HTML structure
-- No live network call — tests against real HTML shapes only
 
 ### Shared Fixtures — `conftest.py`
 
@@ -748,25 +745,26 @@ def sample_resume():
 
 @pytest.fixture
 def sample_match_result(sample_job):
+    # NOTE: MatchResult also requires the scoring-rubric fields
+    # (seniority_level, years_experience_detected, hire_recommendation, and a
+    # 9-category score_breakdown). See src/core/domain/match_result.py.
     return MatchResult(
         job=sample_job,
         score=85,
         matched_skills=["Python", "REST APIs"],
         missing_skills=["Kubernetes"],
-        summary="Strong match with a gap in container orchestration."
+        summary="Strong match with a gap in container orchestration.",
+        # ... rubric fields omitted here for brevity
     )
 ```
 
 ### Running Tests
 ```bash
-# Run full test suite
-pytest tests/ -v
-
-# Run unit tests only
+# Run the unit suite (the only suite that exists today)
 pytest tests/unit/ -v
 
-# Run integration tests only
-pytest tests/integration/ -v
+# Run a single layer
+pytest tests/unit/core/domain/ -v
 
 # Run tests for a specific module
 pytest tests/unit/adapters/scrapers/test_linkedin.py -v
@@ -796,36 +794,34 @@ calls a real external API.
 
 ---
 
-## 15. Architecture Decision Record (ADR)
+## 15. Architecture Decision Records (ADR)
 
-| Decision | Choice | Rationale |
-|---|---|---|
-| Architecture pattern | Hexagonal (Ports & Adapters) | Isolates core logic from volatile external systems |
-| Domain entities | Pydantic models | Validates unreliable scraped and LLM data at boundaries |
-| Port interfaces | Abstract Base Classes | Explicit contracts with runtime enforcement |
-| Scraping approach | Asynchronous (asyncio) | Reduces total scrape time to single slowest platform |
-| LLM provider | OpenAI GPT-4o | Strong reasoning for resume-JD evaluation |
-| Email delivery | Gmail SMTP (smtplib) | Free, no third-party dependency, built into Python |
-| Output format | CSV | Simple, portable, human-readable |
-| Containerization | Single Docker container | Simplicity for Phase 1 local development |
-| Logging | Console + file | Full observability during development and scheduled runs |
-| Trigger | Immediate mode + APScheduler scheduled mode | Both modes supported. SCHEDULE_ENABLED in .env controls which runs. |
-| Test structure | Mirror `src/` in both `unit/` and `integration/` | Easy module location, clear coverage mapping per module |
-| Shared test fixtures | `conftest.py` + `fixtures/` directory | Eliminates repeated setup, ensures consistent test data |
-| Scraping method — LinkedIn | Playwright | JavaScript-rendered page — requires real browser execution |
-| Scraping method — Indeed, Glassdoor, ZipRecruiter | JSearch API (RapidAPI) | Bot detection makes direct scraping non-viable for all three platforms (TLS fingerprinting, Cloudflare, JS cookie challenge) |
-| Consolidated Indeed/Glassdoor/ZipRecruiter into JSearchScraper | Single JSearchScraper with platform parameter | All three platforms block direct scraping. JSearch is the permanent reliable source. Separate adapters were YAGNI — speculative generality with no practical benefit for a personal tool |
-| Dual evaluator provider support | OpenAI GPT-4o (default) + Anthropic claude-sonnet-4-5 (alternative) | Hexagonal Architecture makes adding a second evaluator adapter trivial. Dual provider support enables cost comparison, fallback on API outage, and provider flexibility with zero core logic changes |
-| Always deliver a run report | RunReport delivered on every run including zero-result runs | Silent zero-result runs gave users no feedback when thresholds were aggressive. Always delivering a report with near-miss results and threshold suggestions closes the feedback loop without requiring users to read logs. |
-| TOP_RESULTS is optional | None when not set — all qualifying results returned | TOP_RESULTS is an optional delivery convenience. The app is fully functional without it. Forcing a default cap would silently hide qualifying results from users who never set the variable. |
-| Date posted filter configured via .env with CLI override | `DATE_POSTED=3days` default, `--date-posted` CLI argument overrides | A persistent default prevents stale listings appearing on every run without requiring the user to pass the flag each time. The CLI override allows per-run flexibility without changing `.env`. Default of `3days` balances freshness with coverage. |
-| Scraper selection via ACTIVE_SCRAPERS .env variable and --scrapers CLI override | `ScraperName` enum + `ScraperFactory` pattern | Hardcoded scraper instantiation gave no runtime control. `ScraperName` enum centralises valid scraper names preventing typos. `ScraperFactory` isolates instantiation logic from `main.py` keeping startup code clean. CLI override enables per-run flexibility without `.env` edits. |
-| APScheduler for in-process scheduling | BlockingScheduler with CronTrigger | Keeps scheduling inside the container with no host cron dependency. Cron syntax is more expressive than interval-based scheduling. Timezone support handles daylight saving correctly. |
-| Multiple search profiles via PROFILE_N_ prefix pattern | Numbered env var prefix with PROFILE_COUNT | Enables multiple independent searches per run without code changes. Each profile delivers its own report making results easy to distinguish. Numbered prefix is readable and extensible. |
-| SCHEDULE_ENABLED controls mode — not a CLI flag | .env variable only | Scheduled Docker containers have no interactive CLI. .env is the correct configuration surface for containerized workloads. |
-| main.py refactored into focused single-responsibility modules | cli/, infra/, bootstrap.py, runner.py as extracted modules | main.py had grown to ~170 lines handling logging, arg parsing, CLI overrides, profile loading, immediate run, and result logging. Extracting into focused modules enables reuse by a future API entrypoint, improves testability, and makes each concern independently maintainable. bootstrap.py and runner.py have no CLI dependency so they can be called from both CLI and API entrypoints. |
-| api/ module created as placeholder | src/api/__init__.py only — no implementation yet | Reserving the module structure now ensures future API development follows the established pattern and does not require structural changes to existing code. |
-| Cost tracking via CostTracker accumulating EvaluatorPort token usage | Tuple return from evaluate() carrying MatchResult + token counts | OpenAI and Anthropic both return token usage in API responses at no extra cost. Extracting it at the evaluator level keeps cost tracking out of core domain logic. CostTracker in infra/ owns accumulation and calculation. SHOW_COST_ESTIMATE=false has zero performance impact — all tracking is bypassed entirely. |
-| Cost tracking disabled by default via SHOW_COST_ESTIMATE=false | Opt-in via .env flag | Zero overhead when disabled. Users who do not need cost visibility pay no performance penalty. All tracking code is bypassed entirely when flag is false. |
-| Token rates configurable via .env variables | OPENAI_INPUT_COST_PER_1M, OPENAI_OUTPUT_COST_PER_1M, ANTHROPIC_INPUT_COST_PER_1M, ANTHROPIC_OUTPUT_COST_PER_1M | LLM providers adjust pricing frequently. Configurable rates mean no code change is needed when pricing changes — just update .env. |
-| Evaluation concurrency and delay configurable via .env | MAX_CONCURRENT_EVALUATIONS=2 and EVALUATION_DELAY_SECONDS=1.0 as defaults | TPM rate limits are tier-dependent. A fixed concurrency value would be wrong for many users. Configurable defaults allow tuning without code changes as API tier improves. |
+The significant architectural decisions for this project — with their context,
+choice, and consequences — are maintained as a living log in
+[docs/adr.md](adr.md). New decisions are appended there rather than in this file.
+
+Key decisions at a glance (see `docs/adr.md` for full records):
+
+| ADR | Decision |
+|---|---|
+| 001 | Hexagonal Architecture (Ports & Adapters) |
+| 002 | Pydantic models for all domain entities |
+| 003 | Port interfaces as Abstract Base Classes |
+| 004 | Asynchronous scraping with asyncio |
+| 005 | OpenAI GPT-4o as the default evaluator |
+| 006 | Gmail SMTP for email delivery |
+| 007 | CSV as the file output format |
+| 008 | Single Docker container via docker-compose |
+| 009 | Console + file logging |
+| 010 | JSearch API for Indeed, Glassdoor, ZipRecruiter (one adapter) |
+| 011 | Dual evaluator provider support (OpenAI + Anthropic) |
+| 012 | Always deliver a RunReport |
+| 013 | TOP_RESULTS is optional |
+| 014 | Date-posted filter via .env with CLI override |
+| 015 | Scraper selection via ACTIVE_SCRAPERS + ScraperFactory |
+| 016 | Opt-in LLM cost tracking with configurable rates |
+| 017 | Configurable evaluation concurrency and delay |
+| 018 | In-process scheduling via APScheduler |
+| 019 | Multiple search profiles via PROFILE_N_ prefix |
+| 020 | main.py refactored into single-responsibility modules |
+| 021 | src/api/ reserved as a placeholder |
