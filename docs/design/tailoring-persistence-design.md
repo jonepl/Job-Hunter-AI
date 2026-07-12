@@ -1,6 +1,31 @@
+> # ⚠️ SUPERSEDED — do not implement from this document
+>
+> This is an **early, CLI-only draft** that predates the web pivot and the final
+> decision set. Its ADR numbers (§11) collide with the real log, and several of its
+> mechanisms are the exact ones the settled plan **explicitly rejected**. Kept only
+> as historical record of the reasoning.
+>
+> **Authoritative sources instead:**
+> - Decisions → `docs/adr.md` (ADR-022…034)
+> - Stories, sequence, fingerprint spec, grill resolutions → `docs/build/vertical-story-split.md`
+> - UI/screen/component contract → `docs/design/ui-spec.md`
+>
+> **Known contradictions with the settled plan (non-exhaustive):**
+> - **No UI** here vs. a React SPA + FastAPI (ADR-026/027).
+> - **7 statuses + strict transition matrix** vs. **9 statuses, permissive any→any** (ADR-025).
+> - **Hashed `sha1` fingerprint** vs. **indexed human-readable TEXT** (ADR-024).
+> - **Similarity/"cheap ratio" near-miss** vs. **exact canonical match, never a similarity
+>   judgment** (ADR-024) — and near-miss *display band* is now `NEAR_MISS_BAND` (ADR-033).
+> - **Writing-sample voice** (`VOICE_SAMPLES_DIR`) vs. **descriptor-only, no samples** (ADR-030).
+> - **`REEVALUATE_AFTER_DAYS` time window** vs. skip-on-fingerprint-match / reuse stored score (B1).
+> - **`output/tailored`** vs. **`data/generations/{id}.docx`** (ADR-034).
+> - This doc's **§11 ADR-022…026** describe *different decisions* than the real ADR-022…026.
+
+---
+
 # Design Spec — Persistence, Dedup, Job Tracking, and Document Generation
 
-**Status:** Draft for implementation
+**Status:** ⚠️ SUPERSEDED (see banner above) — was: Draft for implementation
 **Scope:** Adds durable state (SQLite) and four user-facing features to the Job Search Automation Agent — cross-provider dedup, a job lifecycle tracker, tailored-resume generation, and cover-letter generation — without violating Hexagonal Architecture (core never imports adapters).
 
 This spec assumes the architecture settled over the prior design conversation. Where a decision was made on your behalf it is marked **[DEFAULT — change if wrong]**. Where a decision remains genuinely yours it is marked **[YOUR CALL]**.

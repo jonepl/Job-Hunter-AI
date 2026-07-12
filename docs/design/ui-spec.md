@@ -124,10 +124,12 @@ trajectory. Plus `hire_recommendation` and `seniority_level`.
 band below threshold; `below` (gray) beneath that band. Color is never decorative.
 Used on `JobCard`, the detail pane, and score-colored table cells.
 
-> ⚠ **Open decision:** the design shows a near-miss band of `60–74` at threshold
-> `75` (a fixed 15-point band), but the backend's `RunReport.suggested_threshold`
-> floors the lowest near-miss to the nearest 5 — a different rule. Settle the band
-> boundary before building this component. See `.claude/rules/design.md`.
+> ✓ **Resolved (ADR-033):** the near-miss band is a fixed-width offset below the
+> active threshold — `NEAR_MISS_BAND` (default `15`). `nearMissFloor = threshold −
+> NEAR_MISS_BAND`. The backend returns `threshold` and `nearMissFloor` **per job**
+> (threshold is per-profile, stored on the evaluation row); `<ThresholdRail>` reads
+> the job's own values, never a global. One rule feeds the rail, the email cards, the
+> CSV, and the zero-results suggestion. See `.claude/rules/design.md` and ADR-033.
 
 ### 5.1b `<ScoreChip score threshold />`
 Mono, 600 weight, pill radius, 6px `currentColor` dot. Same three states:

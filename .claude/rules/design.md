@@ -57,12 +57,15 @@ value as a `--fs-tick` mono label above it.
 dot, and the same three states. Renders `92 · Qualifying`, `71 · Near-miss`,
 `48 · Below`.
 
-> **⚠ Open decision — the near-miss band boundary.** The design shows a near-miss
-> band of `60–74` at threshold `75`, implying a fixed 15-point band. The backend's
-> existing `RunReport.suggested_threshold` floors the lowest near-miss score to the
-> nearest 5, which is a different rule. Pick one and record it before building
-> `<ThresholdRail>` — the component needs `threshold` *and* a band boundary, or a
-> `nearMissFloor` prop. Do not guess.
+> **✓ Resolved (ADR-033) — the near-miss band boundary.** The band is a
+> **fixed-width offset below the active threshold**: `NEAR_MISS_BAND` (default `15`),
+> backend-owned. `nearMissFloor = threshold − NEAR_MISS_BAND`. A job is `nearmiss`
+> when `nearMissFloor ≤ score < threshold`, `qualify` when `score ≥ threshold`,
+> `below` otherwise. The backend returns `threshold` **and** `nearMissFloor` **per
+> job** (threshold is per-profile, stored on the evaluation row); `<ThresholdRail>`
+> reads the job's own values and **never** a global threshold. This one rule also
+> feeds the email near-miss cards, the CSV, and the zero-results suggested threshold,
+> replacing the old floor-the-lowest-of-five rule.
 
 ---
 

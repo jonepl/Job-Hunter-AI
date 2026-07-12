@@ -243,6 +243,14 @@ code is marked inferred.
   `ENRICHMENT_MODE=shadow|enforce` (default `shadow`) evaluates everything while
   recording what *would* have been skipped, so the pre-filter's precision can be
   measured before it is trusted.
+
+  **[Refined — v4-grill]** Shadow mode is only useful if its output is a *decision
+  surface*, not log noise. Each run report shows Gemini's flagged-to-skip jobs
+  compared against the **real scores they received when evaluated anyway** — the
+  **false-skip rate** — plus the estimated spend shadow *would* have saved. Without
+  that comparison the safe default becomes the permanent state. Graduation to
+  `enforce` has a **written criterion**: flip once the false-skip rate is 0 across a
+  run of ≥50 evaluated jobs. See `vertical-story-split.md` story A2 and §15.
 - **Consequences:** Meaningful cost reduction with no silent loss of postings.
   Resume text cannot reach Gemini — enforced by the port signature and covered by a
   test. Adds a Gemini API dependency and one pipeline stage. Before SQLite exists,
@@ -268,6 +276,13 @@ code is marked inferred.
   a server, a network hop, and operational surface for no benefit at this scale. The
   core remains ignorant of SQLite — it sees only the port. `OutputPort` (email +
   CSV) is unchanged and still delivers every run.
+
+  **[Refined — v4-grill]** The "no concurrent writers" framing held while the
+  scheduler and CLI never ran alongside a web server. Once ADR-032 co-locates the API
+  and a `BackgroundScheduler` in **one process**, two writers *can* coincide — a user
+  marking a job during a scheduled run. Contention is now **handled explicitly, not
+  assumed away** (`PRAGMA busy_timeout`, short per-job commits, all writes through one
+  `JobRepositoryPort`). See ADR-034.
 
 ## ADR-024: Exact-fingerprint deduplication on a normalized key
 
@@ -375,6 +390,16 @@ code is marked inferred.
   representation. Keep a **version history** with restore. The API and UI expose
   **provenance only** — filename, version, upload timestamp, size, parsed counts
   (skills, roles), and a readiness state — and **never render resume content**.
+
+  **[Clarified — v4-grill]** The master resume is a **single comprehensive corpus** —
+  everything the candidate has done — applied to *all* search profiles. There is **no
+  per-profile resume** in v1 (no reserved `profile_id` seam). Because tailoring
+  (ADR-029) *selects* from this superset rather than adding to it, the "never add
+  experience not in the original" rule is satisfied structurally. One consequence for
+  evaluation: since the corpus is broader than any single targeted resume, the
+  evaluator prompt is **instructed to score the candidate's *relevant* experience for
+  each role and not penalize breadth as scattered trajectory** — otherwise the
+  `career trajectory` and `resume signal quality` categories would understate fit.
 - **Consequences:** Eliminates redundant parsing on every run. Structured sections
   make the tailoring rules ("preserve specific numbers", "never add experience not
   in the original") mechanically checkable rather than merely prompted. Fabrication
@@ -488,4 +513,74 @@ code is marked inferred.
   This resolves the hardest sub-question in ADR-031. A single-user localhost tool
   gains nothing from service separation or independent scaling, so unifying is
   strictly simpler. Trade-off: the frontend build is now part of the backend image,
-  and a scheduler crash shares a process with the web server.
+  and a scheduler crash shares a process with the web server. The bind/publish and
+  write-contention consequences of running one process are addressed in **ADR-034**.
+
+## ADR-033: Near-miss as a fixed band; evaluation threshold stored per job
+
+- **Status:** Accepted (refines ADR-012; resolves the open decision flagged in
+  `.claude/rules/design.md` and `docs/design/ui-spec.md` §5.1)
+- **Context:** The UI's signature `<ThresholdRail>` colors every score in three
+  states — qualify / near-miss / below — and the Match-threshold settings screen shows
+  a "near-miss band." But the backend had no such concept: near-miss existed **only**
+  in the zero-results case (top-5 below threshold), and `RunReport.suggested_threshold`
+  floored the lowest of those five to the nearest 5 — a run-relative artifact, not a
+  band. On a normal run every non-qualifying job was simply "below," so the design's
+  amber band had nothing to compute from. Separately, the score threshold is
+  **per-profile** (`SearchProfile.score_threshold`, ADR-019), yet the UI treated it as
+  one global value, and `TRACKED` deliberately mixes jobs from profiles with different
+  thresholds.
+- **Decision:** (1) The near-miss band is a **fixed-width offset below the active
+  threshold**, owned by the backend as `NEAR_MISS_BAND` (default `15`, matching the
+  design's 60–74 at threshold 75). `near_miss_floor = threshold − NEAR_MISS_BAND`; a
+  job is *near-miss* when `near_miss_floor ≤ score < threshold`, *qualify* when
+  `score ≥ threshold`, *below* otherwise. This single rule feeds the rail, the email
+  near-miss cards, the CSV, and the zero-results suggested threshold — **retiring** the
+  old floor-the-lowest-of-five rule. (2) The threshold used to evaluate a job is
+  **persisted on the evaluation row** and the API returns it per job. `<ThresholdRail>`
+  always reads the job's own stored `threshold` and derived `nearMissFloor`; there is
+  **no global threshold**. The header threshold is a per-profile display, shown as
+  mixed/"—" in the cross-profile `TRACKED` view. The Match-threshold settings screen
+  edits the *selected profile's* threshold.
+- **Consequences:** The three-state rail is truthful on every run, not only
+  zero-result runs, and cards from different profiles color correctly in one list.
+  Near-miss becomes a first-class, absolute concept shared by every output surface. The
+  legacy bare `SCORE_THRESHOLD` env var (single-search fallback) is left untouched —
+  removing it is the separate legacy-config cleanup tracked in `remaining_work.md`.
+  Lands in the B1 story (persistence) and is consumed by W1 (`<ThresholdRail>`).
+
+## ADR-034: Deployment hardening for the single-process web server
+
+- **Status:** Accepted (addresses consequences of ADR-032 left open there; refines
+  ADR-023 and ADR-029)
+- **Context:** ADR-032 runs uvicorn and a `BackgroundScheduler` in **one process**,
+  serving a **single SQLite file**, inside Docker, on `localhost` with no auth, and the
+  document-generation feature writes `.docx` files to disk. Three operational gaps
+  followed that no prior ADR closed: concurrent writers, container binding, and
+  generated-file lifecycle.
+- **Decision:**
+  1. **SQLite write contention.** A scheduled run (long, write-heavy) can now coincide
+     with a user write from the browser (mark status, save, generate). SQLite permits
+     one writer at a time; WAL does not change that. Handle it explicitly: set
+     `PRAGMA busy_timeout` (~5000 ms) on every connection, keep the run's writes in
+     **short per-job commits** rather than one run-long transaction, and route all
+     writes through the single `JobRepositoryPort` instance. Amends ADR-023's "no
+     concurrent writers" line to "contention handled, not assumed away."
+  2. **Container binding.** Bind uvicorn to `0.0.0.0` **inside** the container (so port
+     forwarding works) but **publish on host loopback only** — `127.0.0.1:8000:8000` in
+     `docker-compose.yml`, never `8000:8000`. This keeps the "loopback-only, therefore
+     no auth" model honest. A warning comment sits at that compose line; the explicit
+     trigger is: **any non-loopback publish makes auth mandatory.**
+  3. **Generated-file storage.** Tailored `.docx` files live at
+     `data/generations/{generation_id}.docx`, under the same volume as `data/agent.db`
+     (file and the `generations` row that references it share a lifecycle and mount).
+     Filenames are opaque ids — no candidate name or job title in the path.
+     `GET /download` checks the file exists before streaming and returns **410 Gone**
+     if a `ready` row's file is missing, so the chip falls back to regenerate rather
+     than error. Retention: **keep everything, user-deletable** (row + file); no
+     time-based auto-purge at single-user scale.
+- **Consequences:** The single-process web deployment is safe to use as the product
+  intends — browsing and acting while a scheduled run writes. Costs a few explicit
+  rules in B1 (contention), W1 (binding), and F/W6 (file storage) instead of silent
+  assumptions. If the app ever leaves localhost, the binding trigger forces the auth
+  decision rather than leaving it implicit.
