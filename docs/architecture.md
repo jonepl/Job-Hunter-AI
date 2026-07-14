@@ -130,6 +130,8 @@ job-search-agent/
 │   │   │   ├── run_report.py            ← RunReport entity
 │   │   │   ├── cost_estimate.py         ← CostEstimate — pre-run cost prediction
 │   │   │   ├── run_cost.py              ← RunCost + EvaluationCost — actual run cost
+│   │   │   ├── enrichment_result.py     ← EnrichmentResult — per-job pre-filter verdict
+│   │   │   ├── enrichment_summary.py    ← EnrichmentSummary — run-level pre-filter surface
 │   │   │   ├── scraper_name.py          ← ScraperName enum
 │   │   │   └── search_profile.py        ← SearchProfile — per-profile config model
 │   │   │
@@ -137,6 +139,7 @@ job-search-agent/
 │   │   │   ├── __init__.py
 │   │   │   ├── scraper_port.py          ← ScraperPort ABC
 │   │   │   ├── evaluator_port.py        ← EvaluatorPort ABC
+│   │   │   ├── job_enrichment_port.py   ← JobEnrichmentPort ABC (pre-filter; Job-only, no Resume)
 │   │   │   └── output_port.py           ← OutputPort ABC
 │   │   │
 │   │   └── services/                    ← Business logic orchestration
@@ -156,6 +159,12 @@ job-search-agent/
 │       │   ├── anthropic_evaluator.py
 │       │   ├── prompts.py               ← Shared evaluation prompt text
 │       │   └── factory.py               ← Selects evaluator from EVALUATOR_PROVIDER
+│       │
+│       ├── enrichment/                  ← Optional pre-filter adapter
+│       │   ├── __init__.py
+│       │   ├── gemini_enrichment.py     ← Gemini pre-filter (fail-open, circuit breaker)
+│       │   ├── prompts.py               ← Pre-filter prompt text
+│       │   └── factory.py               ← Builds pre-filter from ENRICHMENT_* / GEMINI_*
 │       │
 │       └── output/                      ← Delivery adapters
 │           ├── __init__.py
@@ -185,12 +194,15 @@ tests/
 │   │   │   ├── test_run_report.py           ← tests for RunReport entity
 │   │   │   ├── test_cost_estimate.py        ← tests for CostEstimate entity
 │   │   │   ├── test_run_cost.py             ← tests for RunCost / EvaluationCost entities
+│   │   │   ├── test_enrichment_result.py    ← tests for EnrichmentResult entity
+│   │   │   ├── test_enrichment_summary.py   ← tests for EnrichmentSummary entity
 │   │   │   ├── test_scraper_name.py         ← tests for ScraperName enum
 │   │   │   └── test_search_profile.py       ← tests for SearchProfile model
 │   │   │
 │   │   ├── ports/
 │   │   │   ├── test_scraper_port.py         ← tests for ScraperPort ABC
 │   │   │   ├── test_evaluator_port.py       ← tests for EvaluatorPort ABC
+│   │   │   ├── test_job_enrichment_port.py  ← tests for JobEnrichmentPort ABC (privacy boundary)
 │   │   │   └── test_output_port.py          ← tests for OutputPort ABC
 │   │   │
 │   │   └── services/
@@ -204,6 +216,9 @@ tests/
 │       ├── evaluator/
 │       │   ├── test_openai_evaluator.py
 │       │   ├── test_anthropic_evaluator.py
+│       │   └── test_factory.py
+│       ├── enrichment/
+│       │   ├── test_gemini_enrichment.py
 │       │   └── test_factory.py
 │       └── output/
 │           ├── test_email_output.py
@@ -359,6 +374,7 @@ class RunReport(BaseModel):
 
     cost_estimate: CostEstimate | None   # None when SHOW_COST_ESTIMATE=false
     run_cost: RunCost | None             # None when SHOW_COST_ESTIMATE=false
+    enrichment_summary: EnrichmentSummary | None  # None when the pre-filter did not run
 
     @property
     def has_qualifying_results(self) -> bool: ...
@@ -367,6 +383,42 @@ class RunReport(BaseModel):
     @property
     def suggested_threshold(self) -> int | None: ...
     # Floors the lowest near-miss score to nearest 5; None when near_miss_results empty
+```
+
+### `EnrichmentResult`
+The pre-filter's verdict on a single job (see §7 — the optional Gemini pre-filter).
+Advisory: whether a flagged job is actually skipped depends on `ENRICHMENT_MODE`.
+
+```python
+class EnrichmentResult(BaseModel):
+    should_skip: bool   # True when the pre-filter judges the job obvious junk
+    reason: str         # Always populated — a flag is never applied silently
+    errored: bool       # True when this is a fail-open fallback, not a real judgement
+```
+
+### `EnrichmentSummary`
+The run-level pre-filter decision surface, attached to `RunReport`. Shadow mode is
+only useful if its output is a decision surface (ADR-022): this reports what would
+have been skipped, how often that was wrong, and whether the run meets the written
+criterion to graduate to `enforce`.
+
+```python
+class EnrichmentSummary(BaseModel):
+    mode: str                          # "shadow" | "enforce"
+    total_jobs: int                    # jobs the pre-filter inspected
+    flagged_count: int                 # jobs flagged to skip
+    evaluated_count: int               # jobs actually sent to the paid evaluator
+    error_count: int                   # jobs the pre-filter could not assess (fail-open)
+    false_skips: int | None            # shadow only: flagged jobs that scored >= threshold
+    estimated_savings_usd: float | None
+    circuit_broken: bool               # a quota/model breaker tripped mid-run
+
+    @property
+    def false_skip_rate(self) -> float | None: ...   # None in enforce / when nothing flagged
+
+    @property
+    def graduation_ready(self) -> bool: ...
+    # True when shadow, 0 false-skips, 0 errors, >= 50 evaluated jobs
 ```
 
 ---
@@ -420,6 +472,30 @@ class EvaluatorPort(ABC):
         ...
 ```
 
+### `JobEnrichmentPort`
+
+The optional pre-filter contract. **The signature is the privacy boundary** —
+`enrich` accepts only a `Job` and never a `Resume`, so personal data is
+structurally prevented from reaching the pre-filter adapter (ADR-022). Do not widen
+this contract.
+
+```python
+from abc import ABC, abstractmethod
+from src.core.domain.job import Job
+from src.core.domain.enrichment_result import EnrichmentResult
+
+class JobEnrichmentPort(ABC):
+
+    @abstractmethod
+    async def enrich(self, job: Job) -> EnrichmentResult:
+        """Judge whether a job is obvious junk before paid evaluation.
+
+        Implementations must be fail-open: any error returns
+        should_skip=False so a pre-filter failure never drops a real job.
+        """
+        ...
+```
+
 ### `OutputPort`
 
 ```python
@@ -468,6 +544,13 @@ JobSearchService.run(query, location, threshold, top_results)
         │       ├── IndeedAdapter.fetch_jobs()
         │       ├── GlassdoorAdapter.fetch_jobs()
         │       └── ZipRecruiterAdapter.fetch_jobs()
+        │
+        ├── 2.5 (Optional) Pre-filter — JobEnrichmentPort, only when enabled
+        │       ├── Gemini flags obvious junk (Job only — resume never passed)
+        │       ├── Throttled: ENRICHMENT_MAX_CONCURRENT + ENRICHMENT_DELAY_SECONDS
+        │       ├── shadow: evaluate everything, measure would-be skips (false-skip rate)
+        │       ├── enforce: withhold flagged jobs from evaluation
+        │       └── Fail-open; quota/model circuit breaker; EnrichmentSummary → RunReport
         │
         ├── 3. Evaluate each job against resume (GPT-4o)
         │       ├── Semaphore limits concurrent calls to MAX_CONCURRENT_EVALUATIONS
