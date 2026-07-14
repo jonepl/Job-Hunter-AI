@@ -33,6 +33,12 @@ all placeholder values with real credentials before running.
 | JSEARCH_MAX_PAGES | Number of result pages fetched per JSearch API call. Each page contains up to 10 job listings. Multiple pages are bundled into a single API request and do not increase free tier quota consumption. Valid range: 1–10. Values outside this range are clamped automatically. Examples: 1 → 10 jobs, 2 → 20 jobs (default), 5 → 50 jobs, 10 → 100 jobs. | `2` |
 | MAX_CONCURRENT_EVALUATIONS | Maximum number of LLM evaluation calls running at the same time. Reduce if hitting provider concurrency limits. | `2` |
 | EVALUATION_DELAY_SECONDS | Seconds to wait after each evaluation call before releasing the semaphore slot. Spreads token consumption over time to stay within TPM rate limits. | `1.0` |
+| ENRICHMENT_ENABLED | Enables the Gemini pre-filter stage that flags obvious junk postings before paid evaluation (ADR-022). When not `true` the stage is skipped entirely with zero overhead. Requires `GEMINI_API_KEY`; a missing key degrades to disabled rather than failing the run. | `false` |
+| ENRICHMENT_MODE | Pre-filter behavior. `shadow` evaluates every job and only *measures* what would have been skipped, reporting the false-skip rate so precision can be verified before it is trusted. `enforce` actually withholds flagged jobs from the paid evaluator. Start in `shadow`; graduate to `enforce` once the false-skip rate is 0 across ≥50 evaluated jobs. Ignored when `ENRICHMENT_ENABLED` is not `true`. | `shadow` |
+| GEMINI_API_KEY | Google Gemini API key for the pre-filter. Only read when `ENRICHMENT_ENABLED=true`. | aistudio.google.com/app/apikey |
+| GEMINI_MODEL | Gemini model name for the pre-filter. Must be available to your API key — a 404 disables the pre-filter for the run (fail-open) and is reported in the run summary. Override to trade cost for capability. | `gemini-3.5-flash` |
+| ENRICHMENT_MAX_CONCURRENT | Maximum concurrent pre-filter calls. Kept low so a large scrape does not exceed the provider's per-minute request quota (the circuit breaker cannot undo requests already in flight). Free-tier keys should use `1`. | `2` |
+| ENRICHMENT_DELAY_SECONDS | Seconds to wait after each pre-filter call before releasing the semaphore slot. Raise it to spread requests under a tight per-minute quota. | `1.0` |
 
 ---
 
@@ -167,6 +173,17 @@ EMAIL_RECIPIENT=your@email.com
 EVALUATOR_PROVIDER=openai
 MAX_CONCURRENT_EVALUATIONS=2
 EVALUATION_DELAY_SECONDS=1.0
+
+# ── Pre-filter (Gemini, optional) ─────────────────────────────────────────────
+# Flags obvious junk before paid evaluation. Start in shadow (measure only);
+# flip to enforce once the false-skip rate is 0 across >= 50 evaluated jobs.
+# Keep concurrency low (1 on free tier) so a large scrape does not blow the quota.
+ENRICHMENT_ENABLED=false
+ENRICHMENT_MODE=shadow
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.5-flash
+ENRICHMENT_MAX_CONCURRENT=2
+ENRICHMENT_DELAY_SECONDS=1.0
 
 # ── JSearch (Default to us) ───────────────────────────────────────────────────────────────────
 JSEARCH_COUNTRY=us

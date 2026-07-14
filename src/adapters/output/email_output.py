@@ -163,6 +163,7 @@ class EmailOutput(OutputPort):
         )
 
         cost_section = self._build_cost_section(report)
+        enrichment_section = self._build_enrichment_section(report)
 
         return (
             "<html>"
@@ -190,6 +191,7 @@ class EmailOutput(OutputPort):
             f"{cards}"
             f"<p style=\"color:#666;font-size:12px;\">Total jobs evaluated: "
             f"{report.total_evaluated}</p>"
+            f"{enrichment_section}"
             f"{cost_section}"
             "</body></html>"
         )
@@ -215,6 +217,7 @@ class EmailOutput(OutputPort):
             An HTML string for the zero results email.
         """
         cost_section = self._build_cost_section(report)
+        enrichment_section = self._build_enrichment_section(report)
         near_miss_section = ""
         if report.near_miss_results:
             near_miss_cards = "".join(
@@ -268,6 +271,7 @@ class EmailOutput(OutputPort):
             f"Score threshold: {report.score_threshold} &nbsp;·&nbsp; "
             f"Date posted: {date_posted_label} &nbsp;·&nbsp; "
             f"Top results cap: {top_results_label}</p>"
+            f"{enrichment_section}"
             f"{cost_section}"
             "</body></html>"
         )
@@ -422,6 +426,88 @@ class EmailOutput(OutputPort):
             f"<td>{rc.formatted_total}</td></tr>"
             f"{est_row}"
             "</table>"
+        )
+
+    def _build_enrichment_section(self, report) -> str:
+        """Build the pre-filter decision-surface section for the email.
+
+        Renders flag counts, the false-skip rate, estimated savings, and whether
+        the run met the criterion to graduate from shadow to enforce mode. Returns
+        an empty string when the pre-filter did not run this run.
+
+        Args:
+            report: The RunReport to render the enrichment summary from.
+
+        Returns:
+            An HTML string for the pre-filter section, or empty string when absent.
+        """
+        summary = getattr(report, "enrichment_summary", None)
+        if summary is None:
+            return ""
+
+        rate = summary.false_skip_rate
+        rate_label = "n/a" if rate is None else f"{rate:.0%}"
+        savings = summary.estimated_savings_usd
+        savings_label = "n/a" if savings is None else f"${savings:.4f}"
+        false_skip_label = "n/a" if summary.false_skips is None else str(summary.false_skips)
+
+        if summary.mode == "shadow":
+            mode_note = "shadow — nothing skipped; measuring precision"
+        else:
+            mode_note = "enforce — flagged jobs withheld from evaluation"
+
+        graduation_row = ""
+        if summary.graduation_ready:
+            graduation_row = (
+                "<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Graduation</strong></td>"
+                "<td style=\"color:#1a7f37;\"><strong>Criterion met</strong> — "
+                "0 false-skips over &ge;50 evals. Consider ENRICHMENT_MODE=enforce.</td></tr>"
+            )
+
+        breaker_row = ""
+        if summary.circuit_broken:
+            breaker_row = (
+                "<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Circuit breaker</strong></td>"
+                "<td style=\"color:#cf222e;\">Tripped mid-run — Gemini quota exhausted or "
+                "model unavailable.</td></tr>"
+            )
+
+        errors_row = ""
+        if summary.error_count:
+            errors_row = (
+                "<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Errored</strong></td>"
+                f"<td style=\"color:#cf222e;\">{summary.error_count} of {summary.total_jobs}"
+                " not assessed (fail-open)</td></tr>"
+            )
+
+        degraded_note = ""
+        if summary.total_jobs > 0 and summary.error_count == summary.total_jobs:
+            degraded_note = (
+                "<p style=\"color:#cf222e;font-size:12px;margin:4px 0 0;\">"
+                "The pre-filter was fully degraded this run — flag counts are not "
+                "meaningful. Check <strong>GEMINI_MODEL</strong>, "
+                "<strong>GEMINI_API_KEY</strong>, and quota.</p>"
+            )
+
+        return (
+            "<hr style=\"border:none;border-top:1px solid #e1e4e8;margin:24px 0 16px;\">"
+            "<h4 style=\"color:#1a1a2e;margin:0 0 8px;\">Pre-filter Summary</h4>"
+            "<table style=\"margin-bottom:8px;\">"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Mode</strong></td>"
+            f"<td>{mode_note}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Flagged to skip</strong></td>"
+            f"<td>{summary.flagged_count} of {summary.total_jobs}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Jobs evaluated</strong></td>"
+            f"<td>{summary.evaluated_count}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>False-skips</strong></td>"
+            f"<td>{false_skip_label} &nbsp;·&nbsp; rate {rate_label}</td></tr>"
+            f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Est. savings</strong></td>"
+            f"<td>{savings_label}</td></tr>"
+            f"{errors_row}"
+            f"{graduation_row}"
+            f"{breaker_row}"
+            "</table>"
+            f"{degraded_note}"
         )
 
     def _build_breakdown_rows(self, result) -> str:

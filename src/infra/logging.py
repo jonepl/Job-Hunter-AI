@@ -35,3 +35,8 @@ def configure_logging() -> None:
     root.setLevel(logging.INFO)
     root.addHandler(stream_handler)
     root.addHandler(file_handler)
+
+    # Quiet chatty third-party libraries that log one INFO line per HTTP call
+    # (the Gemini SDK and its transport). Their warnings still surface.
+    for noisy in ("httpx", "httpcore", "google_genai", "google.genai", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)

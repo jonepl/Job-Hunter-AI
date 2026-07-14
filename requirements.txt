@@ -2,6 +2,9 @@
 openai
 anthropic
 
+# Pre-filter (Gemini Flash-Lite)
+google-genai
+
 # Environment variable management
 python-dotenv
 

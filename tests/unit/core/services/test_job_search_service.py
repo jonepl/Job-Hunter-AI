@@ -639,3 +639,197 @@ async def test_max_concurrent_loaded_from_env():
             )
 
     mock_semaphore.assert_called_once_with(5)
+
+
+# ---------------------------------------------------------------------------
+# Pre-filter (JobEnrichmentPort) tests — A2
+# ---------------------------------------------------------------------------
+
+from src.core.domain.enrichment_result import EnrichmentResult  # noqa: E402
+
+
+@pytest.fixture
+def no_sleep():
+    """Patch asyncio.sleep so the eval/pre-filter throttle delays don't slow tests."""
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        yield
+
+
+def _enrich_service(jobs, flags, scores, mode, errored=None, circuit_broken=False):
+    """Build a JobSearchService wired with a mocked pre-filter.
+
+    Args:
+        jobs: The jobs the single scraper returns.
+        flags: Parallel list of should_skip booleans, one per job.
+        scores: Mapping of job title -> evaluator score.
+        mode: 'shadow' or 'enforce'.
+        errored: Optional parallel list of errored booleans (defaults all False).
+        circuit_broken: Value of the enrichment adapter's circuit_broken property.
+
+    Returns:
+        Tuple of (service, evaluator_mock, enrichment_mock, output_mock).
+    """
+    errored = errored or [False] * len(flags)
+    scraper = MagicMock()
+    scraper.fetch_jobs = AsyncMock(return_value=jobs)
+
+    async def _eval(resume, job, work_types=None):
+        return make_match_result(job, scores[job.title]), 100, 50
+
+    evaluator = MagicMock()
+    evaluator.evaluate = AsyncMock(side_effect=_eval)
+
+    enrichment = MagicMock()
+    enrichment.enrich = AsyncMock(
+        side_effect=[
+            EnrichmentResult(should_skip=f, reason="reason", errored=e)
+            for f, e in zip(flags, errored)
+        ]
+    )
+    enrichment.circuit_broken = circuit_broken
+
+    output = MagicMock()
+    output.deliver = AsyncMock()
+
+    resume = Resume(raw_text="Experienced dev.", parsed_at=datetime(2026, 3, 17, 9, 0, 0))
+    service = JobSearchService(
+        scrapers=[scraper],
+        evaluator=evaluator,
+        outputs=[output],
+        enrichment=enrichment,
+        enrichment_mode=mode,
+    )
+    service._parse_resume = MagicMock(return_value=resume)
+    return service, evaluator, enrichment, output
+
+
+@pytest.mark.asyncio
+async def test_no_enrichment_summary_when_port_absent(no_sleep):
+    """Without a pre-filter the report carries no enrichment summary."""
+    service, _, _, _ = make_service(scraper_jobs=[[make_job()]], eval_scores=[80])
+
+    report = await service.run(query="Q", location="Remote", threshold=70)
+
+    assert report.enrichment_summary is None
+
+
+@pytest.mark.asyncio
+async def test_shadow_mode_evaluates_all_and_measures_false_skips(no_sleep):
+    """Shadow mode evaluates every job and counts flagged jobs that still qualify."""
+    jobs = [make_job("A"), make_job("B"), make_job("C")]
+    service, evaluator, _, _ = _enrich_service(
+        jobs,
+        flags=[True, False, False],
+        scores={"A": 85, "B": 60, "C": 90},
+        mode="shadow",
+    )
+
+    report = await service.run(query="Q", location="Remote", threshold=70)
+
+    # Shadow never skips: all three evaluated, A still qualifies.
+    assert evaluator.evaluate.await_count == 3
+    assert report.total_evaluated == 3
+    assert {r.job.title for r in report.qualifying_results} == {"A", "C"}
+
+    summary = report.enrichment_summary
+    assert summary is not None
+    assert summary.mode == "shadow"
+    assert summary.flagged_count == 1
+    assert summary.false_skips == 1  # A was flagged but scored 85 >= 70
+    assert summary.false_skip_rate == 1.0
+
+
+@pytest.mark.asyncio
+async def test_shadow_mode_zero_false_skips_when_flagged_below_threshold(no_sleep):
+    """A flagged job that scores below threshold is a correct skip, not a false one."""
+    jobs = [make_job("A")]
+    service, _, _, _ = _enrich_service(
+        jobs, flags=[True], scores={"A": 50}, mode="shadow"
+    )
+
+    report = await service.run(query="Q", location="Remote", threshold=70)
+
+    summary = report.enrichment_summary
+    assert summary.false_skips == 0
+    assert summary.false_skip_rate == 0.0
+
+
+@pytest.mark.asyncio
+async def test_enforce_mode_withholds_flagged_jobs_from_evaluation(no_sleep):
+    """Enforce mode skips flagged jobs entirely — evaluator never sees them."""
+    jobs = [make_job("A"), make_job("B"), make_job("C")]
+    service, evaluator, _, _ = _enrich_service(
+        jobs,
+        flags=[True, False, False],
+        scores={"B": 60, "C": 90},
+        mode="enforce",
+    )
+
+    report = await service.run(query="Q", location="Remote", threshold=70)
+
+    # Only the two non-flagged jobs are evaluated.
+    assert evaluator.evaluate.await_count == 2
+    assert report.total_evaluated == 2
+    assert "A" not in {r.job.title for r in report.qualifying_results}
+
+    summary = report.enrichment_summary
+    assert summary.mode == "enforce"
+    assert summary.flagged_count == 1
+    # False-skips are unmeasurable in enforce mode.
+    assert summary.false_skips is None
+    assert summary.false_skip_rate is None
+
+
+@pytest.mark.asyncio
+async def test_estimated_savings_none_without_cost_tracker(no_sleep):
+    """Estimated savings is None when cost tracking is disabled."""
+    jobs = [make_job("A"), make_job("B")]
+    service, _, _, _ = _enrich_service(
+        jobs, flags=[True, False], scores={"A": 40, "B": 80}, mode="shadow"
+    )
+
+    report = await service.run(query="Q", location="Remote", threshold=70)
+
+    assert report.enrichment_summary.estimated_savings_usd is None
+
+
+@pytest.mark.asyncio
+async def test_error_count_surfaced_when_pre_filter_fails(no_sleep):
+    """Fail-open verdicts are counted so a degraded pre-filter is visible."""
+    jobs = [make_job("A"), make_job("B"), make_job("C")]
+    # All three failed open (errored) — none were genuinely assessed.
+    service, evaluator, _, _ = _enrich_service(
+        jobs,
+        flags=[False, False, False],
+        errored=[True, True, True],
+        scores={"A": 80, "B": 60, "C": 90},
+        mode="shadow",
+        circuit_broken=True,
+    )
+
+    report = await service.run(query="Q", location="Remote", threshold=70)
+
+    # Fail-open means every job still went to evaluation.
+    assert evaluator.evaluate.await_count == 3
+    summary = report.enrichment_summary
+    assert summary.error_count == 3
+    assert summary.flagged_count == 0
+    assert summary.circuit_broken is True
+    # A fully-errored run is not graduation-ready even with 0 false-skips.
+    assert summary.graduation_ready is False
+
+
+@pytest.mark.asyncio
+async def test_enrichment_throttle_reads_env(no_sleep):
+    """The pre-filter stage sizes its semaphore from ENRICHMENT_MAX_CONCURRENT."""
+    jobs = [make_job("A")]
+    service, _, _, _ = _enrich_service(
+        jobs, flags=[False], scores={"A": 80}, mode="shadow"
+    )
+
+    with patch("asyncio.Semaphore", wraps=asyncio.Semaphore) as mock_semaphore:
+        with patch.dict("os.environ", {"ENRICHMENT_MAX_CONCURRENT": "4"}):
+            await service.run(query="Q", location="Remote", threshold=70)
+
+    sizes = [c.args[0] for c in mock_semaphore.call_args_list if c.args]
+    assert 4 in sizes

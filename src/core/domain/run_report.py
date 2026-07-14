@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from src.core.domain.cost_estimate import CostEstimate
 from src.core.domain.date_posted import DatePosted
+from src.core.domain.enrichment_summary import EnrichmentSummary
 from src.core.domain.match_result import MatchResult
 from src.core.domain.run_cost import RunCost
 from src.core.domain.scraper_name import ScraperName
@@ -55,6 +56,9 @@ class RunReport(BaseModel):
 
     run_cost: RunCost | None = None
     """Actual LLM cost accumulated during the run. None when SHOW_COST_ESTIMATE=false."""
+
+    enrichment_summary: EnrichmentSummary | None = None
+    """Pre-filter decision surface. None when the pre-filter did not run this run."""
 
     @property
     def has_qualifying_results(self) -> bool:

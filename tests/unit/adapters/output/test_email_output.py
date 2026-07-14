@@ -265,3 +265,92 @@ def test_email_top_results_shows_not_set(sample_report):
     )
     html = output._build_html(report)
     assert "not set" in html
+
+
+# ---------------------------------------------------------------------------
+# Pre-filter decision-surface section — A2
+# ---------------------------------------------------------------------------
+
+from src.core.domain.enrichment_summary import EnrichmentSummary  # noqa: E402
+
+
+def _output() -> EmailOutput:
+    """Return an EmailOutput with placeholder credentials."""
+    return EmailOutput(sender="s@gmail.com", password="pw", recipient="r@example.com")
+
+
+def test_enrichment_section_absent_when_summary_none(sample_report):
+    """No pre-filter section is rendered when the pre-filter did not run."""
+    html = _output()._build_html(sample_report)
+
+    assert "Pre-filter Summary" not in html
+
+
+def test_enrichment_section_rendered_in_shadow_mode(sample_report):
+    """Shadow-mode summary renders flag counts, false-skip rate, and savings."""
+    sample_report.enrichment_summary = EnrichmentSummary(
+        mode="shadow",
+        total_jobs=10,
+        flagged_count=4,
+        evaluated_count=10,
+        false_skips=1,
+        estimated_savings_usd=0.0123,
+    )
+
+    html = _output()._build_html(sample_report)
+
+    assert "Pre-filter Summary" in html
+    assert "4 of 10" in html
+    assert "25%" in html          # false-skip rate 1/4
+    assert "$0.0123" in html      # estimated savings
+
+
+def test_enrichment_section_shows_graduation_when_ready(sample_report):
+    """The graduation prompt appears once the criterion is met."""
+    sample_report.enrichment_summary = EnrichmentSummary(
+        mode="shadow",
+        total_jobs=60,
+        flagged_count=5,
+        evaluated_count=60,
+        false_skips=0,
+    )
+
+    html = _output()._build_html(sample_report)
+
+    assert "Criterion met" in html
+    assert "ENRICHMENT_MODE=enforce" in html
+
+
+def test_enrichment_section_rendered_on_zero_results(zero_results_report):
+    """The pre-filter section also appears on a zero-qualifying-results email."""
+    zero_results_report.enrichment_summary = EnrichmentSummary(
+        mode="enforce",
+        total_jobs=8,
+        flagged_count=3,
+        evaluated_count=5,
+        false_skips=None,
+    )
+
+    html = _output()._build_html(zero_results_report)
+
+    assert "Pre-filter Summary" in html
+    assert "enforce" in html
+
+
+def test_enrichment_section_flags_full_degradation(sample_report):
+    """A fully-errored pre-filter renders the errored row and degraded warning."""
+    sample_report.enrichment_summary = EnrichmentSummary(
+        mode="shadow",
+        total_jobs=20,
+        flagged_count=0,
+        evaluated_count=20,
+        error_count=20,
+        false_skips=0,
+        circuit_broken=True,
+    )
+
+    html = _output()._build_html(sample_report)
+
+    assert "20 of 20 not assessed" in html
+    assert "fully degraded" in html
+    assert "GEMINI_MODEL" in html

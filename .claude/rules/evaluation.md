@@ -15,6 +15,41 @@
 - Handle API errors gracefully — return a default low-score `MatchResult` on
   failure; never crash the run.
 
+## Pre-filter (Gemini)
+
+- The pre-filter is an **optional stage between scraping and evaluation** behind
+  `JobEnrichmentPort` (`src/core/ports/job_enrichment_port.py`). Adapter:
+  `GeminiEnrichment` (`src/adapters/enrichment/gemini_enrichment.py`), built by
+  `build_enrichment()` and wired in `service_factory`.
+- **The port signature is the privacy boundary.** `enrich(job: Job)` accepts only
+  a `Job` and **never** a `Resume` — personal data is structurally prevented from
+  reaching Gemini (ADR-022). Do not widen this contract.
+- **Fail-open, always.** Any pre-filter error returns `should_skip=False` with
+  `errored=True`; a failure never drops a real job. Two repeating-for-every-job
+  failures trip a per-run circuit breaker that short-circuits the rest of the run
+  and logs **once**: quota exhaustion (HTTP 429) and an unavailable model (HTTP
+  404). A 404 is *not* fatal like the evaluator's `ModelNotFoundError` — a dead
+  pre-filter just means "no pre-filtering," not a bogus zero-results run.
+- **Throttle the stage.** Pre-filter calls run under their own semaphore + delay
+  (`ENRICHMENT_MAX_CONCURRENT`, `ENRICHMENT_DELAY_SECONDS`) — never fire the whole
+  batch at once, or a large scrape blows the provider's per-minute quota before the
+  circuit breaker can trip. Both load from `.env`; never hardcode.
+- **Don't let a broken pre-filter look healthy.** `EnrichmentSummary.error_count`
+  counts fail-open jobs; when it equals `total_jobs` the run is fully degraded and
+  flag counts are meaningless — the service warns and the email says so. Graduation
+  requires `error_count == 0`.
+- **Skip-but-log, never silent.** Every flag carries a `reason`. `ENRICHMENT_MODE`
+  (`.env`, default `shadow`) selects behavior: `shadow` evaluates everything and
+  only *measures* what would have been skipped; `enforce` withholds flagged jobs
+  from the paid evaluator.
+- **Graduation criterion (written).** The run report surfaces the **false-skip
+  rate** (flagged jobs that nonetheless scored ≥ threshold, measurable only in
+  shadow mode) plus estimated savings. Flip to `enforce` only once the false-skip
+  rate is **0 across ≥50 evaluated jobs** (`GRADUATION_MIN_EVALS`). Do not remove
+  this surface — without it, shadow becomes the permanent state.
+- Never hardcode the Gemini model — it flows from `GEMINI_MODEL` through the ctor,
+  same pattern as the evaluators.
+
 ## Cost tracking
 
 - `SHOW_COST_ESTIMATE` controls all cost visibility — `false` by default, with

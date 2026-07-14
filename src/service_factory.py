@@ -2,6 +2,7 @@
 
 import os
 
+from src.adapters.enrichment.factory import build_enrichment
 from src.adapters.evaluator.factory import build_evaluator
 from src.adapters.output.email_output import EmailOutput
 from src.adapters.output.file_output import FileOutput
@@ -28,6 +29,12 @@ def build_service(profile: SearchProfile) -> JobSearchService:
     # Build evaluator from .env provider
     evaluator = build_evaluator()
 
+    # Build the optional pre-filter (None when ENRICHMENT_ENABLED is not true)
+    enrichment = build_enrichment()
+    enrichment_mode = os.getenv("ENRICHMENT_MODE", "shadow").strip().lower()
+    if enrichment_mode not in ("shadow", "enforce"):
+        enrichment_mode = "shadow"
+
     # Build output adapters
     gmail_address = os.getenv("GMAIL_ADDRESS", "")
     gmail_app_password = os.getenv("GMAIL_APP_PASSWORD", "")
@@ -46,4 +53,6 @@ def build_service(profile: SearchProfile) -> JobSearchService:
         scrapers=scrapers,
         evaluator=evaluator,
         outputs=outputs,
+        enrichment=enrichment,
+        enrichment_mode=enrichment_mode,
     )
