@@ -13,6 +13,7 @@ from typing import Callable
 
 from src.core.domain.run_report import RunReport
 from src.core.domain.search_profile import SearchProfile
+from src.core.exceptions import ModelNotFoundError
 from src.core.services.job_search_service import JobSearchService
 from src.infra.cost_estimator import estimate_run_cost
 from src.infra.cost_tracker import CostTracker
@@ -119,6 +120,9 @@ async def run_immediate(
         except FileNotFoundError as exc:
             logger.critical("Resume file not found: %s", exc)
             logger.critical("Mount your resume PDF to docs/resume/resume.pdf and try again.")
+            sys.exit(1)
+        except ModelNotFoundError as exc:
+            logger.critical("%s", exc)
             sys.exit(1)
         except Exception as exc:
             logger.critical(

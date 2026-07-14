@@ -20,8 +20,10 @@ def build_evaluator() -> EvaluatorPort:
     """Instantiate and return the evaluator configured by EVALUATOR_PROVIDER.
 
     Reads EVALUATOR_PROVIDER from the environment to select the provider,
-    then reads the corresponding API key env var. Exits with a critical log
-    message if either value is missing or the provider is unknown.
+    then reads the corresponding API key env var. EVALUATOR_MODEL, when set,
+    overrides the provider's default model (the CLI --evaluator-model flag is
+    applied by writing this variable). Exits with a critical log message if the
+    provider is unknown or the API key is missing.
 
     Returns:
         A configured EvaluatorPort implementation.
@@ -48,5 +50,11 @@ def build_evaluator() -> EvaluatorPort:
         )
         sys.exit(1)
 
-    logger.info("Evaluator registered: %s", provider)
-    return cls(api_key=api_key)
+    model = os.getenv("EVALUATOR_MODEL") or None
+
+    if model:
+        logger.info("Evaluator registered: %s (model override: %s)", provider, model)
+    else:
+        logger.info("Evaluator registered: %s (provider default model)", provider)
+
+    return cls(api_key=api_key, model=model)

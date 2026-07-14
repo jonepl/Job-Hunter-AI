@@ -224,3 +224,363 @@ code is marked inferred.
   follows the established structure without restructuring existing code.
 - **Consequences:** Clear reservation; an empty stub package until implemented.
   (`src/evaluator/`, `src/scraper/`, `src/tools/` are unrelated leftover stubs.)
+
+## ADR-022: Gemini pre-filter stage behind a `JobEnrichmentPort`
+
+- **Status:** Accepted
+- **Context:** Resume-aware evaluation with OpenAI/Anthropic is the dominant cost
+  of a run, and a large share of scraped postings are obviously irrelevant before
+  any resume is consulted. A cheap model can discard them — but must never see
+  personal data.
+- **Decision:** Add a pre-filter stage **between scraping and evaluation**, behind a
+  new `JobEnrichmentPort` ABC whose signature accepts only `Job` and never `Resume`
+  — the privacy boundary is *structural*, not conventional. The adapter is Gemini
+  Flash-Lite via `google-genai`, with strict `response_schema`. Failure is
+  **fail-open** (job proceeds to normal evaluation, logged); daily-quota exhaustion
+  trips a circuit breaker that skips the stage for the rest of the run.
+  Behavior is **skip-but-log**: flagged jobs are never sent to the paid evaluator,
+  but every flag and its reason is recorded — nothing disappears silently.
+  `ENRICHMENT_MODE=shadow|enforce` (default `shadow`) evaluates everything while
+  recording what *would* have been skipped, so the pre-filter's precision can be
+  measured before it is trusted.
+
+  **[Refined — v4-grill]** Shadow mode is only useful if its output is a *decision
+  surface*, not log noise. Each run report shows Gemini's flagged-to-skip jobs
+  compared against the **real scores they received when evaluated anyway** — the
+  **false-skip rate** — plus the estimated spend shadow *would* have saved. Without
+  that comparison the safe default becomes the permanent state. Graduation to
+  `enforce` has a **written criterion**: flip once the false-skip rate is 0 across a
+  run of ≥50 evaluated jobs. See `vertical-story-split.md` story A2 and §15.
+- **Consequences:** Meaningful cost reduction with no silent loss of postings.
+  Resume text cannot reach Gemini — enforced by the port signature and covered by a
+  test. Adds a Gemini API dependency and one pipeline stage. Before SQLite exists,
+  flags are logged to the run report and log file; once persistence lands they are
+  recorded as a `pre_filtered` job status with a reason (see ADR-026's
+  machine-never-clobbers-human rule).
+
+## ADR-023: SQLite persistence behind a `JobRepositoryPort`
+
+- **Status:** Accepted (supersedes ADR-007 for *state*; CSV remains a delivery
+  format, not a store)
+- **Context:** The agent re-scored jobs it had already evaluated on prior runs,
+  paying repeatedly for the same LLM call, and had no way to remember that a job
+  was dismissed or applied to. Every planned feature — lifecycle tracking, viewing,
+  resume storage, document generation, the web UI — needs durable state.
+- **Decision:** Introduce SQLite (WAL mode, stdlib `sqlite3`, no ORM) behind a
+  `JobRepositoryPort` ABC, with a lightweight migration runner. A single file at
+  `data/agent.db`, volume-mounted. Persistence arrives inside the first story that
+  needs it (skip re-evaluating seen jobs), carrying only the `jobs` and `sightings`
+  tables; later stories extend the schema by exactly what they add.
+- **Consequences:** Zero-dependency, zero-network, volume-mountable persistence
+  suited to a single-user local tool with no concurrent writers. Postgres would add
+  a server, a network hop, and operational surface for no benefit at this scale. The
+  core remains ignorant of SQLite — it sees only the port. `OutputPort` (email +
+  CSV) is unchanged and still delivers every run.
+
+  **[Refined — v4-grill]** The "no concurrent writers" framing held while the
+  scheduler and CLI never ran alongside a web server. Once ADR-032 co-locates the API
+  and a `BackgroundScheduler` in **one process**, two writers *can* coincide — a user
+  marking a job during a scheduled run. Contention is now **handled explicitly, not
+  assumed away** (`PRAGMA busy_timeout`, short per-job commits, all writes through one
+  `JobRepositoryPort`). See ADR-034.
+
+## ADR-024: Exact-fingerprint deduplication on a normalized key
+
+- **Status:** Accepted
+- **Context:** The same posting appears across LinkedIn, Indeed, Glassdoor and
+  ZipRecruiter with inconsistent formatting, and reappears on every scheduled run.
+  Identifying "the same job" controls both cost (skip re-evaluation) and dedup
+  quality (collapse cross-provider duplicates).
+- **Decision:** Identity is `company + title + location`, each canonicalized by
+  **pure deterministic normalization** and then matched **exactly**. Normalization
+  is not fuzzy matching: it lowercases, strips punctuation and accents, expands a
+  curated abbreviation map, strips trailing legal suffixes and known noise tokens,
+  and canonicalizes locations — but never makes a similarity judgment, so it cannot
+  false-merge. Match = all three canonical fields equal. **Near-miss** (logged,
+  never auto-merged) = canonical company and title equal, location differs.
+  Distinct = company or title differs. URL and description are excluded from the
+  key (URL is a per-sighting attribute; description varies by provider truncation).
+  Store both raw fields and the canonical key, plus a `fingerprint_version` integer.
+  Fuzzy/edit-distance/embedding similarity, a geographic gazetteer, cross-title
+  semantic equivalence, and description-based dedup are explicitly out of scope.
+- **Consequences:** The error budget is spent deliberately. A false *split* costs one
+  duplicate evaluation — cents, and visible. A false *merge* makes a real job vanish
+  before the user ever sees it — the expensive, irreversible error for a job seeker.
+  The design therefore biases toward splitting: substantive title qualifiers are
+  preserved (`(Backend)` ≠ `(Frontend)`), levels stay distinct
+  (`Engineer` ≠ `Engineer III`), and any field that normalizes to empty disables
+  dedup for that job rather than merging on a partial key. `fingerprint_version`
+  allows rules to evolve without silently mixing key generations. The near-miss log
+  is the empirical trigger for adding fuzzy matching later — driven by data, not
+  guesswork. Full normalization rules: `vertical-story-split.md` §13.
+
+## ADR-025: Job lifecycle with permissive transitions and append-only history
+
+- **Status:** Accepted
+- **Context:** Tracking a job through the application process requires status. A
+  strict state machine encodes the intended flow, but real job-hunting is messy —
+  you apply to something you never scored, a rejected role reopens, you change your
+  mind about a dismissal.
+- **Decision:** Nine statuses: `new`, `evaluated`, `pre_filtered` (machine-set) and
+  `applied`, `started`, `interviewing`, `offer`, `rejected`, `not_interested`
+  (human-set). **Transitions are permissive — any → any** — with an append-only
+  `status_history` table as the audit trail. Three guards: (1) reactivating a
+  terminal status prompts a **client-side** soft confirm, never a domain rejection;
+  (2) setting a status to its current value is an idempotent no-op that writes no
+  history row; (3) the single hard **domain** rule — **machine writes never clobber
+  a human-set status** (a re-scrape of an `applied` job never resets it to
+  `evaluated`). `saved` is a **boolean bookmark, not a status** — a job may be both
+  saved and applied.
+- **Consequences:** The one user is the authority on their own job hunt; the tool
+  does not refuse moves that reality permits. History means a wrong tap costs one
+  extra row, not lost data. Strict state machines earn their keep with many users,
+  untrusted input, or downstream automation that breaks on illegal states — none
+  apply here. Adding a status stays a trivial enum extension rather than a
+  transition-matrix redesign.
+
+## ADR-026: FastAPI as a driving adapter, parallel to the CLI
+
+- **Status:** Accepted (activates ADR-021; supersedes the planned static-HTML
+  dashboard `OutputPort`)
+- **Context:** ADR-021 reserved `src/api/` for a future FastAPI entrypoint, deferred
+  until "click-to-act" became a real need. The Job Hunter AI Web design requires
+  acting from the browser — marking status, uploading a resume, triggering
+  generation — so that need has arrived. An earlier plan to browse jobs via a static
+  HTML file emitted as an `OutputPort` adapter cannot serve a React Query SPA, which
+  fetches and mutates against an HTTP API.
+- **Decision:** Implement `src/api/` as a **driving adapter on the same side of the
+  hexagon as the CLI**. Both drive the identical core services and
+  `JobRepositoryPort`. Routes contain **no business logic** — they translate HTTP to
+  service calls and back. `deps.py` reuses the existing `service_factory`. The
+  static-HTML dashboard idea is abandoned; `OutputPort` returns to its real job
+  (email + CSV delivery per run) and is no longer a viewing surface.
+- **Consequences:** The web UI adds a route + a hook + a screen over services the
+  backend stories already built — no logic duplicated, no parallel stack. The CLI
+  keeps working unchanged. This is a direct payoff of ADR-001: a second way in cost
+  almost nothing. Trade-off: a running process is now required to browse jobs, where
+  the static file needed none.
+
+## ADR-027: React 18 + TypeScript + Vite frontend with React Query
+
+- **Status:** Accepted
+- **Context:** "Job Hunter AI Web" needs a real client. A prior project ("Rental
+  Buddy") established a working stack, and reusing it avoids relitigating settled
+  tooling choices.
+- **Decision:** React 18 + TypeScript + Vite, TailwindCSS for styling, React Query
+  v5 for all server state, Jest + React Testing Library for unit/integration tests,
+  Playwright for E2E. A **typed API client** in `web/src/api/` is the single seam
+  between frontend and backend — the only place `fetch` is called, with types
+  derived from the Pydantic response models so the two cannot drift. Tailwind's
+  `theme.extend` is generated from the existing `tokens.css`; no hardcoded colors.
+- **Consequences:** Familiar, well-supported tooling with a fast dev loop. React
+  Query removes hand-rolled caching, loading, and invalidation logic. The typed
+  client localizes breakage when the API changes. Adds a Node build step to a
+  previously Python-only repo (see ADR-032).
+
+## ADR-028: Resume stored once, provenance-only, with version history
+
+- **Status:** Accepted (resolves the `docs/prd.md` §12 divergence C1)
+- **Context:** The resume PDF was re-opened and re-parsed on every `run()` — once per
+  profile and again on every scheduled trigger — despite the PRD promising a cache.
+  Document tailoring additionally needs a richer representation than a raw text blob.
+- **Decision:** Parse the resume once on upload and persist it, enriching the
+  existing `Resume` entity **in place** (same type, richer fields) rather than
+  introducing a new entity — so `ResumeTailorPort.tailor()` can accept `Resume` and
+  benefit from the enrichment without an interface change. Runs read the stored
+  representation. Keep a **version history** with restore. The API and UI expose
+  **provenance only** — filename, version, upload timestamp, size, parsed counts
+  (skills, roles), and a readiness state — and **never render resume content**.
+
+  **[Clarified — v4-grill]** The master resume is a **single comprehensive corpus** —
+  everything the candidate has done — applied to *all* search profiles. There is **no
+  per-profile resume** in v1 (no reserved `profile_id` seam). Because tailoring
+  (ADR-029) *selects* from this superset rather than adding to it, the "never add
+  experience not in the original" rule is satisfied structurally. One consequence for
+  evaluation: since the corpus is broader than any single targeted resume, the
+  evaluator prompt is **instructed to score the candidate's *relevant* experience for
+  each role and not penalize breadth as scattered trajectory** — otherwise the
+  `career trajectory` and `resume signal quality` categories would understate fit.
+- **Consequences:** Eliminates redundant parsing on every run. Structured sections
+  make the tailoring rules ("preserve specific numbers", "never add experience not
+  in the original") mechanically checkable rather than merely prompted. Fabrication
+  detection is deliberately weak until this lands, and strengthens once it does.
+
+## ADR-029: Document generation ports with a three-outcome formatter
+
+- **Status:** Accepted
+- **Context:** Tailored resumes and cover letters must obey hard formatting rules
+  (no semicolons, `•` bullets only, em-dashes banned, hyphens only inside compound
+  words) that an LLM will not perfectly honor. A deterministic post-processor must
+  enforce them. The question is what it does on a violation.
+- **Decision:** Sibling narrow ports — `ResumeTailorPort` and `CoverLetterPort`
+  (not one generic `DocumentGenerationPort`; the two have genuinely different
+  validation rules) — plus a `TailoredResumeWriterPort` for `.docx` rendering, since
+  `OutputPort`'s contract (`deliver(results)`) is the wrong shape for a
+  user-triggered single artifact. Both generation ports hard-allowlist
+  `openai|anthropic` and fail at startup otherwise. The LLM returns **structured
+  JSON**, not a text blob, so section order is a property of the renderer.
+
+  The post-processor classifies violations and produces **three outcomes**:
+  1. **clean** — no violations; ship.
+  2. **repaired** — only *mechanical* violations (unambiguous character fixes:
+     em-dash → comma/period, semicolon → period, `-` bullet → `•`); fixed
+     deterministically, shipped **with a repair note** recorded on the generation.
+  3. **needs_review** — a *semantic-adjacent* violation the processor will not
+     safely auto-fix. The hyphen rule is the trap: `full-stack` (keep) versus
+     `2020-2024` or `Python - 5 years` (fix) is not a purely mechanical distinction,
+     and a blind repair could silently alter a date or a number. The `.docx` is
+     **still written**, the generation is marked `needs_review`, and the ambiguous
+     locations are recorded.
+
+  Before flagging, **exactly one** corrective retry feeds the violations back to the
+  model. Capped at one so a stubborn model cannot burn unbounded spend.
+
+  Generation is **asynchronous**: an LLM call is too slow to block an HTTP request.
+  `POST` returns a `generation_id`; the client polls the `generations` row until a
+  terminal status. A stuck `pending` times out to `failed`. Server-Sent Events were
+  rejected — their benefit is streaming text to the screen, and document content is
+  never rendered.
+- **Consequences:** A generation is never lost to a formatting nit, and numbers,
+  dates, and proper nouns are never silently rewritten. The user always knows when
+  output was touched or needs their eyes. Content never reaches stdout, logs, email,
+  or the DOM — only a file path and, for `needs_review`, the *locations* to check.
+  The three outcomes map directly onto the UI's generation-chip states.
+
+## ADR-030: Voice and tone as a structured descriptor, not writing samples
+
+- **Status:** Accepted (supersedes an earlier samples-primary proposal)
+- **Context:** Generated cover letters should sound like the candidate. Two
+  mechanisms were considered: few-shot **writing samples** (high fidelity, captures
+  rhythm and vocabulary) versus an explicit **descriptor** (easy to configure, but
+  adjectives underspecify voice). The initial lean was samples-primary.
+- **Decision:** **Descriptor-only.** Voice is a tone preset
+  (`direct`/`warm`/`formal`/`bold`), a first-person toggle
+  (`first_person`/`implied`), and free-text **style notes** — e.g. *"Keep sentences
+  short. Lead with measurable outcomes. Never use 'passionate', 'synergy',
+  'rockstar'."* A live **preview** is the tuning loop. Writing samples are dropped.
+- **Consequences:** Style notes are *instructions*, which a model follows more
+  reliably than it reverse-engineers rules from pasted prose — the user writes the
+  rules directly instead of making the model infer them. The preview closes the loop
+  faster than curating samples would. Crucially, this **removes a privacy
+  exception**: samples would have had to be stored as raw personal text under the
+  provider allowlist, whereas style notes are configuration. The provenance-only
+  storage rule (ADR-028) stays unbroken. If fidelity ever proves insufficient, one
+  optional sample field is a cheap later addition — the preview will reveal the need.
+
+## ADR-031: Settings persistence — DB for preferences, write-only secrets
+
+- **Status:** Accepted
+- **Context:** All configuration lived in `.env`, read at process start. A web
+  Settings screen requires a writable store, and a rule for how a running scheduler
+  picks up changes. Secrets need different handling from preferences.
+- **Decision:** `.env` is the **bootstrap seed**; a `settings` table in the existing
+  SQLite is the **runtime preferences** layer, seeded from `.env` on first run (no
+  empty-state cliff) and authoritative thereafter. Web-editable: search profiles,
+  cron expression, evaluator provider and model, score threshold, top results,
+  active scrapers, date filter, voice descriptor, `ENRICHMENT_MODE`. **Each
+  scheduled run reads settings from the DB at run start**, so edits go live on the
+  next run without a restart.
+
+  **Secrets are write-only, not `.env`-only.** The API never returns a full secret
+  value; it may return a **masked suffix** (`sk-ant-••••4Kq2`) for recognition and
+  accept a **replacement** write. The changing cron expression is the one setting
+  that cannot be handled by per-run reads — it is resolved by ADR-032.
+- **Consequences:** The real constraint (no secret exfiltration to the browser) is
+  satisfied without forcing the user to leave the app, edit a file, and restart —
+  a poor trade for a localhost tool. Two configuration sources exist, but with a
+  clean rule: `.env` seeds and holds secrets; the DB holds preferences. Anything
+  read once at boot must be re-read per run or explicitly rescheduled.
+
+## ADR-032: Multi-stage single container with an in-process scheduler
+
+- **Status:** Accepted (extends ADR-008 and revises ADR-018)
+- **Context:** ADR-008 ships one all-in-one container. Adding a React frontend
+  introduces a Node build step, and the web server must coexist with APScheduler.
+  ADR-018 used a `BlockingScheduler`, which cannot share a process with uvicorn.
+- **Decision:** A **multi-stage Docker build**: a `node` stage builds `web/` to
+  static assets, which are copied into the Python image. FastAPI serves the SPA at
+  `/` and the API under `/api` — **one container, one port, same origin** (which
+  also removes production CORS entirely). Development still uses the Vite dev server
+  proxying to FastAPI.
+
+  The container runs **one process**: uvicorn in the foreground, with APScheduler as
+  a **`BackgroundScheduler`** (replacing `BlockingScheduler`) started on FastAPI's
+  lifespan startup, gated by `SCHEDULE_ENABLED=true`. CLI immediate mode remains a
+  separate invocation that never boots the server.
+- **Consequences:** Because the API and the scheduler now share a process, editing
+  the cron expression in the web UI **reschedules the APScheduler job by a direct
+  method call** — no cross-process signaling, no DB polling, no container restart.
+  This resolves the hardest sub-question in ADR-031. A single-user localhost tool
+  gains nothing from service separation or independent scaling, so unifying is
+  strictly simpler. Trade-off: the frontend build is now part of the backend image,
+  and a scheduler crash shares a process with the web server. The bind/publish and
+  write-contention consequences of running one process are addressed in **ADR-034**.
+
+## ADR-033: Near-miss as a fixed band; evaluation threshold stored per job
+
+- **Status:** Accepted (refines ADR-012; resolves the open decision flagged in
+  `.claude/rules/design.md` and `docs/design/ui-spec.md` §5.1)
+- **Context:** The UI's signature `<ThresholdRail>` colors every score in three
+  states — qualify / near-miss / below — and the Match-threshold settings screen shows
+  a "near-miss band." But the backend had no such concept: near-miss existed **only**
+  in the zero-results case (top-5 below threshold), and `RunReport.suggested_threshold`
+  floored the lowest of those five to the nearest 5 — a run-relative artifact, not a
+  band. On a normal run every non-qualifying job was simply "below," so the design's
+  amber band had nothing to compute from. Separately, the score threshold is
+  **per-profile** (`SearchProfile.score_threshold`, ADR-019), yet the UI treated it as
+  one global value, and `TRACKED` deliberately mixes jobs from profiles with different
+  thresholds.
+- **Decision:** (1) The near-miss band is a **fixed-width offset below the active
+  threshold**, owned by the backend as `NEAR_MISS_BAND` (default `15`, matching the
+  design's 60–74 at threshold 75). `near_miss_floor = threshold − NEAR_MISS_BAND`; a
+  job is *near-miss* when `near_miss_floor ≤ score < threshold`, *qualify* when
+  `score ≥ threshold`, *below* otherwise. This single rule feeds the rail, the email
+  near-miss cards, the CSV, and the zero-results suggested threshold — **retiring** the
+  old floor-the-lowest-of-five rule. (2) The threshold used to evaluate a job is
+  **persisted on the evaluation row** and the API returns it per job. `<ThresholdRail>`
+  always reads the job's own stored `threshold` and derived `nearMissFloor`; there is
+  **no global threshold**. The header threshold is a per-profile display, shown as
+  mixed/"—" in the cross-profile `TRACKED` view. The Match-threshold settings screen
+  edits the *selected profile's* threshold.
+- **Consequences:** The three-state rail is truthful on every run, not only
+  zero-result runs, and cards from different profiles color correctly in one list.
+  Near-miss becomes a first-class, absolute concept shared by every output surface. The
+  legacy bare `SCORE_THRESHOLD` env var (single-search fallback) is left untouched —
+  removing it is the separate legacy-config cleanup tracked in `remaining_work.md`.
+  Lands in the B1 story (persistence) and is consumed by W1 (`<ThresholdRail>`).
+
+## ADR-034: Deployment hardening for the single-process web server
+
+- **Status:** Accepted (addresses consequences of ADR-032 left open there; refines
+  ADR-023 and ADR-029)
+- **Context:** ADR-032 runs uvicorn and a `BackgroundScheduler` in **one process**,
+  serving a **single SQLite file**, inside Docker, on `localhost` with no auth, and the
+  document-generation feature writes `.docx` files to disk. Three operational gaps
+  followed that no prior ADR closed: concurrent writers, container binding, and
+  generated-file lifecycle.
+- **Decision:**
+  1. **SQLite write contention.** A scheduled run (long, write-heavy) can now coincide
+     with a user write from the browser (mark status, save, generate). SQLite permits
+     one writer at a time; WAL does not change that. Handle it explicitly: set
+     `PRAGMA busy_timeout` (~5000 ms) on every connection, keep the run's writes in
+     **short per-job commits** rather than one run-long transaction, and route all
+     writes through the single `JobRepositoryPort` instance. Amends ADR-023's "no
+     concurrent writers" line to "contention handled, not assumed away."
+  2. **Container binding.** Bind uvicorn to `0.0.0.0` **inside** the container (so port
+     forwarding works) but **publish on host loopback only** — `127.0.0.1:8000:8000` in
+     `docker-compose.yml`, never `8000:8000`. This keeps the "loopback-only, therefore
+     no auth" model honest. A warning comment sits at that compose line; the explicit
+     trigger is: **any non-loopback publish makes auth mandatory.**
+  3. **Generated-file storage.** Tailored `.docx` files live at
+     `data/generations/{generation_id}.docx`, under the same volume as `data/agent.db`
+     (file and the `generations` row that references it share a lifecycle and mount).
+     Filenames are opaque ids — no candidate name or job title in the path.
+     `GET /download` checks the file exists before streaming and returns **410 Gone**
+     if a `ready` row's file is missing, so the chip falls back to regenerate rather
+     than error. Retention: **keep everything, user-deletable** (row + file); no
+     time-based auto-purge at single-user scale.
+- **Consequences:** The single-process web deployment is safe to use as the product
+  intends — browsing and acting while a scheduled run writes. Costs a few explicit
+  rules in B1 (contention), W1 (binding), and F/W6 (file storage) instead of silent
+  assumptions. If the app ever leaves localhost, the binding trigger forces the auth
+  decision rather than leaving it implicit.

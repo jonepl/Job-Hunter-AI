@@ -66,3 +66,36 @@ def test_build_evaluator_only_requires_relevant_api_key():
         with patch("os.getenv", side_effect=lambda k, default="": env.get(k, default)):
             evaluator = build_evaluator()
     assert isinstance(evaluator, OpenAIEvaluator)
+
+
+def test_build_evaluator_applies_model_override():
+    """EVALUATOR_MODEL overrides the provider default on the built evaluator."""
+    env = {
+        "EVALUATOR_PROVIDER": "openai",
+        "OPENAI_API_KEY": "test-key",
+        "EVALUATOR_MODEL": "gpt-4o-mini",
+    }
+    with patch.dict("os.environ", env, clear=False):
+        evaluator = build_evaluator()
+    assert evaluator._model == "gpt-4o-mini"
+
+
+def test_build_evaluator_uses_default_model_when_unset():
+    """The provider default model is used when EVALUATOR_MODEL is absent."""
+    env = {"EVALUATOR_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"}
+    with patch.dict("os.environ", env, clear=False):
+        with patch("os.getenv", side_effect=lambda k, default="": env.get(k, default)):
+            evaluator = build_evaluator()
+    assert evaluator._model == "claude-sonnet-4-5"
+
+
+def test_build_evaluator_treats_empty_model_as_unset():
+    """An empty EVALUATOR_MODEL falls back to the provider default."""
+    env = {
+        "EVALUATOR_PROVIDER": "openai",
+        "OPENAI_API_KEY": "test-key",
+        "EVALUATOR_MODEL": "",
+    }
+    with patch.dict("os.environ", env, clear=False):
+        evaluator = build_evaluator()
+    assert evaluator._model == "gpt-4o"

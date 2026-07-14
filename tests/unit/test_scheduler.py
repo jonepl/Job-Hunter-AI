@@ -8,6 +8,7 @@ import pytest
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
+from src.core.exceptions import ModelNotFoundError
 from src.scheduler import run_all_profiles
 
 
@@ -63,6 +64,29 @@ class TestRunAllProfiles:
         await run_all_profiles(profiles, factory)
 
         assert succeeding_service.run.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_run_all_profiles_aborts_on_model_not_found(self):
+        """A ModelNotFoundError aborts the trigger without running later profiles."""
+        profiles = [_make_profile(1), _make_profile(2)]
+
+        failing_service = MagicMock()
+        failing_service.run = AsyncMock(
+            side_effect=ModelNotFoundError("model 'gpt-4oo' not found")
+        )
+        second_service = MagicMock()
+        second_service.run = AsyncMock(return_value=MagicMock())
+
+        services = [failing_service, second_service]
+
+        def factory(profile: SearchProfile):
+            return services.pop(0)
+
+        # The daemon stays up (no exception propagates) but breaks out early.
+        await run_all_profiles(profiles, factory)
+
+        failing_service.run.assert_called_once()
+        second_service.run.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_run_all_profiles_logs_profile_details(self, caplog):

@@ -5,6 +5,7 @@ CLI values always take precedence over .env values when provided.
 """
 
 import argparse
+import os
 import sys
 
 from src.core.domain.date_posted import DatePosted
@@ -59,3 +60,18 @@ def apply_cli_overrides(
             sys.exit(1)
         for p in profiles:
             p.active_scrapers = scrapers
+
+
+def apply_evaluator_override(args: argparse.Namespace) -> None:
+    """Apply the --evaluator-model CLI override to the environment.
+
+    The evaluator model is a global setting rather than a per-profile field,
+    so it is applied by writing EVALUATOR_MODEL, which
+    build_evaluator() reads when constructing the adapter. A None value (flag
+    not provided) leaves any .env-configured EVALUATOR_MODEL untouched.
+
+    Args:
+        args: Parsed CLI arguments from parse_args().
+    """
+    if args.evaluator_model:
+        os.environ["EVALUATOR_MODEL"] = args.evaluator_model

@@ -5,12 +5,13 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from openai import APIError
+from openai import APIError, NotFoundError
 
 from src.adapters.evaluator.openai_evaluator import OpenAIEvaluator
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
+from src.core.exceptions import ModelNotFoundError
 
 
 @pytest.fixture
@@ -80,6 +81,50 @@ def make_mock_openai_response(
     response.choices = [choice]
     response.usage = usage
     return response
+
+
+def test_init_defaults_to_gpt_4o():
+    """Model defaults to gpt-4o when no override is passed."""
+    evaluator = OpenAIEvaluator(api_key="test-key")
+    assert evaluator._model == "gpt-4o"
+
+
+def test_init_accepts_model_override():
+    """An explicit model override replaces the default."""
+    evaluator = OpenAIEvaluator(api_key="test-key", model="gpt-4o-mini")
+    assert evaluator._model == "gpt-4o-mini"
+
+
+@pytest.mark.asyncio
+async def test_evaluate_raises_model_not_found_on_404(sample_resume, sample_job):
+    """A 404 model-not-found is re-raised as ModelNotFoundError to abort the run."""
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=NotFoundError("model not found", response=MagicMock(), body=None)
+    )
+
+    evaluator = OpenAIEvaluator(api_key="test-key", model="gpt-4oo")
+    evaluator._client = mock_client
+
+    with pytest.raises(ModelNotFoundError, match="gpt-4oo"):
+        await evaluator.evaluate(sample_resume, sample_job)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_uses_configured_model(sample_resume, sample_job):
+    """The configured model is passed through to the OpenAI API call."""
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=make_mock_openai_response(_full_payload())
+    )
+
+    evaluator = OpenAIEvaluator(api_key="test-key", model="gpt-4o-mini")
+    evaluator._client = mock_client
+
+    await evaluator.evaluate(sample_resume, sample_job)
+
+    _, kwargs = mock_client.chat.completions.create.call_args
+    assert kwargs["model"] == "gpt-4o-mini"
 
 
 @pytest.mark.asyncio

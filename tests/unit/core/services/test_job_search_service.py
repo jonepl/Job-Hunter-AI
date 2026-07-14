@@ -12,6 +12,7 @@ from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCateg
 from src.core.domain.resume import Resume
 from src.core.domain.run_report import RunReport
 from src.core.domain.scraper_name import ScraperName
+from src.core.exceptions import ModelNotFoundError
 from src.core.services.job_search_service import JobSearchService
 
 
@@ -154,6 +155,19 @@ async def test_run_filters_results_below_threshold():
 
     assert len(report.qualifying_results) == 1
     assert report.qualifying_results[0].score == 85
+
+
+@pytest.mark.asyncio
+async def test_run_propagates_model_not_found_error():
+    """A ModelNotFoundError from the evaluator aborts the run (no zero-results report)."""
+    service, _, evaluator, output = make_service(scraper_jobs=[[make_job()]])
+    evaluator.evaluate = AsyncMock(side_effect=ModelNotFoundError("bad model"))
+
+    with pytest.raises(ModelNotFoundError):
+        await service.run(query="Python Developer", location="Remote", threshold=70)
+
+    # The run must not deliver a misleading empty report on a config error.
+    output.deliver.assert_not_called()
 
 
 @pytest.mark.asyncio

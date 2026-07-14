@@ -11,6 +11,7 @@ from src.adapters.evaluator.anthropic_evaluator import ClaudeEvaluator
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
+from src.core.exceptions import ModelNotFoundError
 
 
 @pytest.fixture
@@ -78,6 +79,52 @@ def make_mock_anthropic_response(
     response.content = [content_block]
     response.usage = usage
     return response
+
+
+def test_init_defaults_to_claude_sonnet():
+    """Model defaults to claude-sonnet-4-5 when no override is passed."""
+    evaluator = ClaudeEvaluator(api_key="test-key")
+    assert evaluator._model == "claude-sonnet-4-5"
+
+
+def test_init_accepts_model_override():
+    """An explicit model override replaces the default."""
+    evaluator = ClaudeEvaluator(api_key="test-key", model="claude-opus-4-1")
+    assert evaluator._model == "claude-opus-4-1"
+
+
+@pytest.mark.asyncio
+async def test_evaluate_raises_model_not_found_on_404(sample_resume, sample_job):
+    """A 404 model-not-found is re-raised as ModelNotFoundError to abort the run."""
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=anthropic.NotFoundError(
+            "model not found", response=MagicMock(), body=None
+        )
+    )
+
+    evaluator = ClaudeEvaluator(api_key="test-key", model="claude-sonnet-9")
+    evaluator._client = mock_client
+
+    with pytest.raises(ModelNotFoundError, match="claude-sonnet-9"):
+        await evaluator.evaluate(resume=sample_resume, job=sample_job)
+
+
+@pytest.mark.asyncio
+async def test_evaluate_uses_configured_model(sample_resume, sample_job):
+    """The configured model is passed through to the Anthropic API call."""
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        return_value=make_mock_anthropic_response(_full_payload())
+    )
+
+    evaluator = ClaudeEvaluator(api_key="test-key", model="claude-opus-4-1")
+    evaluator._client = mock_client
+
+    await evaluator.evaluate(resume=sample_resume, job=sample_job)
+
+    _, kwargs = mock_client.messages.create.call_args
+    assert kwargs["model"] == "claude-opus-4-1"
 
 
 @pytest.mark.asyncio

@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 from src.infra.logging import configure_logging
 from src.cli.args import parse_args
-from src.cli.overrides import apply_cli_overrides
+from src.cli.overrides import apply_cli_overrides, apply_evaluator_override
 from src.bootstrap import load_profiles
 from src.runner import run_immediate
 from src.scheduler import start_scheduler
@@ -35,6 +35,7 @@ async def main() -> None:
     args = parse_args()
     profiles = load_profiles()
     apply_cli_overrides(profiles, args)
+    apply_evaluator_override(args)
 
     if os.getenv("SCHEDULE_ENABLED", "false").lower() == "true":
         start_scheduler(
