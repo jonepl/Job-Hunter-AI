@@ -15,6 +15,7 @@ from src.core.domain.resume import Resume
 from src.core.domain.run_report import RunReport
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.work_type import WorkType
+from src.core.exceptions import ModelNotFoundError
 from src.core.ports.evaluator_port import EvaluatorPort
 from src.core.ports.output_port import OutputPort
 from src.core.ports.scraper_port import ScraperPort
@@ -168,6 +169,10 @@ class JobSearchService:
                             result.score,
                         )
                     return result
+                except ModelNotFoundError:
+                    # Fatal configuration error — the model is wrong for every
+                    # job, so abort the run instead of zeroing out each result.
+                    raise
                 except Exception as exc:
                     logger.error("Evaluation failed for %r: %s", job.title, exc)
                     return None

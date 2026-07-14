@@ -7,13 +7,25 @@
 - Models: OpenAI `gpt-4o` (`OpenAIEvaluator`, `response_format` strict mode) and
   Anthropic `claude-sonnet-4-5` (`AnthropicEvaluator`, prompt-based JSON
   enforcement). Both use their official Python SDKs.
+- The default model can be overridden via `EVALUATOR_MODEL` (`.env`) or the
+  `--evaluator-model` CLI flag (CLI writes the env var; the factory reads it).
+  Each adapter takes an optional `model` arg, falling back to its `_MODEL`
+  default. Never hardcode the model at a call site — pass it through the ctor.
 - Both adapters return the **identical `MatchResult` shape** — including
   `seniority_level`, `years_experience_detected`, `hire_recommendation`, and the
   9-category `score_breakdown`. Keep prompts (`prompts.py`) and parsing in sync
   with `src/core/domain/match_result.py`.
 - All LLM responses must be validated into Pydantic models.
-- Handle API errors gracefully — return a default low-score `MatchResult` on
-  failure; never crash the run.
+- Handle **transient** API errors gracefully — flaky calls, timeouts, and
+  malformed/invalid responses return a default low-score `MatchResult`; never
+  crash the run over one bad evaluation.
+- **Exception — configuration errors are fatal, not graceful.** A model-not-found
+  error (`NotFoundError` from either SDK) means `EVALUATOR_MODEL` is wrong for the
+  provider; it would fail *every* job identically and deliver a misleading
+  zero-results run. Adapters re-raise it as `ModelNotFoundError`
+  (`src/core/exceptions.py`); the service re-raises rather than swallowing it; the
+  immediate runner exits non-zero and the scheduler aborts that trigger. Do not
+  "fix" this back into a default low-score result — the distinction is deliberate.
 
 ## Cost tracking
 

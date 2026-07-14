@@ -1,11 +1,12 @@
 """Unit tests for src/cli/overrides.py — CLI override application."""
 
 import argparse
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.cli.overrides import apply_cli_overrides
+from src.cli.overrides import apply_cli_overrides, apply_evaluator_override
 from src.core.domain.work_type import WorkType
 
 
@@ -17,6 +18,7 @@ def _make_args(**kwargs) -> argparse.Namespace:
         "work_type": None,
         "date_posted": None,
         "scrapers": None,
+        "evaluator_model": None,
     }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
@@ -73,3 +75,19 @@ def test_invalid_scrapers_exits():
         with pytest.raises(SystemExit) as exc_info:
             apply_cli_overrides(profiles, args)
     assert exc_info.value.code == 1
+
+
+def test_apply_evaluator_override_sets_env_var():
+    """--evaluator-model writes EVALUATOR_MODEL into the environment."""
+    args = _make_args(evaluator_model="gpt-4o-mini")
+    with patch.dict("os.environ", {}, clear=False):
+        apply_evaluator_override(args)
+        assert os.environ["EVALUATOR_MODEL"] == "gpt-4o-mini"
+
+
+def test_apply_evaluator_override_noop_when_none():
+    """EVALUATOR_MODEL is left untouched when --evaluator-model is not provided."""
+    args = _make_args(evaluator_model=None)
+    with patch.dict("os.environ", {"EVALUATOR_MODEL": "from-dotenv"}, clear=False):
+        apply_evaluator_override(args)
+        assert os.environ["EVALUATOR_MODEL"] == "from-dotenv"

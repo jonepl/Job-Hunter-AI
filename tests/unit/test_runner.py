@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.core.exceptions import ModelNotFoundError
 from src.runner import _log_report_results, run_immediate
 
 
@@ -99,6 +100,22 @@ async def test_run_immediate_exits_on_resume_not_found():
         await run_immediate(profiles=profiles, service_factory=factory)
 
     assert exc_info.value.code == 1
+
+
+@pytest.mark.asyncio
+async def test_run_immediate_exits_on_model_not_found():
+    """run_immediate() calls sys.exit(1) when the configured model is invalid."""
+    profiles = [_make_profile(1), _make_profile(2)]
+    mock_svc = MagicMock()
+    mock_svc.run = AsyncMock(side_effect=ModelNotFoundError("model 'gpt-4oo' not found"))
+    factory = MagicMock(return_value=mock_svc)
+
+    with pytest.raises(SystemExit) as exc_info:
+        await run_immediate(profiles=profiles, service_factory=factory)
+
+    assert exc_info.value.code == 1
+    # Fail-fast: does not fall through to the second profile.
+    mock_svc.run.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -69,4 +69,15 @@ def parse_args() -> argparse.Namespace:
             "Supported: linkedin, indeed, glassdoor, ziprecruiter."
         ),
     )
+    parser.add_argument(
+        "--evaluator-model",
+        type=str,
+        default=None,
+        dest="evaluator_model",
+        help=(
+            "LLM model name for the evaluator. Overrides EVALUATOR_MODEL in "
+            ".env for this run. Must be valid for the active EVALUATOR_PROVIDER "
+            "(e.g. gpt-4o for openai, claude-sonnet-4-5 for anthropic)."
+        ),
+    )
     return parser.parse_args()

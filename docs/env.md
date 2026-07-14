@@ -26,6 +26,7 @@ all placeholder values with real credentials before running.
 
 | Variable | Description | Default |
 |---|---|---|
+| EVALUATOR_MODEL | LLM model name for the evaluator. Overrides the provider's built-in default. Must be valid for the active `EVALUATOR_PROVIDER` (e.g. `gpt-4o` / `gpt-4o-mini` for openai, `claude-sonnet-4-5` for anthropic). The `--evaluator-model` CLI flag overrides this for a single run. An invalid model name fails the run fast with a clear error rather than scoring every job 0. | provider default (`gpt-4o` / `claude-sonnet-4-5`) |
 | SCORE_THRESHOLD | Minimum match score to include in results (0-100). Used in legacy single search mode. | `75` |
 | TOP_RESULTS | When set caps the number of qualifying results delivered after score filtering. | not set — all qualifying results returned |
 | DATE_POSTED | Default recency filter for job listings. Values: `24h`, `3days`, `week`, `month`. Used in legacy single search mode. | `3days` |

@@ -9,6 +9,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.core.domain.search_profile import SearchProfile
+from src.core.exceptions import ModelNotFoundError
 from src.infra.cost_estimator import estimate_run_cost
 from src.infra.cost_tracker import CostTracker
 
@@ -105,6 +106,13 @@ async def run_all_profiles(
                 logger.info("Actual LLM cost : %s", report.run_cost.formatted_total)
                 logger.info("=" * 60)
 
+        except ModelNotFoundError as exc:
+            # Fatal config shared by every profile — abort this trigger instead
+            # of failing each profile identically. The daemon stays up so the
+            # next trigger can pick up a corrected .env.
+            logger.critical("%s", exc)
+            logger.critical("Aborting this scheduled run; fix EVALUATOR_MODEL and restart.")
+            break
         except Exception as e:
             logger.error("Profile %d failed: %s", profile.profile_id, e)
             continue

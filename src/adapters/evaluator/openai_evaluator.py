@@ -3,7 +3,7 @@
 import json
 import logging
 
-from openai import APIError, AsyncOpenAI
+from openai import APIError, AsyncOpenAI, NotFoundError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from src.adapters.evaluator.prompts import SYSTEM_PROMPT, USER_PROMPT
@@ -11,6 +11,7 @@ from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
 from src.core.domain.work_type import WorkType
+from src.core.exceptions import ModelNotFoundError
 from src.core.ports.evaluator_port import EvaluatorPort
 
 logger = logging.getLogger(__name__)
@@ -90,13 +91,16 @@ def _default_result(job: Job) -> MatchResult:
 class OpenAIEvaluator(EvaluatorPort):
     """Evaluates job listings against a resume using OpenAI GPT-4o."""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, model: str | None = None) -> None:
         """Initialise the evaluator with an OpenAI API key.
 
         Args:
             api_key: OpenAI API key loaded from environment.
+            model: Optional model name override. Falls back to the default
+                (gpt-4o) when None.
         """
         self._client = AsyncOpenAI(api_key=api_key)
+        self._model = model or _MODEL
 
     async def evaluate(
         self,
@@ -130,7 +134,7 @@ class OpenAIEvaluator(EvaluatorPort):
 
         try:
             response = await self._client.chat.completions.create(
-                model=_MODEL,
+                model=self._model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
@@ -245,6 +249,11 @@ class OpenAIEvaluator(EvaluatorPort):
                 hire_recommendation=evaluated.hire_recommendation,
             ), input_tokens, output_tokens
 
+        except NotFoundError as exc:
+            raise ModelNotFoundError(
+                f"OpenAI model {self._model!r} not found. Check EVALUATOR_MODEL "
+                f"(or --evaluator-model), or unset it to use the default."
+            ) from exc
         except APIError as exc:
             logger.error("OpenAI API error evaluating %r: %s", job.title, exc)
             return _default_result(job), 0, 0

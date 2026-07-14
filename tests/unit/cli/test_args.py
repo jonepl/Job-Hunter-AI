@@ -14,6 +14,7 @@ def test_parse_args_all_defaults_none():
     assert args.work_type is None
     assert args.date_posted is None
     assert args.scrapers is None
+    assert args.evaluator_model is None
 
 
 def test_parse_args_query():
@@ -21,6 +22,13 @@ def test_parse_args_query():
     with patch("sys.argv", ["main", "--query", "Software Engineer"]):
         args = parse_args()
     assert args.query == "Software Engineer"
+
+
+def test_parse_args_evaluator_model():
+    """--evaluator-model value is stored in args.evaluator_model."""
+    with patch("sys.argv", ["main", "--evaluator-model", "gpt-4o-mini"]):
+        args = parse_args()
+    assert args.evaluator_model == "gpt-4o-mini"
 
 
 def test_parse_args_work_type_single():

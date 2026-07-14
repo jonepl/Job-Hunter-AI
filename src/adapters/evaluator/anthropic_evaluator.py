@@ -12,6 +12,7 @@ from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
 from src.core.domain.work_type import WorkType
+from src.core.exceptions import ModelNotFoundError
 from src.core.ports.evaluator_port import EvaluatorPort
 
 logger = logging.getLogger(__name__)
@@ -113,13 +114,16 @@ def _rescue_misplaced_fields(data: dict) -> dict:
 class ClaudeEvaluator(EvaluatorPort):
     """Evaluates job listings against a resume using Anthropic claude-sonnet-4-5."""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, model: str | None = None) -> None:
         """Initialise the evaluator with an Anthropic API key.
 
         Args:
             api_key: Anthropic API key loaded from environment.
+            model: Optional model name override. Falls back to the default
+                (claude-sonnet-4-5) when None.
         """
         self._client = AsyncAnthropic(api_key=api_key)
+        self._model = model or _MODEL
 
     async def evaluate(
         self,
@@ -153,7 +157,7 @@ class ClaudeEvaluator(EvaluatorPort):
 
         try:
             response = await self._client.messages.create(
-                model=_MODEL,
+                model=self._model,
                 max_tokens=2048,
                 system=SYSTEM_PROMPT,
                 messages=[
@@ -191,6 +195,11 @@ class ClaudeEvaluator(EvaluatorPort):
                 hire_recommendation=evaluated.hire_recommendation,
             ), input_tokens, output_tokens
 
+        except anthropic.NotFoundError as exc:
+            raise ModelNotFoundError(
+                f"Anthropic model {self._model!r} not found. Check EVALUATOR_MODEL "
+                f"(or --evaluator-model), or unset it to use the default."
+            ) from exc
         except anthropic.APIError as exc:
             logger.error("Claude API error evaluating %r: %s", job.title, exc)
             return _default_result(job), 0, 0

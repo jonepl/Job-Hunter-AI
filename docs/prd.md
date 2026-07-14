@@ -151,6 +151,17 @@ src/
 - Invalid scraper names caught at startup with clear error message
 - Empty scraper list caught at startup with clear error message
 
+### Configurable Evaluator Model
+
+- Select the evaluator provider via `EVALUATOR_PROVIDER` (`openai` or `anthropic`)
+- Each provider has a built-in default model (`gpt-4o` / `claude-sonnet-4-5`)
+- Override the default via `EVALUATOR_MODEL` in `.env`, or per run via the
+  `--evaluator-model` CLI argument (CLI wins over `.env`)
+- The chosen model is logged at evaluator construction
+- An invalid/nonexistent model name **fails the run fast** with a clear message
+  (immediate mode exits non-zero; scheduled mode aborts that trigger) rather than
+  silently scoring every job 0 — a config typo is fatal, not a transient error
+
 ### Multi-Profile Search
 
 - Multiple search profiles configured via `PROFILE_N_` variables in `.env`
