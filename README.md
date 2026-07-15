@@ -7,10 +7,11 @@ A Dockerized Python backend service that collects job listings from LinkedIn (sc
 ## How It Works
 
 1. Collects job listings concurrently from all four platforms (LinkedIn via Playwright; Indeed, Glassdoor, and ZipRecruiter via the JSearch API)
-2. Parses your resume PDF and sends each job + resume to the configured LLM for scoring
-3. Filters results below a configurable score threshold (default: 75)
-4. Returns all qualifying matches ranked by relevance (or top N when TOP_RESULTS is set)
-5. Always delivers a report via email and CSV — even when zero jobs qualify
+2. *(Optional)* Runs a cheap **Gemini pre-filter** to flag obvious junk postings before any paid evaluation — off by default, resume never seen ([details](#pre-filter-gemini-optional))
+3. Parses your resume PDF and sends each job + resume to the configured LLM for scoring
+4. Filters results below a configurable score threshold (default: 75)
+5. Returns all qualifying matches ranked by relevance (or top N when TOP_RESULTS is set)
+6. Always delivers a report via email and CSV — even when zero jobs qualify
 
 ---
 
@@ -29,12 +30,13 @@ src/
 ├── cli/               ← argparse definitions and CLI overrides
 ├── infra/             ← logging configuration
 ├── core/
-│   ├── domain/        ← Pydantic entities: Job, Resume, MatchResult
-│   ├── ports/         ← Abstract interfaces: ScraperPort, EvaluatorPort, OutputPort
+│   ├── domain/        ← Pydantic entities: Job, Resume, MatchResult, EnrichmentResult, EnrichmentSummary
+│   ├── ports/         ← Abstract interfaces: ScraperPort, EvaluatorPort, OutputPort, JobEnrichmentPort
 │   └── services/      ← JobSearchService (pipeline orchestration)
 └── adapters/
     ├── scrapers/       ← linkedin.py, jsearch.py
     ├── evaluator/      ← openai_evaluator.py, anthropic_evaluator.py
+    ├── enrichment/     ← gemini_enrichment.py (optional pre-filter)
     └── output/         ← email_output.py, file_output.py
 ```
 
@@ -354,6 +356,51 @@ JSEARCH_MAX_PAGES=5   # 50 jobs per JSearch platform per run
 
 ---
 
+## Pre-filter (Gemini, optional)
+
+An optional stage sits **between scraping and evaluation** and uses a cheap Gemini
+model to flag obviously irrelevant postings before the expensive, resume-aware LLM
+evaluation runs. It is **disabled by default** with zero overhead.
+
+**Privacy is structural.** The pre-filter port (`JobEnrichmentPort.enrich(job)`)
+accepts only a `Job` and never a `Resume` — your resume can never reach Gemini,
+enforced by the interface signature (see [ADR-022](docs/adr.md)), not by convention.
+
+**Enable it:**
+```env
+ENRICHMENT_ENABLED=true
+ENRICHMENT_MODE=shadow          # shadow (default) | enforce
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.5-flash   # optional override
+ENRICHMENT_MAX_CONCURRENT=2     # lower to 1 on a free-tier key
+ENRICHMENT_DELAY_SECONDS=1.0    # raise under a tight per-minute quota
+```
+
+**Two modes — measure first, then trust:**
+
+| Mode | Behavior |
+|---|---|
+| `shadow` (default) | Evaluates **every** job anyway, but records what it *would* have skipped. Lets you measure the pre-filter's **false-skip rate** against real scores before relying on it. |
+| `enforce` | Actually withholds flagged jobs from the paid evaluator — this is where you save money. |
+
+Each run report (logs + email) shows a **Pre-filter Summary**: how many jobs were
+flagged, the false-skip rate, estimated savings, and how many calls errored.
+**Graduate to `enforce`** once the false-skip rate is `0` across ≥50 evaluated jobs
+with no errors.
+
+**Resilient by design:**
+- **Fail-open** — any pre-filter error lets the job proceed to normal evaluation; a failure never drops a real job.
+- **Circuit breaker** — quota exhaustion (`429`) or an unavailable model (`404`) trips a per-run breaker that skips the stage for the rest of the run, logged once. A bad `GEMINI_MODEL` disables the pre-filter for the run (it is *not* fatal) and is reported in the summary.
+- **Throttled** — calls run under their own concurrency limit + delay so a large scrape can't blow the provider's per-minute quota.
+
+> **Free-tier note:** Gemini's free tier has a low request-per-minute quota. Use
+> `ENRICHMENT_MAX_CONCURRENT=1` and a larger `ENRICHMENT_DELAY_SECONDS` (e.g. `6`),
+> and expect the stage to add noticeable latency. The pre-filter pays off most on
+> noisy, broad, or staffing-heavy searches; narrow senior-role searches tend to
+> contain little obvious junk to skip.
+
+---
+
 ## LLM Cost Tracking
 
 Enable cost visibility by setting `SHOW_COST_ESTIMATE=true` in `.env`.
@@ -477,6 +524,7 @@ The short version:
 |---|---|
 | Language | Python 3.10+ |
 | LLM | OpenAI GPT-4o OR Claude Sonnet-4-5 |
+| Pre-filter (optional) | Google Gemini via google-genai |
 | Browser scraping | Playwright (LinkedIn) |
 | Job aggregator API | JSearch (RapidAPI) via requests (Indeed, Glassdoor, ZipRecruiter) |
 | Resume parsing | PyPDF2 |

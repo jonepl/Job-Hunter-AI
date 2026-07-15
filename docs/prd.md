@@ -137,6 +137,27 @@ src/
 - Send each job description and resume to GPT-4o for relevance scoring
 - Each result includes: title, company, location, URL, score, matched skills, missing skills, and a summary
 
+### Pre-filter (Gemini, optional)
+
+- An optional cheap pre-filter stage sits **between scraping and evaluation** and
+  flags obviously irrelevant postings before any paid, resume-aware evaluation
+  runs. Enabled via `ENRICHMENT_ENABLED=true`; disabled by default with zero
+  overhead.
+- The pre-filter **never sees the resume** — it inspects only the job listing.
+  This is enforced structurally by the `JobEnrichmentPort` signature, not by
+  convention.
+- **Fail-open:** any pre-filter error lets the job proceed to normal evaluation.
+  A Gemini quota exhaustion trips a circuit breaker that skips the stage for the
+  rest of the run.
+- **Skip-but-log:** flagged jobs are never dropped silently — every flag records a
+  reason. `ENRICHMENT_MODE` (default `shadow`) evaluates everything while
+  measuring what *would* have been skipped; `enforce` actually withholds flagged
+  jobs from the evaluator.
+- The run report surfaces the **false-skip rate** (flagged jobs that nonetheless
+  scored at/above threshold) and estimated savings, so precision can be verified
+  before trusting the filter. Graduate to `enforce` once the false-skip rate is 0
+  across ≥50 evaluated jobs.
+
 ### Ranking & Filtering
 
 - Rank all evaluated jobs by relevance score (descending)

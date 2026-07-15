@@ -9,14 +9,17 @@ from typing import TYPE_CHECKING
 import PyPDF2
 
 from src.core.domain.date_posted import DatePosted
+from src.core.domain.enrichment_summary import EnrichmentSummary
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
+from src.core.domain.run_cost import RunCost
 from src.core.domain.run_report import RunReport
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.work_type import WorkType
 from src.core.exceptions import ModelNotFoundError
 from src.core.ports.evaluator_port import EvaluatorPort
+from src.core.ports.job_enrichment_port import JobEnrichmentPort
 from src.core.ports.output_port import OutputPort
 from src.core.ports.scraper_port import ScraperPort
 
@@ -24,6 +27,22 @@ if TYPE_CHECKING:
     from src.infra.cost_tracker import CostTracker
 
 logger = logging.getLogger(__name__)
+
+
+def _job_key(job: Job) -> tuple[str, str, str]:
+    """Return a stable identity key for a job.
+
+    Used to correlate a pre-filter flag with the job's later evaluation result.
+    Object identity is unreliable because Pydantic may re-copy nested models, so
+    a value key on (title, company, url) is used instead.
+
+    Args:
+        job: The job to key.
+
+    Returns:
+        A (title, company, url) tuple identifying the job within a run.
+    """
+    return (job.title, job.company, job.url)
 
 
 class JobSearchService:
@@ -39,6 +58,8 @@ class JobSearchService:
         evaluator: EvaluatorPort,
         outputs: list[OutputPort],
         resume_path: str = "docs/resume/resume.pdf",
+        enrichment: JobEnrichmentPort | None = None,
+        enrichment_mode: str = "shadow",
     ) -> None:
         """Initialise the service with injected port adapters.
 
@@ -47,11 +68,18 @@ class JobSearchService:
             evaluator: Resume evaluation adapter implementing EvaluatorPort.
             outputs: List of result delivery adapters implementing OutputPort.
             resume_path: Path to the candidate resume PDF file.
+            enrichment: Optional pre-filter adapter implementing JobEnrichmentPort.
+                        When None the pre-filter stage is skipped entirely.
+            enrichment_mode: 'shadow' (evaluate everything, only measure what would
+                             have been skipped) or 'enforce' (actually skip flagged
+                             jobs). Ignored when enrichment is None.
         """
         self._scrapers = scrapers
         self._evaluator = evaluator
         self._outputs = outputs
         self._resume_path = resume_path
+        self._enrichment = enrichment
+        self._enrichment_mode = enrichment_mode
 
     async def run(
         self,
@@ -124,6 +152,54 @@ class JobSearchService:
 
         logger.info("Total jobs scraped: %d", len(all_jobs))
 
+        # Step 2.5 — optional pre-filter. Flags obvious junk before paid evaluation.
+        # Shadow mode evaluates everything and only measures what *would* have been
+        # skipped; enforce mode actually withholds flagged jobs from evaluation.
+        # Throttled with its own semaphore + delay so a large batch does not blow a
+        # provider's per-minute quota (which the circuit breaker cannot undo once
+        # every request is already in flight).
+        flagged_keys: set[tuple[str, str, str]] = set()
+        enrichment_error_count = 0
+        if self._enrichment is not None and all_jobs:
+            enrich_concurrent = int(os.getenv("ENRICHMENT_MAX_CONCURRENT", "2"))
+            enrich_delay = float(os.getenv("ENRICHMENT_DELAY_SECONDS", "1.0"))
+            enrich_semaphore = asyncio.Semaphore(enrich_concurrent)
+            logger.info("Pre-filter concurrency : %d concurrent", enrich_concurrent)
+            logger.info("Pre-filter delay       : %ss between calls", enrich_delay)
+
+            async def enrich_with_limit(job: Job):
+                """Pre-filter a single job under the semaphore, then throttle."""
+                async with enrich_semaphore:
+                    verdict = await self._enrichment.enrich(job)
+                    await asyncio.sleep(enrich_delay)
+                    return verdict
+
+            enrich_results = await asyncio.gather(
+                *[enrich_with_limit(job) for job in all_jobs]
+            )
+            for job, verdict in zip(all_jobs, enrich_results):
+                if verdict.errored:
+                    enrichment_error_count += 1
+                if verdict.should_skip:
+                    flagged_keys.add(_job_key(job))
+            logger.info(
+                "Pre-filter [%s] — %d of %d jobs flagged to skip (%d errored)",
+                self._enrichment_mode,
+                len(flagged_keys),
+                len(all_jobs),
+                enrichment_error_count,
+            )
+
+        if self._enrichment is not None and self._enrichment_mode == "enforce":
+            jobs_to_evaluate = [j for j in all_jobs if _job_key(j) not in flagged_keys]
+            if flagged_keys:
+                logger.info(
+                    "Pre-filter [enforce] — withholding %d flagged job(s) from evaluation",
+                    len(all_jobs) - len(jobs_to_evaluate),
+                )
+        else:
+            jobs_to_evaluate = all_jobs
+
         # Step 3 — evaluate each job against the resume with semaphore-controlled concurrency
         max_concurrent = int(os.getenv("MAX_CONCURRENT_EVALUATIONS", "2"))
         evaluation_delay = float(os.getenv("EVALUATION_DELAY_SECONDS", "1.0"))
@@ -177,7 +253,9 @@ class JobSearchService:
                     logger.error("Evaluation failed for %r: %s", job.title, exc)
                     return None
 
-        eval_results = await asyncio.gather(*[evaluate_with_limit(job) for job in all_jobs])
+        eval_results = await asyncio.gather(
+            *[evaluate_with_limit(job) for job in jobs_to_evaluate]
+        )
         evaluated = [r for r in eval_results if r is not None]
 
         # Step 4 — sort all evaluated by score descending
@@ -215,6 +293,19 @@ class JobSearchService:
         # Step 8 — build run cost summary
         run_cost = cost_tracker.build_run_cost() if cost_tracker else None
 
+        # Step 8.5 — build the pre-filter decision surface (false-skip rate + savings)
+        enrichment_summary = None
+        if self._enrichment is not None:
+            enrichment_summary = self._build_enrichment_summary(
+                total_jobs=len(all_jobs),
+                flagged_keys=flagged_keys,
+                evaluated=evaluated,
+                threshold=threshold,
+                run_cost=run_cost,
+                error_count=enrichment_error_count,
+            )
+            self._log_enrichment_summary(enrichment_summary)
+
         # Step 9 — build RunReport
         report = RunReport(
             qualifying_results=qualifying,
@@ -228,6 +319,7 @@ class JobSearchService:
             date_posted=date_posted,
             active_scrapers=active_scrapers or [],
             run_cost=run_cost,
+            enrichment_summary=enrichment_summary,
         )
 
         # Step 10 — log completion summary
@@ -252,6 +344,97 @@ class JobSearchService:
         logger.info("Results delivered via %d output adapter(s)", len(self._outputs))
 
         return report
+
+    def _build_enrichment_summary(
+        self,
+        total_jobs: int,
+        flagged_keys: set[tuple[str, str, str]],
+        evaluated: list[MatchResult],
+        threshold: int,
+        run_cost: RunCost | None,
+        error_count: int,
+    ) -> EnrichmentSummary:
+        """Build the pre-filter decision surface for the run report.
+
+        In shadow mode flagged jobs are still evaluated, so a false-skip — a
+        flagged job that nonetheless scored at/above threshold — is measurable by
+        comparing the flag against the real score. In enforce mode flagged jobs
+        are never evaluated, so false-skips are unknowable and left as None.
+
+        Args:
+            total_jobs: Jobs the pre-filter inspected this run.
+            flagged_keys: Identity keys of jobs flagged to skip.
+            evaluated: The MatchResults produced this run.
+            threshold: The score threshold used this run.
+            run_cost: Actual run cost, or None when cost tracking is disabled.
+            error_count: Jobs the pre-filter could not assess (fail-open fallbacks).
+
+        Returns:
+            An EnrichmentSummary describing flag counts, false-skips, and savings.
+        """
+        flagged_count = len(flagged_keys)
+        false_skips: int | None = None
+        if self._enrichment_mode == "shadow":
+            false_skips = sum(
+                1
+                for r in evaluated
+                if _job_key(r.job) in flagged_keys and r.score >= threshold
+            )
+
+        estimated_savings_usd: float | None = None
+        if run_cost is not None and run_cost.jobs_evaluated > 0 and flagged_count > 0:
+            avg_cost = run_cost.total_cost_usd / run_cost.jobs_evaluated
+            estimated_savings_usd = round(avg_cost * flagged_count, 4)
+
+        circuit_broken = bool(getattr(self._enrichment, "circuit_broken", False))
+
+        return EnrichmentSummary(
+            mode=self._enrichment_mode,
+            total_jobs=total_jobs,
+            flagged_count=flagged_count,
+            evaluated_count=len(evaluated),
+            error_count=error_count,
+            false_skips=false_skips,
+            estimated_savings_usd=estimated_savings_usd,
+            circuit_broken=circuit_broken,
+        )
+
+    @staticmethod
+    def _log_enrichment_summary(summary: EnrichmentSummary) -> None:
+        """Log the pre-filter decision surface at INFO level.
+
+        Args:
+            summary: The EnrichmentSummary built for this run.
+        """
+        rate = summary.false_skip_rate
+        rate_label = "n/a" if rate is None else f"{rate:.0%}"
+        savings = summary.estimated_savings_usd
+        savings_label = "n/a" if savings is None else f"${savings:.4f}"
+        logger.info(
+            "Pre-filter summary [%s] — flagged=%d/%d evaluated=%d errored=%d "
+            "false-skips=%s false-skip-rate=%s est-savings=%s",
+            summary.mode,
+            summary.flagged_count,
+            summary.total_jobs,
+            summary.evaluated_count,
+            summary.error_count,
+            "n/a" if summary.false_skips is None else summary.false_skips,
+            rate_label,
+            savings_label,
+        )
+        if summary.total_jobs > 0 and summary.error_count == summary.total_jobs:
+            logger.warning(
+                "Pre-filter assessed 0 of %d jobs — it was fully degraded this run "
+                "(check GEMINI_MODEL / GEMINI_API_KEY and quota). Flag counts are not "
+                "meaningful.",
+                summary.total_jobs,
+            )
+        if summary.graduation_ready:
+            logger.info(
+                "Pre-filter — graduation criterion met (0 false-skips over %d evals). "
+                "Consider setting ENRICHMENT_MODE=enforce.",
+                summary.evaluated_count,
+            )
 
     def _parse_resume(self, path: str) -> Resume:
         """Extract text from a PDF resume using PyPDF2.
