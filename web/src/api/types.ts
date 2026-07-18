@@ -30,10 +30,171 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job
+         * @description Return the full detail fan-out for one job.
+         *
+         *     Args:
+         *         job_id: The repository id of the job.
+         *         repository: The shared job repository (injected).
+         *
+         *     Returns:
+         *         The job's detail, including its score breakdown and status history.
+         *
+         *     Raises:
+         *         HTTPException: 404 when no job has that id.
+         */
+        get: operations["get_job_api_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Status
+         * @description Transition a job to a human-set status, appending a history row.
+         *
+         *     A same-value write is an idempotent no-op (no history row) but still returns
+         *     the current detail. Machine statuses are rejected by the request schema (422).
+         *
+         *     Args:
+         *         job_id: The repository id of the job.
+         *         body: The target status and an optional note.
+         *         repository: The shared job repository (injected).
+         *
+         *     Returns:
+         *         The job's refreshed detail after the write.
+         *
+         *     Raises:
+         *         HTTPException: 404 when no job has that id.
+         */
+        patch: operations["update_status_api_jobs__job_id__status_patch"];
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/saved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Saved
+         * @description Set a job's ``saved`` bookmark (never writes history).
+         *
+         *     Args:
+         *         job_id: The repository id of the job.
+         *         body: The bookmark value to set.
+         *         repository: The shared job repository (injected).
+         *
+         *     Returns:
+         *         The job's refreshed detail after the write.
+         *
+         *     Raises:
+         *         HTTPException: 404 when no job has that id.
+         */
+        patch: operations["update_saved_api_jobs__job_id__saved_patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * JobDetail
+         * @description The full detail fan-out for one job (ui-spec §6.1).
+         *
+         *     Everything ``JobSummary`` carries plus the nine-category breakdown, matched /
+         *     missing skills, the description, the lifecycle (status, saved, history), and a
+         *     ``generations`` stub (populated once F ships). Never carries generated-document
+         *     content or raw resume text (ui-spec §7).
+         */
+        JobDetail: {
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Location */
+            location: string;
+            /** Url */
+            url: string | null;
+            /** Description */
+            description: string | null;
+            /** Platforms */
+            platforms: string[];
+            /** Score */
+            score: number | null;
+            /** Threshold */
+            threshold: number | null;
+            /** Nearmissfloor */
+            nearMissFloor: number | null;
+            /** Hirerecommendation */
+            hireRecommendation: string | null;
+            /** Senioritylevel */
+            seniorityLevel: string | null;
+            /** Yearsexperiencedetected */
+            yearsExperienceDetected: number | null;
+            /** Summary */
+            summary: string | null;
+            /** Matchedskills */
+            matchedSkills: string[];
+            /** Missingskills */
+            missingSkills: string[];
+            /** Scorebreakdown */
+            scoreBreakdown: components["schemas"]["ScoreCategoryRow"][] | null;
+            /** Status */
+            status: string;
+            /** Saved */
+            saved: boolean;
+            /** Statushistory */
+            statusHistory: components["schemas"]["StatusHistoryEntryOut"][];
+            /**
+             * Generations
+             * @default []
+             */
+            generations: unknown[];
+            /**
+             * Lastseenat
+             * Format: date-time
+             */
+            lastSeenAt: string;
+        };
         /**
          * JobSummary
          * @description A single job as shown in the job-list screen (one JobCard).
@@ -65,11 +226,84 @@ export interface components {
             hireRecommendation: string | null;
             /** Senioritylevel */
             seniorityLevel: string | null;
+            /** Status */
+            status: string;
+            /** Saved */
+            saved: boolean;
             /**
              * Lastseenat
              * Format: date-time
              */
             lastSeenAt: string;
+        };
+        /**
+         * SavedUpdate
+         * @description Request body for ``PATCH /jobs/{id}/saved`` — the bookmark toggle.
+         */
+        SavedUpdate: {
+            /** Saved */
+            saved: boolean;
+        };
+        /**
+         * ScoreCategoryRow
+         * @description One row of the nine-category score breakdown, in rubric order.
+         *
+         *     ``category`` is the domain field name (e.g. ``role_alignment``); the frontend
+         *     formats it into a label. Emitting an ordered list keeps the rubric order
+         *     backend-owned and the component generic.
+         */
+        ScoreCategoryRow: {
+            /** Category */
+            category: string;
+            /** Earned */
+            earned: number;
+            /** Max */
+            max: number;
+            /** Reasoning */
+            reasoning: string;
+        };
+        /**
+         * StatusHistoryEntryOut
+         * @description A status-history row for the detail screen's action timeline (ADR-025).
+         */
+        StatusHistoryEntryOut: {
+            /** Fromstatus */
+            fromStatus: string | null;
+            /** Tostatus */
+            toStatus: string;
+            /** Note */
+            note: string | null;
+            /**
+             * Changedat
+             * Format: date-time
+             */
+            changedAt: string;
+        };
+        /**
+         * StatusUpdate
+         * @description Request body for ``PATCH /jobs/{id}/status`` — a human status write.
+         */
+        StatusUpdate: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "applied" | "started" | "interviewing" | "offer" | "rejected" | "not_interested";
+            /** Note */
+            note?: string | null;
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -96,6 +330,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobSummary"][];
+                };
+            };
+        };
+    };
+    get_job_api_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_status_api_jobs__job_id__status_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_saved_api_jobs__job_id__saved_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

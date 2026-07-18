@@ -29,6 +29,9 @@ class StoredJob(BaseModel):
     location: str
     url: str | None = None
 
+    description: str | None = None
+    """The raw job description, surfaced as "About the role" on the detail screen."""
+
     fingerprint: str | None = None
     """The canonical dedup key, or None when dedup is disabled for this job."""
 

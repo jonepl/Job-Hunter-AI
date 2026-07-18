@@ -12,6 +12,7 @@ from src.core.domain.fingerprint import Fingerprint
 from src.core.domain.job import Job
 from src.core.domain.job_status import JobStatus
 from src.core.domain.match_result import MatchResult
+from src.core.domain.status_history_entry import StatusHistoryEntry
 from src.core.domain.stored_job import StoredJob
 
 
@@ -96,6 +97,21 @@ class JobRepositoryPort(ABC):
         Args:
             job_id: The repository id of the job.
             saved: The bookmark value to set.
+        """
+        ...
+
+    @abstractmethod
+    def get_status_history(self, job_id: int) -> list[StatusHistoryEntry]:
+        """Return a job's append-only status history in chronological order.
+
+        Backs the detail screen's action timeline. The first entry is the
+        creation row (``from_status`` None); later entries record each transition.
+
+        Args:
+            job_id: The repository id of the job.
+
+        Returns:
+            The status-history entries oldest-first (empty for an unknown job).
         """
         ...
 

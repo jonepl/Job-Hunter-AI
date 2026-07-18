@@ -290,8 +290,13 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
 - ~~No web UI or dashboard~~ **Being superseded (W track — ADR-021/026/027).** W1
   landed the first screen: a FastAPI driving adapter (`src/api/`, serving `GET
   /api/jobs`) and a React SPA (`web/`) that lists persisted jobs with the score/
-  threshold rail. Served same-origin by FastAPI, published on loopback only. Later
-  W stories add the detail pane, status actions, filters, upload, and settings.
+  threshold rail. Served same-origin by FastAPI, published on loopback only. **W2
+  added the job detail pane and the first browser mutations** — `GET
+  /api/jobs/{id}` fans out the nine-category breakdown, skills, and status history;
+  `PATCH /api/jobs/{id}/status` and `/saved` let you mark status (with the
+  reactivation soft-confirm) and bookmark a job from the UI, applied optimistically
+  (ADR-025). Later W stories add status filter views, document generation, upload,
+  and settings.
 - ~~No database — file output only~~ **Superseded (B1, ADR-023).** A SQLite store
   (`data/agent.db`) now persists jobs and their cross-provider sightings behind
   `JobRepositoryPort`: a seen job is not re-scored, and its stored evaluation is

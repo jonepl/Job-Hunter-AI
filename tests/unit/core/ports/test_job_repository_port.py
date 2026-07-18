@@ -37,6 +37,7 @@ def test_port_declares_the_expected_methods():
         "get_job",
         "set_status",
         "set_saved",
+        "get_status_history",
         "find_by_fingerprint",
         "find_near_misses",
         "save_job",

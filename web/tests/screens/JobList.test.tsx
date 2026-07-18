@@ -1,12 +1,18 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { JobList } from "../../src/screens/JobList";
 import { useJobs } from "../../src/hooks/useJobs";
-import { makeJob } from "../helpers";
+import { useJob, useMarkStatus, useSaved } from "../../src/hooks/useJob";
+import { makeJob, makeJobDetail } from "../helpers";
 
 jest.mock("../../src/hooks/useJobs");
+jest.mock("../../src/hooks/useJob");
 
 const mockedUseJobs = useJobs as jest.MockedFunction<typeof useJobs>;
+const mockedUseJob = useJob as jest.MockedFunction<typeof useJob>;
+const mockedUseMarkStatus = useMarkStatus as jest.MockedFunction<typeof useMarkStatus>;
+const mockedUseSaved = useSaved as jest.MockedFunction<typeof useSaved>;
 
 function mockState(state: Partial<ReturnType<typeof useJobs>>) {
   mockedUseJobs.mockReturnValue({
@@ -17,6 +23,23 @@ function mockState(state: Partial<ReturnType<typeof useJobs>>) {
     ...state,
   } as unknown as ReturnType<typeof useJobs>);
 }
+
+beforeEach(() => {
+  // JobDetail (mounted on selection) leans on these; give them inert defaults.
+  mockedUseJob.mockReturnValue({
+    data: makeJobDetail(),
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useJob>);
+  mockedUseMarkStatus.mockReturnValue({
+    mutate: jest.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof useMarkStatus>);
+  mockedUseSaved.mockReturnValue({
+    mutate: jest.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof useSaved>);
+});
 
 describe("<JobList>", () => {
   it("shows a loading state while fetching", () => {
@@ -38,10 +61,20 @@ describe("<JobList>", () => {
     expect(screen.getByRole("button", { name: /Try again/ })).toBeInTheDocument();
   });
 
-  it("renders a card per job when data is present", () => {
+  it("renders a card per job with a detail placeholder until one is selected", () => {
     mockState({ data: [makeJob({ id: 1, title: "Alpha" }), makeJob({ id: 2, title: "Beta" })] });
     render(<JobList />);
     expect(screen.getByText("Alpha")).toBeInTheDocument();
     expect(screen.getByText("Beta")).toBeInTheDocument();
+    expect(screen.getByText(/Select a job to see its details/)).toBeInTheDocument();
+    expect(screen.queryByTestId("job-detail")).not.toBeInTheDocument();
+  });
+
+  it("opens the detail pane when a card is clicked", async () => {
+    mockState({ data: [makeJob({ id: 1, title: "Alpha" })] });
+    render(<JobList />);
+
+    await userEvent.click(screen.getByTestId("job-card"));
+    expect(screen.getByTestId("job-detail")).toBeInTheDocument();
   });
 });

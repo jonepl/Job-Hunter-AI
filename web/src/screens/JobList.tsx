@@ -1,9 +1,13 @@
+import { useState } from "react";
+
 import { useJobs } from "../hooks/useJobs";
 import { JobCard } from "../components/JobCard";
+import { JobDetail } from "../components/JobDetail";
 
-// The W1 hub: a single scannable column of persisted jobs. Every list view owns
-// its loading / empty / error states as first-class screens (ui-spec §6.4), not
-// afterthoughts. The three-column IA (rail, detail pane) arrives in W2/W3.
+// The hub: a scannable list on the left, a detail pane on the right (ui-spec §3).
+// Selecting a card drives the pane in place — no routing, matching the design's
+// "no new page". On narrow screens the pane becomes a full-width overlay. Every
+// list view owns its loading / empty / error states (ui-spec §6.4).
 
 function StateShell({ title, body }: { title: string; body: string }) {
   return (
@@ -16,6 +20,7 @@ function StateShell({ title, body }: { title: string; body: string }) {
 
 export function JobList() {
   const { data, isLoading, isError, refetch } = useJobs();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   if (isLoading) {
     return (
@@ -53,10 +58,29 @@ export function JobList() {
   }
 
   return (
-    <div className="space-y-4" data-testid="job-list">
-      {data.map((job) => (
-        <JobCard key={job.id} job={job} />
-      ))}
+    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-6">
+      <div className="space-y-4" data-testid="job-list">
+        {data.map((job) => (
+          <JobCard
+            key={job.id}
+            job={job}
+            selected={job.id === selectedId}
+            onSelect={setSelectedId}
+          />
+        ))}
+      </div>
+
+      {selectedId === null ? (
+        <div className="hidden lg:block">
+          <div className="rounded-card border border-dashed border-border bg-surface p-8 text-center text-small text-text-2">
+            Select a job to see its details.
+          </div>
+        </div>
+      ) : (
+        <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:overflow-auto max-lg:bg-bg max-lg:p-6 lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:self-start lg:overflow-y-auto">
+          <JobDetail jobId={selectedId} onClose={() => setSelectedId(null)} />
+        </div>
+      )}
     </div>
   );
 }

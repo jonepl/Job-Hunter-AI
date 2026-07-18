@@ -7,11 +7,20 @@ ADR-033); Python code may still populate them by their snake_case names.
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from src.core.domain.match_result import ScoreBreakdown
+from src.core.domain.status_history_entry import StatusHistoryEntry
 from src.core.domain.stored_job import StoredJob
+
+# The six human-set statuses — the only values the API accepts for a status write
+# (machine states are never user-selectable, ui-spec §4). A bad value 422s.
+HumanStatus = Literal[
+    "applied", "started", "interviewing", "offer", "rejected", "not_interested"
+]
 
 
 class JobSummary(BaseModel):
@@ -35,6 +44,8 @@ class JobSummary(BaseModel):
     near_miss_floor: int | None
     hire_recommendation: str | None
     seniority_level: str | None
+    status: str
+    saved: bool
     last_seen_at: datetime
 
     @classmethod
@@ -60,5 +71,150 @@ class JobSummary(BaseModel):
             near_miss_floor=job.near_miss_floor,
             hire_recommendation=result.hire_recommendation if result is not None else None,
             seniority_level=result.seniority_level if result is not None else None,
+            status=job.status.value,
+            saved=job.saved,
             last_seen_at=job.last_seen_at,
         )
+
+
+class ScoreCategoryRow(BaseModel):
+    """One row of the nine-category score breakdown, in rubric order.
+
+    ``category`` is the domain field name (e.g. ``role_alignment``); the frontend
+    formats it into a label. Emitting an ordered list keeps the rubric order
+    backend-owned and the component generic.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    category: str
+    earned: int
+    max: int
+    reasoning: str
+
+
+class StatusHistoryEntryOut(BaseModel):
+    """A status-history row for the detail screen's action timeline (ADR-025)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    from_status: str | None
+    to_status: str
+    note: str | None
+    changed_at: datetime
+
+    @classmethod
+    def from_entry(cls, entry: StatusHistoryEntry) -> "StatusHistoryEntryOut":
+        """Build the response row from a domain StatusHistoryEntry."""
+        return cls(
+            from_status=entry.from_status.value if entry.from_status else None,
+            to_status=entry.to_status.value,
+            note=entry.note,
+            changed_at=entry.changed_at,
+        )
+
+
+class JobDetail(BaseModel):
+    """The full detail fan-out for one job (ui-spec §6.1).
+
+    Everything ``JobSummary`` carries plus the nine-category breakdown, matched /
+    missing skills, the description, the lifecycle (status, saved, history), and a
+    ``generations`` stub (populated once F ships). Never carries generated-document
+    content or raw resume text (ui-spec §7).
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: int
+    title: str
+    company: str
+    location: str
+    url: str | None
+    description: str | None
+    platforms: list[str]
+    score: int | None
+    threshold: int | None
+    near_miss_floor: int | None
+    hire_recommendation: str | None
+    seniority_level: str | None
+    years_experience_detected: int | None
+    summary: str | None
+    matched_skills: list[str]
+    missing_skills: list[str]
+    score_breakdown: list[ScoreCategoryRow] | None
+    status: str
+    saved: bool
+    status_history: list[StatusHistoryEntryOut]
+    generations: list = []  # stub until F ships the generations table + endpoints
+    last_seen_at: datetime
+
+    @classmethod
+    def from_stored_job(
+        cls, job: StoredJob, history: list[StatusHistoryEntry]
+    ) -> "JobDetail":
+        """Build the detail model from a stored job and its status history.
+
+        Args:
+            job: The stored job with its optional evaluation and seen-on set.
+            history: The job's status-history entries, oldest-first.
+
+        Returns:
+            The full detail response model.
+        """
+        result = job.match_result
+        return cls(
+            id=job.id,
+            title=job.title,
+            company=job.company,
+            location=job.location,
+            url=job.url,
+            description=job.description,
+            platforms=job.seen_on,
+            score=result.score if result is not None else None,
+            threshold=job.threshold,
+            near_miss_floor=job.near_miss_floor,
+            hire_recommendation=result.hire_recommendation if result is not None else None,
+            seniority_level=result.seniority_level if result is not None else None,
+            years_experience_detected=(
+                result.years_experience_detected if result is not None else None
+            ),
+            summary=result.summary if result is not None else None,
+            matched_skills=result.matched_skills if result is not None else [],
+            missing_skills=result.missing_skills if result is not None else [],
+            score_breakdown=(
+                _breakdown_rows(result.score_breakdown) if result is not None else None
+            ),
+            status=job.status.value,
+            saved=job.saved,
+            status_history=[StatusHistoryEntryOut.from_entry(e) for e in history],
+            last_seen_at=job.last_seen_at,
+        )
+
+
+def _breakdown_rows(breakdown: ScoreBreakdown) -> list[ScoreCategoryRow]:
+    """Flatten a ScoreBreakdown into ordered category rows (rubric order)."""
+    rows: list[ScoreCategoryRow] = []
+    for name in ScoreBreakdown.model_fields:
+        category = getattr(breakdown, name)
+        rows.append(
+            ScoreCategoryRow(
+                category=name,
+                earned=category.earned,
+                max=category.max,
+                reasoning=category.reasoning,
+            )
+        )
+    return rows
+
+
+class StatusUpdate(BaseModel):
+    """Request body for ``PATCH /jobs/{id}/status`` — a human status write."""
+
+    status: HumanStatus
+    note: str | None = None
+
+
+class SavedUpdate(BaseModel):
+    """Request body for ``PATCH /jobs/{id}/saved`` — the bookmark toggle."""
+
+    saved: bool
