@@ -2,8 +2,18 @@ services:
   agent:
     build: .
     env_file: .env
+    # The container's default command is the web server (see Dockerfile CMD).
+    # Publish to loopback ONLY — the app has no auth, so it must not be reachable
+    # off-host (ADR-034 §2). Reach it at http://127.0.0.1:8000.
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./docs/resume:/app/docs/resume
       - ./output:/app/output
       - ./logs:/app/logs
+      - ./data:/app/data
     restart: unless-stopped
+
+  # A CLI run reuses the same image but overrides the command, e.g.:
+  #   docker compose run --rm agent python -m src.main --query "Senior Engineer"
+  # It never boots the web server.

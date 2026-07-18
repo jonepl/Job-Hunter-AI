@@ -1,7 +1,7 @@
-"""Future FastAPI entrypoint for the Job Hunter AI Agent.
+"""FastAPI driving adapter for the Job Hunter AI Agent.
 
-Will expose job search, profile management, and results retrieval
-endpoints for a frontend UI.
-
-Not yet implemented.
+A second way into the same core services as the CLI (ADR-026): it serves the
+React SPA and a JSON API over the shared ``JobRepositoryPort``, reimplementing no
+business logic. Build the app with :func:`src.api.main.create_app`; the module
+attribute ``src.api.main:app`` is the uvicorn entrypoint.
 """

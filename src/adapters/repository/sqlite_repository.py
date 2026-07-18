@@ -55,6 +55,23 @@ class SQLiteJobRepository(JobRepositoryPort):
         apply_migrations(self._conn)
         logger.info("Job repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms)
 
+    def list_jobs(self) -> list[StoredJob]:
+        """Return every stored job, ranked by score descending (unevaluated last).
+
+        Uses a single grouped read of ``sightings`` to attach ``seen_on`` to every
+        row, so listing N jobs costs two queries rather than N+1.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM jobs "
+            "ORDER BY overall_score IS NULL, overall_score DESC, last_seen_at DESC"
+        ).fetchall()
+
+        seen_on_by_job = self._seen_on_by_job()
+        return [
+            self._row_to_stored_job(row, seen_on=seen_on_by_job.get(row["id"], []))
+            for row in rows
+        ]
+
     def find_by_fingerprint(self, key: str) -> StoredJob | None:
         """Return the stored job with the exact canonical fingerprint ``key``."""
         row = self._conn.execute(
@@ -158,8 +175,32 @@ class SQLiteJobRepository(JobRepositoryPort):
         ).fetchone()
         return self._row_to_stored_job(row) if row is not None else None
 
-    def _row_to_stored_job(self, row: sqlite3.Row) -> StoredJob:
-        """Map a ``jobs`` row (with its sightings) to a StoredJob entity."""
+    def _seen_on_by_job(self) -> dict[int, list[str]]:
+        """Return a map of job id → its sorted distinct sighting platforms.
+
+        One grouped query for the whole table, used by ``list_jobs`` to avoid a
+        per-row ``get_seen_on`` call.
+        """
+        rows = self._conn.execute(
+            "SELECT DISTINCT job_id, platform FROM sightings ORDER BY job_id, platform"
+        ).fetchall()
+        result: dict[int, list[str]] = {}
+        for row in rows:
+            result.setdefault(row["job_id"], []).append(row["platform"])
+        return result
+
+    def _row_to_stored_job(
+        self, row: sqlite3.Row, seen_on: list[str] | None = None
+    ) -> StoredJob:
+        """Map a ``jobs`` row (with its sightings) to a StoredJob entity.
+
+        Args:
+            row: A ``jobs`` table row.
+            seen_on: Pre-fetched sighting platforms for this job. When None (the
+                single-row callers), they are fetched with a per-row query.
+        """
+        if seen_on is None:
+            seen_on = self.get_seen_on(row["id"])
         match_result = (
             MatchResult.model_validate_json(row["match_result_json"])
             if row["match_result_json"]
@@ -181,5 +222,5 @@ class SQLiteJobRepository(JobRepositoryPort):
             near_miss_floor=row["near_miss_floor"],
             first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
             last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
-            seen_on=self.get_seen_on(row["id"]),
+            seen_on=seen_on,
         )

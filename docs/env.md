@@ -56,6 +56,20 @@ seen job is not re-scored, and its cross-provider sightings are remembered.
 
 ---
 
+## Web API Settings
+
+The FastAPI driving adapter that serves the JSON API and the React SPA (ADR-021/026).
+The server binds `0.0.0.0` inside the container but is published only on
+`127.0.0.1:8000` (ADR-034 §2) — it has no auth and must not be reachable off-host.
+Host and port are passed to uvicorn on the command line, not via env.
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| CORS_ALLOW_ORIGINS | Comma-separated list of origins the API permits. Needed only in development, where the Vite dev server (`:5173`) is a different origin from the API (`:8000`). In production the SPA is served same-origin, so CORS is a no-op. | `http://localhost:5173` |
+| SPA_DIST_DIR | Directory of the built SPA (`web/dist`) that FastAPI serves at `/`. When the directory is absent (e.g. dev, where Vite serves the SPA) the API still boots — API only. | `web/dist` |
+
+---
+
 ## Scheduler Settings
 
 | Variable | Required | Default | Description |
@@ -205,6 +219,11 @@ ENRICHMENT_DELAY_SECONDS=1.0
 DB_PATH=data/agent.db
 DB_BUSY_TIMEOUT_MS=5000
 NEAR_MISS_BAND=15
+
+# ── Web API (FastAPI serves the API + React SPA) ──────────────────────────────
+# CORS is needed only in dev (Vite :5173 → API :8000). Prod is same-origin.
+CORS_ALLOW_ORIGINS=http://localhost:5173
+SPA_DIST_DIR=web/dist
 
 # ── JSearch (Default to us) ───────────────────────────────────────────────────────────────────
 JSEARCH_COUNTRY=us
