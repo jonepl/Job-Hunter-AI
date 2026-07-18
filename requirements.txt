@@ -5,6 +5,10 @@ anthropic
 # Pre-filter (Gemini Flash-Lite)
 google-genai
 
+# Web API (FastAPI driving adapter — serves the SPA + JSON API)
+fastapi
+uvicorn[standard]
+
 # Environment variable management
 python-dotenv
 

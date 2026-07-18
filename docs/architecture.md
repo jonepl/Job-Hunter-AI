@@ -63,6 +63,22 @@ No core domain code imports from adapters. All dependencies point inward — ada
 
 **This means:** swapping LinkedIn for a new job board, replacing GPT-4o with another LLM, or changing the email provider requires only a new adapter — the core logic is never touched.
 
+### Driving adapters — CLI and FastAPI (ADR-021, ADR-026)
+
+The scraper/evaluator/output adapters above are *driven* adapters (the core calls
+them). There are also two **driving** adapters that call *into* the core: the **CLI**
+(`src/main.py` → `cli/`) and the **FastAPI app** (`src/api/`). Both sit on the same
+side of the hexagon over the identical services and `JobRepositoryPort` — FastAPI
+reimplements no business logic; a route is a second way in, not a new brain. The
+React SPA under `web/` is an HTTP client of that API. In production FastAPI serves
+the built SPA at `/` and the JSON API under `/api` from the same origin.
+
+```
+   CLI  (src/main, src/cli) ─┐
+   FastAPI (src/api)  ───────┼──▶  JobSearchService / JobRepositoryPort  ──▶  driven adapters
+   React SPA (web/) ─HTTP─────┘
+```
+
 ---
 
 ## 3. Project Structure
@@ -106,8 +122,14 @@ job-search-agent/
 │   ├── scheduler.py                     ← APScheduler — cron-based multi-profile runner
 │   ├── service_factory.py               ← Builds JobSearchService from SearchProfile
 │   │
-│   ├── api/                             ← future FastAPI entrypoint
-│   │   └── __init__.py
+│   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
+│   │   ├── __init__.py
+│   │   ├── main.py                      ← app factory (create_app); uvicorn entrypoint
+│   │   ├── deps.py                      ← get_repository() — reuses build_repository()
+│   │   ├── schemas.py                   ← JobSummary response model (camelCase aliases)
+│   │   └── routers/
+│   │       ├── __init__.py
+│   │       └── jobs.py                  ← GET /api/jobs
 │   │
 │   ├── cli/                             ← CLI concerns
 │   │   ├── __init__.py
@@ -181,6 +203,23 @@ job-search-agent/
 │           ├── email_output.py          ← Gmail SMTP adapter
 │           └── file_output.py           ← CSV file adapter
 │
+web/                                     ← Job Hunter AI Web (Vite + React + TS SPA)
+│
+├── src/
+│   ├── main.tsx                         ← React entry (ThemeProvider + QueryClientProvider)
+│   ├── App.tsx                          ← page shell (header + JobList)
+│   ├── api/
+│   │   ├── client.ts                    ← typed fetch wrapper (the only place fetch is called)
+│   │   └── types.ts                     ← generated from OpenAPI (npm run gen:types)
+│   ├── hooks/                           ← React Query hooks (useJobs)
+│   ├── components/                      ← ThresholdRail, ScoreChip, JobCard, ProviderBadges, StatusPill, ThemeToggle
+│   ├── screens/                         ← JobList (loading / empty / error states)
+│   ├── lib/                             ← queryClient, theme, score (ADR-033), platforms
+│   └── styles/                          ← tokens.css (wired copy) + index.css (Tailwind)
+├── tests/                              ← Jest + React Testing Library
+├── vite.config.ts                       ← dev proxy /api → :8000
+└── tailwind.config.cjs                  ← theme.extend derived from tokens.css (ADR-027)
+│
 tests/
 │
 ├── unit/                                    ← mirrors src/ exactly
@@ -188,6 +227,8 @@ tests/
 │   ├── test_runner.py                       ← tests for run_immediate()
 │   ├── test_scheduler.py                    ← tests for run_all_profiles()
 │   ├── test_main_args.py                    ← tests for main() argument wiring
+│   ├── api/
+│   │   └── test_jobs_router.py              ← tests for GET /api/jobs (FastAPI TestClient)
 │   ├── cli/
 │   │   ├── test_args.py                     ← tests for parse_args()
 │   │   └── test_overrides.py               ← tests for apply_cli_overrides()
@@ -587,6 +628,10 @@ from abc import ABC, abstractmethod
 class JobRepositoryPort(ABC):
 
     @abstractmethod
+    def list_jobs(self) -> list[StoredJob]: ...
+    # All stored jobs, ranked by score desc (unevaluated last) — backs GET /api/jobs
+
+    @abstractmethod
     def find_by_fingerprint(self, key: str) -> StoredJob | None: ...
     # Exact fingerprint lookup — a hit reuses the stored evaluation
 
@@ -813,57 +858,70 @@ Log files are persisted via Docker volume mount and survive container restarts.
 ### Single Container Architecture
 
 The entire application runs in a **single Docker container** managed by `docker-compose`.
+A **multi-stage build** (ADR-021) first builds the React SPA in a Node stage, then copies
+the static bundle into the Python image; FastAPI serves it at `/` alongside the API.
 
 ```
 Docker Container
 ├── Python 3.10 runtime
-├── Application source code
-├── Playwright + browser binaries
+├── Application source code (src/) + built SPA (web/dist)
+├── Playwright + browser binaries (for CLI scraper runs)
 └── All Python dependencies
 
 Volume Mounts (persist outside container)
 ├── docs/resume/     ← Resume PDF input
 ├── output/          ← CSV results output
-└── logs/            ← Application logs
+├── logs/            ← Application logs
+└── data/            ← SQLite store (data/agent.db)
 ```
+
+**Two entrypoints, one image.** The container's default command is the **web server**
+(uvicorn). A **CLI run** reuses the same image but overrides the command
+(`docker compose run --rm agent python -m src.main …`) and never boots the server.
 
 ### `Dockerfile` (outline)
 
 ```dockerfile
+# Stage 1 — build the SPA
+FROM node:22-slim AS frontend
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# Stage 2 — Python app (serves API + SPA; also the CLI entrypoint)
 FROM python:3.10-slim
-
 WORKDIR /app
-
-# Install system dependencies for Playwright
-RUN apt-get update && apt-get install -y ...
-
-# Install Python dependencies
+RUN apt-get update && apt-get install -y ...            # Playwright system deps
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-
-# Install Playwright browser binaries
 RUN playwright install --with-deps
-
-# Copy application source
 COPY src/ ./src/
+COPY --from=frontend /web/dist ./web/dist               # SPA served at / by FastAPI
 
-CMD ["python", "-m", "src.main"]
+# Bind 0.0.0.0 in-container; compose publishes only to 127.0.0.1 (ADR-034 §2)
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ### `docker-compose.yml` (outline)
 
 ```yaml
-version: "3.9"
-
 services:
   agent:
     build: .
     env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"    # loopback only — the app has no auth (ADR-034 §2)
     volumes:
       - ./docs/resume:/app/docs/resume
       - ./output:/app/output
       - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
 ```
+
+Reach the app at `http://127.0.0.1:8000` (SPA at `/`, API under `/api`).
 
 **Technical Terms:** `Dockerfile`, `docker-compose`, `Volume Mount`, `env_file`, `Slim Base Image`
 
@@ -887,6 +945,8 @@ All secrets and configuration values are injected at runtime via `.env`. See `do
 | `MAX_CONCURRENT_EVALUATIONS` | No | Max concurrent LLM evaluation requests (default: `2`) |
 | `EVALUATION_DELAY_SECONDS` | No | Seconds delay between evaluations to manage TPM rate limits (default: `1.0`) |
 | `SHOW_COST_ESTIMATE` | No | Enable cost tracking and visibility (default: `false`) |
+| `CORS_ALLOW_ORIGINS` | No | Comma-separated origins the API allows (dev only; default `http://localhost:5173`) |
+| `SPA_DIST_DIR` | No | Directory of the built SPA that FastAPI serves at `/` (default `web/dist`) |
 | `OPENAI_INPUT_COST_PER_1M` | No | GPT-4o input token rate per million tokens in USD (default: `2.50`) |
 | `OPENAI_OUTPUT_COST_PER_1M` | No | GPT-4o output token rate per million tokens in USD (default: `10.00`) |
 | `ANTHROPIC_INPUT_COST_PER_1M` | No | claude-sonnet-4-5 input token rate per million tokens in USD (default: `3.00`) |

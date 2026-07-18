@@ -18,6 +18,20 @@ class JobRepositoryPort(ABC):
     """Abstract base class defining the contract for job persistence adapters."""
 
     @abstractmethod
+    def list_jobs(self) -> list[StoredJob]:
+        """Return every stored job, ranked for display.
+
+        Backs the read-only listing surfaces (the API's ``GET /api/jobs`` and any
+        future ``jobs`` CLI command). Jobs are ordered by score descending so the
+        strongest matches lead, with unevaluated jobs last and ties broken by most
+        recently seen. Each job carries its ``match_result`` and ``seen_on``.
+
+        Returns:
+            All stored jobs (possibly empty), ranked for display.
+        """
+        ...
+
+    @abstractmethod
     def find_by_fingerprint(self, key: str) -> StoredJob | None:
         """Return the stored job whose canonical fingerprint equals ``key``.
 

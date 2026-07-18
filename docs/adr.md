@@ -224,6 +224,8 @@ code is marked inferred.
   follows the established structure without restructuring existing code.
 - **Consequences:** Clear reservation; an empty stub package until implemented.
   (`src/evaluator/`, `src/scraper/`, `src/tools/` are unrelated leftover stubs.)
+- **Update (W1):** implemented — `src/api/` is now the FastAPI driving adapter
+  (app factory, `deps.py`, `routers/jobs.py`, `schemas.py`). See ADR-026.
 
 ## ADR-022: Gemini pre-filter stage behind a `JobEnrichmentPort`
 

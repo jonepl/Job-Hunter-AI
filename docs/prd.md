@@ -287,7 +287,11 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
 
 ## 11. Out of Scope (Phase 1)
 
-- No web UI or dashboard *(being superseded by the W track — ADR-026/027)*
+- ~~No web UI or dashboard~~ **Being superseded (W track — ADR-021/026/027).** W1
+  landed the first screen: a FastAPI driving adapter (`src/api/`, serving `GET
+  /api/jobs`) and a React SPA (`web/`) that lists persisted jobs with the score/
+  threshold rail. Served same-origin by FastAPI, published on loopback only. Later
+  W stories add the detail pane, status actions, filters, upload, and settings.
 - ~~No database — file output only~~ **Superseded (B1, ADR-023).** A SQLite store
   (`data/agent.db`) now persists jobs and their cross-provider sightings behind
   `JobRepositoryPort`: a seen job is not re-scored, and its stored evaluation is

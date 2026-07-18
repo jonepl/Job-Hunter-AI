@@ -33,6 +33,7 @@ def test_port_declares_the_expected_methods():
         if not name.startswith("_")
     }
     assert methods == {
+        "list_jobs",
         "find_by_fingerprint",
         "find_near_misses",
         "save_job",

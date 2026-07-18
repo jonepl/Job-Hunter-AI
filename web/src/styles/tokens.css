@@ -1,0 +1,131 @@
+/* ============================================================
+   Job Hunter AI — Design Tokens
+   Extracted verbatim from the Job Hunter AI Design System v1.0.
+   Single source of truth for color, type, space, shape, motion.
+
+   Tailwind's theme.extend derives from this file (ADR-027).
+   Never hardcode a hex, radius, or spacing value in web/src/.
+
+   NOTE: this is a wired copy of docs/design/tokens.css (the design
+   source of truth). Keep the two in sync until a later chore dedupes.
+   ============================================================ */
+
+:root {
+  /* ── Color · surfaces & text (light) ───────────────── */
+  --bg:              #F7F8FA;
+  --surface:         #FFFFFF;
+  --surface-2:       #EEF1F5;
+  --border:          #E3E7EC;
+  --border-strong:   #C9D2DB;
+  --text:            #16202B;
+  --text-2:          #5B6B7C;
+  --text-3:          #8A99A8;
+
+  /* ── Color · brand accent (verdigris) ──────────────── */
+  --accent:          #0F6B66;
+  --accent-hover:    #0B5450;
+  --accent-soft:     #E0F0EE;
+  --on-accent:       #FFFFFF;
+
+  /* ── Color · score state ───────────────────────────────
+     Semantic only. Never decorative. Three states:
+       qualify  = score >= threshold
+       nearmiss = inside the near-miss band below threshold
+       below    = beneath the near-miss band              */
+  --qualify:         #1F8A4C;
+  --qualify-soft:    #E3F3E9;
+  --nearmiss:        #B7791F;
+  --nearmiss-soft:   #F8EFDD;
+  --below:           #8A99A8;
+  --below-soft:      #EEF1F5;
+
+  /* ── Color · destructive & focus ───────────────────── */
+  --danger:          #B9382C;
+  --danger-soft:     #F9E6E3;
+  --focus:           #0F6B66;
+
+  /* ── Typography ────────────────────────────────────── */
+  --font-display:    "Bricolage Grotesque", sans-serif;  /* headings */
+  --font-body:       "Inter", sans-serif;                /* all UI text */
+  --font-mono:       "IBM Plex Mono", monospace;         /* data voice */
+
+  /* Type scale (px). Body is 15. */
+  --fs-display:      32px;   /* Bricolage 700, -0.02em */
+  --fs-h2:           22px;   /* Bricolage 600, -0.01em */
+  --fs-body:         15px;   /* Inter 400 */
+  --fs-control:      14px;   /* buttons, inputs */
+  --fs-small:        13px;   /* secondary text, table cells */
+  --fs-mono:         14px;   /* Plex Mono 500 — data */
+  --fs-caption:      12px;   /* hints, eyebrow */
+  --fs-label:        11px;   /* uppercase labels, badges */
+  --fs-tick:         10px;   /* threshold rail tick label */
+
+  --ls-eyebrow:      0.08em; /* uppercase mono labels */
+  --ls-badge:        0.05em;
+
+  /* ── Shape ─────────────────────────────────────────── */
+  --r-card:          10px;   /* cards, panels */
+  --r-control:       6px;    /* buttons, inputs, badges */
+  --r-pill:          999px;  /* chips, score rail, skills */
+
+  /* ── Space · 4px base, 8px grid ────────────────────── */
+  --s1:  4px;
+  --s2:  8px;
+  --s3:  12px;
+  --s4:  16px;
+  --s5:  24px;
+  --s6:  32px;
+  --s7:  48px;
+  --s8:  64px;
+
+  /* ── Motion · <= 250ms, ease-out, bg/border only ───── */
+  --motion-fast:     0.15s;
+  --motion-base:     0.25s;
+  --motion-ease:     ease-out;
+
+  /* ── Focus ─────────────────────────────────────────── */
+  --focus-width:     2px;
+  --focus-offset:    2px;
+}
+
+/* ── Dark theme ─────────────────────────────────────────
+   Applied via [data-theme="dark"] on <html>.            */
+[data-theme="dark"] {
+  --bg:              #0E141B;
+  --surface:         #16202B;
+  --surface-2:       #1D2935;
+  --border:          #24303D;
+  --border-strong:   #33414F;
+  --text:            #E8EDF2;
+  --text-2:          #8A99A8;
+  --text-3:          #64748B;
+
+  --accent:          #35C4B5;
+  --accent-hover:    #5AD6C8;
+  --accent-soft:     #12312F;
+  --on-accent:       #0A1512;
+
+  --qualify:         #4CC57E;
+  --qualify-soft:    #14291D;
+  --nearmiss:        #D9A03F;
+  --nearmiss-soft:   #2C2313;
+  --below:           #64748B;
+  --below-soft:      #1D2935;
+
+  --danger:          #E0665A;
+  --danger-soft:     #33201D;
+  --focus:           #35C4B5;
+}
+
+/* ── Accessibility baselines (non-negotiable) ─────────── */
+:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

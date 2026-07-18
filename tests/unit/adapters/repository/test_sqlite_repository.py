@@ -114,6 +114,75 @@ def test_save_records_initial_sighting():
 
 
 # ---------------------------------------------------------------------------
+# list_jobs
+# ---------------------------------------------------------------------------
+
+def test_list_jobs_empty_returns_empty_list():
+    """An empty store lists no jobs."""
+    assert _repo().list_jobs() == []
+
+
+def test_list_jobs_orders_by_score_descending():
+    """Evaluated jobs are returned strongest-first."""
+    repo = _repo()
+    _save(repo, _job(title="Low", url="https://x/low"), score=55)
+    _save(repo, _job(title="High", url="https://x/high"), score=91)
+    _save(repo, _job(title="Mid", url="https://x/mid"), score=73)
+
+    scores = [j.match_result.score for j in repo.list_jobs()]
+    assert scores == [91, 73, 55]
+
+
+def test_list_jobs_places_unevaluated_last():
+    """A job without an evaluation sorts after every scored job."""
+    repo = _repo()
+    _save(repo, _job(title="Scored", url="https://x/s"), score=40)
+    unscored = _job(title="Unscored", url="https://x/u")
+    fp = compute_fingerprint(unscored.company, unscored.title, unscored.location)
+    repo.save_job(
+        job=unscored,
+        fingerprint=fp,
+        match_result=None,
+        threshold=None,
+        near_miss_floor=None,
+        seen_at=_NOW,
+    )
+
+    titles = [j.title for j in repo.list_jobs()]
+    assert titles == ["Scored", "Unscored"]
+
+
+def test_list_jobs_attaches_seen_on_per_job():
+    """Each listed job carries its own distinct sighting platforms."""
+    repo = _repo()
+    _, a = _save(repo, _job(title="A", platform="linkedin", url="https://x/a"), score=90)
+    _, b = _save(repo, _job(title="B", platform="indeed", url="https://x/b"), score=80)
+    repo.record_sighting(a.id, "glassdoor", None, _NOW)
+
+    by_title = {j.title: j.seen_on for j in repo.list_jobs()}
+    assert by_title["A"] == ["glassdoor", "linkedin"]
+    assert by_title["B"] == ["indeed"]
+
+
+def test_list_jobs_uses_single_grouped_sightings_read(monkeypatch):
+    """Listing N jobs must not issue a per-row get_seen_on query (no N+1)."""
+    repo = _repo()
+    for i in range(3):
+        _save(repo, _job(title=f"J{i}", url=f"https://x/{i}"), score=80 + i)
+
+    calls = {"n": 0}
+    original = repo.get_seen_on
+
+    def _counting(job_id):
+        calls["n"] += 1
+        return original(job_id)
+
+    monkeypatch.setattr(repo, "get_seen_on", _counting)
+    repo.list_jobs()
+    assert calls["n"] == 0
+
+
+# ---------------------------------------------------------------------------
 # Sightings / seen-on
 # ---------------------------------------------------------------------------
 
