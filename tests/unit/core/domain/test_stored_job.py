@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from src.core.domain.job_status import JobStatus
 from src.core.domain.stored_job import StoredJob
 
 
@@ -31,6 +32,15 @@ def test_stored_job_defaults():
     assert job.threshold is None
     assert job.near_miss_floor is None
     assert job.seen_on == []
+    assert job.status is JobStatus.NEW
+    assert job.saved is False
+
+
+def test_stored_job_carries_status_and_saved():
+    """status and saved round-trip the lifecycle fields (ADR-025)."""
+    job = _stored(status=JobStatus.APPLIED, saved=True)
+    assert job.status is JobStatus.APPLIED
+    assert job.saved is True
 
 
 def test_stored_job_allows_null_fingerprint():

@@ -9,6 +9,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from src.core.domain.job_status import JobStatus
 from src.core.domain.match_result import MatchResult
 
 
@@ -47,6 +48,12 @@ class StoredJob(BaseModel):
 
     first_seen_at: datetime
     last_seen_at: datetime
+
+    status: JobStatus = JobStatus.NEW
+    """The lifecycle state (ADR-025). Machine-set until a person marks it."""
+
+    saved: bool = False
+    """A bookmark, independent of status — a job can be saved *and* applied."""
 
     seen_on: list[str] = []
     """Distinct platforms this job has been sighted on (the "seen on" model)."""

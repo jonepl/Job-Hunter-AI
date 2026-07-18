@@ -56,10 +56,36 @@ CREATE TABLE IF NOT EXISTS sightings (
 CREATE INDEX IF NOT EXISTS idx_sightings_job ON sightings (job_id);
 """
 
+# Migration 2 (C) — the nine-state job lifecycle (ADR-025).
+#
+# ``status`` and ``saved`` land on ``jobs``; every existing row is an evaluated
+# job, so the column defaults are correct. ``status_history`` is the append-only
+# audit trail, and the backfill writes one creation row per existing job (from
+# NULL → its current status at its ``first_seen_at``) so the trail is complete.
+_MIGRATION_2 = """
+ALTER TABLE jobs ADD COLUMN status TEXT NOT NULL DEFAULT 'evaluated';
+ALTER TABLE jobs ADD COLUMN saved INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS status_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id      INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+    from_status TEXT,
+    to_status   TEXT NOT NULL,
+    note        TEXT,
+    changed_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_status_history_job ON status_history (job_id);
+
+INSERT INTO status_history (job_id, from_status, to_status, note, changed_at)
+    SELECT id, NULL, status, NULL, first_seen_at FROM jobs;
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _MIGRATION_1),
+    (2, _MIGRATION_2),
 ]
 
 

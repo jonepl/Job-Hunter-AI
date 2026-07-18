@@ -10,6 +10,7 @@ from datetime import datetime
 
 from src.core.domain.fingerprint import Fingerprint
 from src.core.domain.job import Job
+from src.core.domain.job_status import JobStatus
 from src.core.domain.match_result import MatchResult
 from src.core.domain.stored_job import StoredJob
 
@@ -28,6 +29,73 @@ class JobRepositoryPort(ABC):
 
         Returns:
             All stored jobs (possibly empty), ranked for display.
+        """
+        ...
+
+    @abstractmethod
+    def get_job(self, job_id: int) -> StoredJob | None:
+        """Return the stored job with the given id, or None when absent.
+
+        The single-row lookup behind the ``mark`` CLI (resolve + display a job)
+        and any future ``PATCH /jobs/{id}`` path.
+
+        Args:
+            job_id: The repository primary key.
+
+        Returns:
+            The matching StoredJob (with its ``match_result`` and ``seen_on``),
+            or None when no job has that id.
+        """
+        ...
+
+    @abstractmethod
+    def set_status(
+        self,
+        job_id: int,
+        to_status: JobStatus,
+        note: str | None = None,
+        *,
+        machine: bool = False,
+    ) -> bool:
+        """Transition a job to ``to_status``, appending a history row (ADR-025).
+
+        Transitions are permissive (any → any) but guarded:
+
+        - a missing job is a no-op returning ``False``;
+        - setting the status to its current value is an **idempotent no-op** —
+          no history row, returns ``False``;
+        - a ``machine=True`` write over a **human-set** current status is refused
+          (the machine never clobbers a human) — no-op, returns ``False``;
+        - otherwise ``jobs.status`` is updated and a ``status_history`` row
+          (``from`` current → ``to_status``, ``note``, now) is appended,
+          returning ``True``.
+
+        The update and the history insert commit together in one short
+        transaction (ADR-034 §1).
+
+        Args:
+            job_id: The repository id of the job.
+            to_status: The status to move to.
+            note: Optional free-text note stored on the history row.
+            machine: True when the pipeline sets the status (enables the
+                no-clobber guard); False for a human mark.
+
+        Returns:
+            True when the status changed and a history row was written, else
+            False (missing job, idempotent no-op, or a refused machine clobber).
+        """
+        ...
+
+    @abstractmethod
+    def set_saved(self, job_id: int, saved: bool) -> None:
+        """Set the ``saved`` bookmark on a job (idempotent, no history row).
+
+        ``saved`` is a boolean independent of status (ADR-025) — a job can be
+        saved *and* applied — so toggling it never touches ``status_history``.
+
+        Args:
+            job_id: The repository id of the job.
+            saved: The bookmark value to set.
         """
         ...
 
