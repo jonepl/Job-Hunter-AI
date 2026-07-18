@@ -17,6 +17,7 @@ from src.core.domain.fingerprint import Fingerprint
 from src.core.domain.job import Job
 from src.core.domain.job_status import JobStatus, is_human_set
 from src.core.domain.match_result import MatchResult
+from src.core.domain.status_history_entry import StatusHistoryEntry
 from src.core.domain.stored_job import StoredJob
 from src.core.ports.job_repository_port import JobRepositoryPort
 
@@ -117,6 +118,23 @@ class SQLiteJobRepository(JobRepositoryPort):
             "UPDATE jobs SET saved = ? WHERE id = ?", (1 if saved else 0, job_id)
         )
         self._conn.commit()
+
+    def get_status_history(self, job_id: int) -> list[StatusHistoryEntry]:
+        """Return a job's status history oldest-first (empty for an unknown job)."""
+        rows = self._conn.execute(
+            "SELECT from_status, to_status, note, changed_at FROM status_history "
+            "WHERE job_id = ? ORDER BY id",
+            (job_id,),
+        ).fetchall()
+        return [
+            StatusHistoryEntry(
+                from_status=JobStatus(row["from_status"]) if row["from_status"] else None,
+                to_status=JobStatus(row["to_status"]),
+                note=row["note"],
+                changed_at=datetime.fromisoformat(row["changed_at"]),
+            )
+            for row in rows
+        ]
 
     def find_by_fingerprint(self, key: str) -> StoredJob | None:
         """Return the stored job with the exact canonical fingerprint ``key``."""
@@ -269,6 +287,7 @@ class SQLiteJobRepository(JobRepositoryPort):
             title=row["title"],
             location=row["location"],
             url=row["url"],
+            description=row["description"],
             fingerprint=row["fingerprint"],
             fingerprint_version=row["fingerprint_version"],
             canon_company=row["canon_company"],

@@ -77,9 +77,24 @@ The CLI has two modes: the default (no-subcommand) invocation runs a search; the
 `mark` subcommand moves a stored job through its lifecycle
 (`python -m src.main mark --job-id 7 --status applied --note "referred"`, plus
 `--save` / `--unsave`). `mark` dispatches to `run_mark` (`src/mark_runner.py`),
-which is argparse-free so W2's `PATCH /jobs/{id}/status` can reuse the same path.
+which is argparse-free so the API's status write reuses the same repository path.
 Only the six **human-set** statuses are selectable — machine states are never
 user-assignable (ADR-025).
+
+**API surface (as of W2).** All routes under `/api`, no business logic in the
+router (ADR-026):
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/jobs` | List — lean `JobSummary` cards, ranked strongest-first |
+| `GET` | `/api/jobs/{id}` | Detail fan-out — `JobDetail` (breakdown, skills, status history); 404 if missing |
+| `PATCH` | `/api/jobs/{id}/status` | `{status, note?}` → `set_status` + history row; 422 on a machine status |
+| `PATCH` | `/api/jobs/{id}/saved` | `{saved}` → `set_saved` (no history row) |
+
+The two `PATCH` routes are the web app's first mutations; the React client applies
+them optimistically (ui-spec §8) and rolls back on error. No endpoint ever returns
+generated-document content or raw resume text (ui-spec §7). Run history,
+generation, settings, and resume-upload routes arrive with later stories.
 
 ```
    CLI  (src/main, src/cli) ─┐
@@ -135,10 +150,10 @@ job-search-agent/
 │   │   ├── __init__.py
 │   │   ├── main.py                      ← app factory (create_app); uvicorn entrypoint
 │   │   ├── deps.py                      ← get_repository() — reuses build_repository()
-│   │   ├── schemas.py                   ← JobSummary response model (camelCase aliases)
+│   │   ├── schemas.py                   ← JobSummary / JobDetail + PATCH bodies (camelCase)
 │   │   └── routers/
 │   │       ├── __init__.py
-│   │       └── jobs.py                  ← GET /api/jobs
+│   │       └── jobs.py                  ← GET /api/jobs · GET/PATCH /api/jobs/{id}
 │   │
 │   ├── cli/                             ← CLI concerns
 │   │   ├── __init__.py
@@ -166,6 +181,7 @@ job-search-agent/
 │   │   │   ├── fingerprint.py           ← Fingerprint + compute_fingerprint() (pure dedup key)
 │   │   │   ├── stored_job.py            ← StoredJob — a persisted job + reused evaluation
 │   │   │   ├── job_status.py            ← JobStatus enum + is_human_set (nine-state lifecycle)
+│   │   │   ├── status_history_entry.py  ← StatusHistoryEntry — one lifecycle audit-trail row
 │   │   │   ├── sighting.py              ← Sighting — one job seen on one platform
 │   │   │   ├── scraper_name.py          ← ScraperName enum
 │   │   │   └── search_profile.py        ← SearchProfile — per-profile config model
@@ -221,10 +237,11 @@ web/                                     ← Job Hunter AI Web (Vite + React + T
 │   ├── api/
 │   │   ├── client.ts                    ← typed fetch wrapper (the only place fetch is called)
 │   │   └── types.ts                     ← generated from OpenAPI (npm run gen:types)
-│   ├── hooks/                           ← React Query hooks (useJobs)
-│   ├── components/                      ← ThresholdRail, ScoreChip, JobCard, ProviderBadges, StatusPill, ThemeToggle
-│   ├── screens/                         ← JobList (loading / empty / error states)
-│   ├── lib/                             ← queryClient, theme, score (ADR-033), platforms
+│   ├── hooks/                           ← React Query hooks (useJobs; useJob/useMarkStatus/useSaved — optimistic)
+│   ├── components/                      ← ThresholdRail, ScoreChip, JobCard, ProviderBadges, StatusPill,
+│   │                                       JobDetail, ScoreBreakdown, StatusDropdown, SaveStar, GenerationChip, ThemeToggle
+│   ├── screens/                         ← JobList (list + detail pane; loading / empty / error states)
+│   ├── lib/                             ← queryClient, theme, score (ADR-033), platforms, status (vocabulary)
 │   └── styles/                          ← tokens.css (wired copy) + index.css (Tailwind)
 ├── tests/                              ← Jest + React Testing Library
 ├── vite.config.ts                       ← dev proxy /api → :8000
@@ -239,7 +256,7 @@ tests/
 │   ├── test_scheduler.py                    ← tests for run_all_profiles()
 │   ├── test_main_args.py                    ← tests for main() argument wiring
 │   ├── api/
-│   │   └── test_jobs_router.py              ← tests for GET /api/jobs (FastAPI TestClient)
+│   │   └── test_jobs_router.py              ← tests for GET/PATCH /api/jobs[/{id}] (FastAPI TestClient)
 │   ├── cli/
 │   │   ├── test_args.py                     ← tests for parse_args()
 │   │   └── test_overrides.py               ← tests for apply_cli_overrides()
@@ -261,6 +278,7 @@ tests/
 │   │   │   ├── test_fingerprint.py          ← tests for compute_fingerprint (raw→canonical table)
 │   │   │   ├── test_stored_job.py           ← tests for StoredJob entity
 │   │   │   ├── test_job_status.py           ← tests for JobStatus enum + is_human_set
+│   │   │   ├── test_status_history_entry.py ← tests for StatusHistoryEntry entity
 │   │   │   ├── test_sighting.py             ← tests for Sighting entity
 │   │   │   ├── test_scraper_name.py         ← tests for ScraperName enum
 │   │   │   └── test_search_profile.py       ← tests for SearchProfile model
@@ -537,6 +555,7 @@ class StoredJob(BaseModel):
     match_result: MatchResult | None   # reused on a dedup hit
     threshold: int | None              # threshold in force at evaluation (ADR-033)
     near_miss_floor: int | None        # threshold - NEAR_MISS_BAND (ADR-033)
+    description: str | None            # raw posting text — "About the role" (W2)
     status: JobStatus                  # lifecycle state (ADR-025); default new
     saved: bool                        # bookmark, independent of status
     first_seen_at: datetime; last_seen_at: datetime
@@ -562,6 +581,19 @@ class JobStatus(str, Enum):
 # One hard domain rule: a machine write never clobbers a human-set status.
 # `saved` is a boolean column, never a JobStatus member — a job can be saved AND
 # applied.
+```
+
+### `StatusHistoryEntry`
+One row of a job's append-only lifecycle audit trail (ADR-025), in
+`src/core/domain/status_history_entry.py`. The detail screen renders these as the
+job's action timeline; the creation row has `from_status` None.
+
+```python
+class StatusHistoryEntry(BaseModel):
+    from_status: JobStatus | None   # None for the creation row
+    to_status: JobStatus
+    changed_at: datetime
+    note: str | None
 ```
 
 ### `Sighting`
@@ -679,6 +711,10 @@ class JobRepositoryPort(ABC):
     @abstractmethod
     def set_saved(self, job_id: int, saved: bool) -> None: ...
     # Toggle the saved bookmark; idempotent, never writes history
+
+    @abstractmethod
+    def get_status_history(self, job_id: int) -> list[StatusHistoryEntry]: ...
+    # A job's append-only status history, oldest-first — the detail timeline
 
     @abstractmethod
     def find_by_fingerprint(self, key: str) -> StoredJob | None: ...

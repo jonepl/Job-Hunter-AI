@@ -53,3 +53,11 @@ def test_stored_job_carries_seen_on():
     """seen_on holds the platforms the job was sighted on."""
     job = _stored(seen_on=["indeed", "linkedin"])
     assert job.seen_on == ["indeed", "linkedin"]
+
+
+def test_stored_job_description_defaults_none_and_roundtrips():
+    """description is optional and carries the raw posting text when present."""
+    assert _stored().description is None
+    assert _stored(description="Own end-to-end design.").description == (
+        "Own end-to-end design."
+    )

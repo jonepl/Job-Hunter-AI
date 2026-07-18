@@ -401,3 +401,39 @@ def test_set_saved_toggles_without_history():
 def test_get_job_miss_returns_none():
     """get_job returns None for an unknown id."""
     assert _repo().get_job(123) is None
+
+
+def test_get_status_history_returns_entries_oldest_first():
+    """History includes the creation row then each transition, in order."""
+    repo = _repo()
+    _, stored = _save(repo, _job())
+    repo.set_status(stored.id, JobStatus.APPLIED, note="referred")
+    repo.set_status(stored.id, JobStatus.INTERVIEWING)
+
+    history = repo.get_status_history(stored.id)
+    assert [(e.from_status, e.to_status, e.note) for e in history] == [
+        (None, JobStatus.EVALUATED, None),
+        (JobStatus.EVALUATED, JobStatus.APPLIED, "referred"),
+        (JobStatus.APPLIED, JobStatus.INTERVIEWING, None),
+    ]
+
+
+def test_get_status_history_unknown_job_is_empty():
+    """An unknown job has no history."""
+    assert _repo().get_status_history(999) == []
+
+
+def test_stored_job_carries_description():
+    """A saved job round-trips its description through the store."""
+    repo = _repo()
+    job = _job()
+    fp = compute_fingerprint(job.company, job.title, job.location)
+    stored = repo.save_job(
+        job=job,
+        fingerprint=fp,
+        match_result=_match_result(job),
+        threshold=75,
+        near_miss_floor=60,
+        seen_at=_NOW,
+    )
+    assert repo.get_job(stored.id).description == "A job."
