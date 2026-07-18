@@ -150,6 +150,13 @@ def _log_report_results(
         report: The RunReport returned by the pipeline.
         logger: Logger instance to use.
     """
+    if report.reused_count:
+        logger.info(
+            "Deduplicated: %d reused / %d new",
+            report.reused_count,
+            report.newly_evaluated_count,
+        )
+
     if report.has_qualifying_results:
         logger.info(
             "Profile %d complete — %d result(s) returned",

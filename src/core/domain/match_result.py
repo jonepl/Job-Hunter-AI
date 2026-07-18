@@ -39,3 +39,9 @@ class MatchResult(BaseModel):
     missing_skills: list[str]
     summary: str
     hire_recommendation: str
+    seen_on: list[str] = []
+    """Distinct platforms this job was sighted on (the "seen on" read model).
+
+    Populated by the service from the repository after dedup; evaluators leave it
+    empty. Defaults to [] so the evaluator contract shape is unchanged.
+    """

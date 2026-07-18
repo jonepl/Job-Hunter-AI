@@ -43,6 +43,19 @@ all placeholder values with real credentials before running.
 
 ---
 
+## Persistence Settings
+
+Job memory and deduplication (ADR-023/024/033/034). Persistence is always on — a
+seen job is not re-scored, and its cross-provider sightings are remembered.
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| DB_PATH | Path to the SQLite database file. Created (with its parent directory) on first run. Persists across runs via the `./data` volume mount. | `data/agent.db` |
+| DB_BUSY_TIMEOUT_MS | `PRAGMA busy_timeout` in milliseconds — how long a write waits for a competing write before erroring. Handles contention between a scheduled run and a browser mutation once the web server lands (ADR-034 §1). | `5000` |
+| NEAR_MISS_BAND | Fixed-width offset below the score threshold that defines the near-miss band (ADR-033). A job is *near-miss* when `threshold - NEAR_MISS_BAND ≤ score < threshold`, and the zero-results suggested threshold is this floor. Replaces the old floor-the-lowest-of-five rule. | `15` |
+
+---
+
 ## Scheduler Settings
 
 | Variable | Required | Default | Description |
@@ -185,6 +198,13 @@ GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash
 ENRICHMENT_MAX_CONCURRENT=2
 ENRICHMENT_DELAY_SECONDS=1.0
+
+# ── Persistence (job memory + dedup) ──────────────────────────────────────────
+# SQLite job store. A seen job is not re-scored; NEAR_MISS_BAND defines the
+# amber near-miss band below the threshold (ADR-023/024/033/034).
+DB_PATH=data/agent.db
+DB_BUSY_TIMEOUT_MS=5000
+NEAR_MISS_BAND=15
 
 # ── JSearch (Default to us) ───────────────────────────────────────────────────────────────────
 JSEARCH_COUNTRY=us

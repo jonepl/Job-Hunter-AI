@@ -27,11 +27,26 @@ def test_build_service_wires_enrichment_and_mode(monkeypatch):
 
     with patch("src.service_factory.build_scrapers", return_value=[MagicMock()]), \
          patch("src.service_factory.build_evaluator", return_value=MagicMock()), \
+         patch("src.service_factory.build_repository", return_value=MagicMock()), \
          patch("src.service_factory.build_enrichment", return_value=sentinel):
         service = build_service(_profile())
 
     assert service._enrichment is sentinel
     assert service._enrichment_mode == "enforce"
+
+
+def test_build_service_wires_repository(monkeypatch):
+    """build_service injects the persistence repository into the service."""
+    monkeypatch.delenv("ENRICHMENT_MODE", raising=False)
+    repo_sentinel = MagicMock()
+
+    with patch("src.service_factory.build_scrapers", return_value=[MagicMock()]), \
+         patch("src.service_factory.build_evaluator", return_value=MagicMock()), \
+         patch("src.service_factory.build_repository", return_value=repo_sentinel), \
+         patch("src.service_factory.build_enrichment", return_value=None):
+        service = build_service(_profile())
+
+    assert service._repository is repo_sentinel
 
 
 def test_build_service_defaults_mode_to_shadow(monkeypatch):
@@ -40,6 +55,7 @@ def test_build_service_defaults_mode_to_shadow(monkeypatch):
 
     with patch("src.service_factory.build_scrapers", return_value=[MagicMock()]), \
          patch("src.service_factory.build_evaluator", return_value=MagicMock()), \
+         patch("src.service_factory.build_repository", return_value=MagicMock()), \
          patch("src.service_factory.build_enrichment", return_value=None):
         service = build_service(_profile())
 
@@ -53,6 +69,7 @@ def test_build_service_normalizes_invalid_mode(monkeypatch):
 
     with patch("src.service_factory.build_scrapers", return_value=[MagicMock()]), \
          patch("src.service_factory.build_evaluator", return_value=MagicMock()), \
+         patch("src.service_factory.build_repository", return_value=MagicMock()), \
          patch("src.service_factory.build_enrichment", return_value=None):
         service = build_service(_profile())
 

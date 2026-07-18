@@ -10,16 +10,19 @@ import PyPDF2
 
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.enrichment_summary import EnrichmentSummary
+from src.core.domain.fingerprint import Fingerprint, compute_fingerprint
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
 from src.core.domain.run_cost import RunCost
 from src.core.domain.run_report import RunReport
 from src.core.domain.scraper_name import ScraperName
+from src.core.domain.stored_job import StoredJob
 from src.core.domain.work_type import WorkType
 from src.core.exceptions import ModelNotFoundError
 from src.core.ports.evaluator_port import EvaluatorPort
 from src.core.ports.job_enrichment_port import JobEnrichmentPort
+from src.core.ports.job_repository_port import JobRepositoryPort
 from src.core.ports.output_port import OutputPort
 from src.core.ports.scraper_port import ScraperPort
 
@@ -60,6 +63,7 @@ class JobSearchService:
         resume_path: str = "docs/resume/resume.pdf",
         enrichment: JobEnrichmentPort | None = None,
         enrichment_mode: str = "shadow",
+        repository: JobRepositoryPort | None = None,
     ) -> None:
         """Initialise the service with injected port adapters.
 
@@ -73,6 +77,11 @@ class JobSearchService:
             enrichment_mode: 'shadow' (evaluate everything, only measure what would
                              have been skipped) or 'enforce' (actually skip flagged
                              jobs). Ignored when enrichment is None.
+            repository: Optional persistence adapter implementing
+                        JobRepositoryPort. When provided, seen jobs skip
+                        re-evaluation (their stored score is reused) and new
+                        evaluations are persisted. When None, dedup and
+                        persistence are skipped entirely.
         """
         self._scrapers = scrapers
         self._evaluator = evaluator
@@ -80,6 +89,7 @@ class JobSearchService:
         self._resume_path = resume_path
         self._enrichment = enrichment
         self._enrichment_mode = enrichment_mode
+        self._repository = repository
 
     async def run(
         self,
@@ -200,6 +210,26 @@ class JobSearchService:
         else:
             jobs_to_evaluate = all_jobs
 
+        # Step 2.6 — deduplicate against the store and within this run.
+        # A job whose fingerprint is already stored reuses its score (no re-pay);
+        # the same posting seen on several platforms this run is grouped so it is
+        # evaluated once and recorded as multiple sightings ("seen on: …").
+        near_miss_band = int(os.getenv("NEAR_MISS_BAND", "15"))
+        now = datetime.now()
+        if self._repository is not None:
+            reused_results, pending_groups = self._dedup_partition(jobs_to_evaluate, now)
+            jobs_for_eval = [group_jobs[0] for _, group_jobs in pending_groups]
+            if reused_results:
+                logger.info(
+                    "Dedup — reused %d stored evaluation(s); %d new job(s) to evaluate",
+                    len(reused_results),
+                    len(jobs_for_eval),
+                )
+        else:
+            reused_results = []
+            pending_groups = None
+            jobs_for_eval = jobs_to_evaluate
+
         # Step 3 — evaluate each job against the resume with semaphore-controlled concurrency
         max_concurrent = int(os.getenv("MAX_CONCURRENT_EVALUATIONS", "2"))
         evaluation_delay = float(os.getenv("EVALUATION_DELAY_SECONDS", "1.0"))
@@ -254,9 +284,36 @@ class JobSearchService:
                     return None
 
         eval_results = await asyncio.gather(
-            *[evaluate_with_limit(job) for job in jobs_to_evaluate]
+            *[evaluate_with_limit(job) for job in jobs_for_eval]
         )
-        evaluated = [r for r in eval_results if r is not None]
+
+        # Step 3.5 — persist each new evaluation and attach its "seen on" set.
+        # Results align with jobs_for_eval (gather preserves order), which aligns
+        # with pending_groups when a repository is in use.
+        new_results: list[MatchResult] = []
+        for i, result in enumerate(eval_results):
+            if result is None:
+                continue
+            if self._repository is not None and pending_groups is not None:
+                fp, group_jobs = pending_groups[i]
+                near_miss_floor = max(0, threshold - near_miss_band)
+                stored = self._repository.save_job(
+                    job=group_jobs[0],
+                    fingerprint=fp,
+                    match_result=result,
+                    threshold=threshold,
+                    near_miss_floor=near_miss_floor,
+                    seen_at=now,
+                )
+                for extra_job in group_jobs[1:]:
+                    self._repository.record_sighting(
+                        stored.id, extra_job.platform, extra_job.url, now
+                    )
+                seen_on = self._repository.get_seen_on(stored.id)
+                result = result.model_copy(update={"seen_on": seen_on})
+            new_results.append(result)
+
+        evaluated = reused_results + new_results
 
         # Step 4 — sort all evaluated by score descending
         all_evaluated = sorted(evaluated, key=lambda r: r.score, reverse=True)
@@ -285,10 +342,15 @@ class JobSearchService:
                 len(qualifying),
             )
 
-        # Step 7 — collect near-misses only when zero qualifying results
+        # Step 7 — collect near-misses only when zero qualifying results.
+        # Near-miss is now the fixed band [threshold - NEAR_MISS_BAND, threshold)
+        # (ADR-033), not "any job below threshold". Still capped at 5.
         near_misses: list[MatchResult] = []
         if not qualifying:
-            near_misses = [r for r in all_evaluated if r.score < threshold][:5]
+            near_miss_floor = max(0, threshold - near_miss_band)
+            near_misses = [
+                r for r in all_evaluated if near_miss_floor <= r.score < threshold
+            ][:5]
 
         # Step 8 — build run cost summary
         run_cost = cost_tracker.build_run_cost() if cost_tracker else None
@@ -320,6 +382,8 @@ class JobSearchService:
             active_scrapers=active_scrapers or [],
             run_cost=run_cost,
             enrichment_summary=enrichment_summary,
+            near_miss_band=near_miss_band,
+            reused_count=len(reused_results),
         )
 
         # Step 10 — log completion summary
@@ -435,6 +499,93 @@ class JobSearchService:
                 "Consider setting ENRICHMENT_MODE=enforce.",
                 summary.evaluated_count,
             )
+
+    def _dedup_partition(
+        self, jobs: list[Job], now: datetime
+    ) -> tuple[list[MatchResult], list[tuple[Fingerprint, list[Job]]]]:
+        """Split scraped jobs into reused (dedup hits) and pending (to evaluate).
+
+        For each job:
+
+        - **Prior-run hit** — its fingerprint is already stored with an
+          evaluation: record a sighting and reuse the stored score (never
+          re-evaluated). Multiple scraped jobs hitting the same stored job add
+          sightings but reuse the score once.
+        - **New job** — grouped by fingerprint so the same posting seen on
+          several platforms this run is evaluated once; the group's near-misses
+          (same company + title, different location) are logged, never merged.
+        - **Dedup disabled** — a fingerprint that normalizes to empty gets its
+          own group and is always evaluated fresh (ADR-024).
+
+        Requires ``self._repository`` to be set.
+
+        Args:
+            jobs: The jobs surviving the pre-filter stage.
+            now: The timestamp to record sightings with.
+
+        Returns:
+            A tuple of (reused MatchResults, pending groups). Each pending group
+            is (fingerprint, jobs) whose first job is the evaluation representative.
+        """
+        assert self._repository is not None
+        repo = self._repository
+
+        hit_stored: dict[int, StoredJob] = {}
+        groups: dict[str, list[Job]] = {}
+        group_fp: dict[str, Fingerprint] = {}
+        group_order: list[str] = []
+        no_key_groups: list[tuple[Fingerprint, Job]] = []
+
+        for job in jobs:
+            fp = compute_fingerprint(job.company, job.title, job.location)
+
+            if fp.key is None:
+                # Incomplete fingerprint — dedup disabled, evaluate fresh.
+                no_key_groups.append((fp, job))
+                continue
+
+            stored = repo.find_by_fingerprint(fp.key)
+            if stored is not None and stored.match_result is not None:
+                repo.record_sighting(stored.id, job.platform, job.url, now)
+                hit_stored[stored.id] = stored
+                continue
+
+            # New job — accumulate by fingerprint for single evaluation this run.
+            if fp.key not in groups:
+                groups[fp.key] = []
+                group_fp[fp.key] = fp
+                group_order.append(fp.key)
+                for near in repo.find_near_misses(
+                    fp.canon_company, fp.canon_title, exclude_key=fp.key
+                ):
+                    logger.info(
+                        "Near-miss (logged, not merged) — %r @ %r: "
+                        "stored location %r vs new %r",
+                        job.title,
+                        job.company,
+                        near.location,
+                        job.location,
+                    )
+            groups[fp.key].append(job)
+
+        reused_results: list[MatchResult] = []
+        for stored in hit_stored.values():
+            seen_on = repo.get_seen_on(stored.id)
+            reused = stored.match_result.model_copy(update={"seen_on": seen_on})
+            reused_results.append(reused)
+            logger.info(
+                "Dedup hit — reusing stored score %d for %r @ %r (seen on: %s)",
+                reused.score,
+                stored.title,
+                stored.company,
+                ", ".join(seen_on),
+            )
+
+        pending_groups: list[tuple[Fingerprint, list[Job]]] = [
+            (group_fp[key], groups[key]) for key in group_order
+        ]
+        pending_groups.extend((fp, [job]) for fp, job in no_key_groups)
+        return reused_results, pending_groups
 
     def _parse_resume(self, path: str) -> Resume:
         """Extract text from a PDF resume using PyPDF2.

@@ -60,19 +60,42 @@ class RunReport(BaseModel):
     enrichment_summary: EnrichmentSummary | None = None
     """Pre-filter decision surface. None when the pre-filter did not run this run."""
 
+    near_miss_band: int = 15
+    """Fixed-width offset below the threshold that defines the near-miss band (ADR-033)."""
+
+    reused_count: int = 0
+    """Jobs whose stored evaluation was reused this run (dedup hits, not re-scored)."""
+
     @property
     def has_qualifying_results(self) -> bool:
         """Return True if any jobs passed the score threshold this run."""
         return len(self.qualifying_results) > 0
 
     @property
-    def suggested_threshold(self) -> int | None:
-        """Suggest a lower threshold based on near-miss scores.
+    def newly_evaluated_count(self) -> int:
+        """Jobs actually sent to the evaluator this run (not dedup reuses).
 
-        Returns the floor score of near-miss results rounded down to the
-        nearest 5. Returns None if near_miss_results is empty.
+        ``total_evaluated`` counts both reused and freshly scored jobs, so the
+        newly evaluated count is ``total_evaluated - reused_count``, floored at 0.
+        """
+        return max(0, self.total_evaluated - self.reused_count)
+
+    @property
+    def near_miss_floor(self) -> int:
+        """The lowest score still counted as a near-miss (ADR-033).
+
+        ``near_miss_floor = threshold - NEAR_MISS_BAND``, floored at 0.
+        """
+        return max(0, self.score_threshold - self.near_miss_band)
+
+    @property
+    def suggested_threshold(self) -> int | None:
+        """Suggest lowering the threshold to the near-miss floor (ADR-033).
+
+        The fixed-band rule replaces the old floor-the-lowest-of-five artifact:
+        when there are near-misses, suggest the ``near_miss_floor`` so every job
+        in the band would qualify. Returns None when there are no near-misses.
         """
         if self.near_miss_results:
-            lowest = min(r.score for r in self.near_miss_results)
-            return (lowest // 5) * 5
+            return self.near_miss_floor
         return None

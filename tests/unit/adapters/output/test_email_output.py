@@ -59,17 +59,20 @@ def _make_report(
     qualifying_results: list[MatchResult] | None = None,
     near_miss_results: list[MatchResult] | None = None,
     top_results: int | None = None,
+    total_evaluated: int = 10,
+    reused_count: int = 0,
 ) -> RunReport:
     """Return a RunReport with sensible defaults."""
     return RunReport(
         qualifying_results=qualifying_results or [],
         near_miss_results=near_miss_results or [],
-        total_evaluated=10,
+        total_evaluated=total_evaluated,
         score_threshold=70,
         top_results=top_results,
         query="Senior Python Developer",
         location="Remote",
         run_at=datetime(2026, 3, 17, 9, 0, 0),
+        reused_count=reused_count,
     )
 
 
@@ -354,3 +357,37 @@ def test_enrichment_section_flags_full_degradation(sample_report):
     assert "20 of 20 not assessed" in html
     assert "fully degraded" in html
     assert "GEMINI_MODEL" in html
+
+
+def test_dedup_row_rendered_when_jobs_reused():
+    """The qualifying email header shows a 'reused / new' row when dedup hit."""
+    report = _make_report(
+        qualifying_results=[_make_match_result()],
+        total_evaluated=10,
+        reused_count=4,
+    )
+    html = _output()._build_html(report)
+
+    assert "Deduplicated" in html
+    assert "4 reused / 6 new" in html
+
+
+def test_dedup_row_rendered_on_zero_results():
+    """The zero-results email header also shows the 'reused / new' row."""
+    report = _make_report(
+        qualifying_results=[],
+        near_miss_results=[_make_match_result(60)],
+        total_evaluated=8,
+        reused_count=3,
+    )
+    html = _output()._build_html(report)
+
+    assert "Deduplicated" in html
+    assert "3 reused / 5 new" in html
+
+
+def test_dedup_row_absent_when_nothing_reused(sample_report):
+    """No dedup row is rendered when reused_count is 0."""
+    html = _output()._build_html(sample_report)
+
+    assert "Deduplicated" not in html

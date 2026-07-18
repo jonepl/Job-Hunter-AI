@@ -185,6 +185,7 @@ class EmailOutput(OutputPort):
             f"<td>{date_posted_label}</td></tr>"
             f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Active scrapers</strong></td>"
             f"<td>{active_scrapers_label}</td></tr>"
+            f"{self._dedup_row(report)}"
             f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Matches found</strong></td>"
             f"<td><strong>{len(report.qualifying_results)}</strong></td></tr>"
             "</table>"
@@ -258,6 +259,7 @@ class EmailOutput(OutputPort):
             f"<td>{report.total_evaluated}</td></tr>"
             f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Active scrapers</strong></td>"
             f"<td>{active_scrapers_label}</td></tr>"
+            f"{self._dedup_row(report)}"
             "</table>"
             "<div style=\"background:#fff8e1;border:1px solid #f9c74f;border-radius:6px;"
             "padding:16px;margin-bottom:20px;\">"
@@ -275,6 +277,41 @@ class EmailOutput(OutputPort):
             f"{cost_section}"
             "</body></html>"
         )
+
+    @staticmethod
+    def _dedup_row(report: RunReport) -> str:
+        """Build the metadata table row summarising dedup reuse.
+
+        Returns a "Deduplicated" row ("N reused / M new") when any stored
+        evaluation was reused this run, or an empty string otherwise.
+
+        Args:
+            report: The RunReport to summarise.
+
+        Returns:
+            An HTML table row string, or empty string when no jobs were reused.
+        """
+        if not report.reused_count:
+            return ""
+        return (
+            "<tr><td style=\"padding:2px 12px 2px 0;\"><strong>Deduplicated</strong></td>"
+            f"<td>{report.reused_count} reused / {report.newly_evaluated_count} new</td></tr>"
+        )
+
+    @staticmethod
+    def _seen_on_label(result) -> str:
+        """Return the platforms a job was seen on for display.
+
+        Uses the deduplicated ``seen_on`` set when populated ("linkedin,
+        indeed"), falling back to the single scraped platform otherwise.
+
+        Args:
+            result: The MatchResult to describe.
+
+        Returns:
+            A comma-separated platform label.
+        """
+        return ", ".join(result.seen_on) if result.seen_on else result.job.platform
 
     def _build_result_card(self, rank: int, result) -> str:
         """Build an HTML card for a single qualifying MatchResult.
@@ -307,7 +344,7 @@ class EmailOutput(OutputPort):
 
             f"<p style=\"margin:0 0 14px;color:#656d76;\">"
             f"{result.job.company} &nbsp;·&nbsp; {result.job.location}"
-            f" &nbsp;·&nbsp; {result.job.platform}</p>"
+            f" &nbsp;·&nbsp; Seen on {self._seen_on_label(result)}</p>"
 
             "<table style=\"border-collapse:collapse;margin-bottom:14px;\">"
             "<tr>"
@@ -374,7 +411,7 @@ class EmailOutput(OutputPort):
 
             f"<p style=\"margin:0 0 10px;color:#656d76;font-size:12px;\">"
             f"{result.job.company} &nbsp;·&nbsp; {result.job.location}"
-            f" &nbsp;·&nbsp; {result.job.platform}</p>"
+            f" &nbsp;·&nbsp; Seen on {self._seen_on_label(result)}</p>"
 
             f"<p style=\"margin:4px 0;\"><strong>Score:</strong> {result.score}/100"
             f" &nbsp;·&nbsp; "

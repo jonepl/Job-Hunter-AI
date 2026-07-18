@@ -6,6 +6,7 @@ from src.adapters.enrichment.factory import build_enrichment
 from src.adapters.evaluator.factory import build_evaluator
 from src.adapters.output.email_output import EmailOutput
 from src.adapters.output.file_output import FileOutput
+from src.adapters.repository.factory import build_repository
 from src.adapters.scrapers.scraper_factory import build_scrapers
 from src.core.domain.search_profile import SearchProfile
 from src.core.services.job_search_service import JobSearchService
@@ -35,6 +36,9 @@ def build_service(profile: SearchProfile) -> JobSearchService:
     if enrichment_mode not in ("shadow", "enforce"):
         enrichment_mode = "shadow"
 
+    # Build the persistence repository (shared singleton across profiles)
+    repository = build_repository()
+
     # Build output adapters
     gmail_address = os.getenv("GMAIL_ADDRESS", "")
     gmail_app_password = os.getenv("GMAIL_APP_PASSWORD", "")
@@ -55,4 +59,5 @@ def build_service(profile: SearchProfile) -> JobSearchService:
         outputs=outputs,
         enrichment=enrichment,
         enrichment_mode=enrichment_mode,
+        repository=repository,
     )
