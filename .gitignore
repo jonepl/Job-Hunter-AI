@@ -32,5 +32,10 @@ ai/prompts/
 docs/resume/resume.pdf
 logs
 
+# Developmental files
 output
 remaining_work.md
+notes/
+
+# SQLite database (B1)
+data/*.db*

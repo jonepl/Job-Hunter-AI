@@ -132,6 +132,9 @@ job-search-agent/
 │   │   │   ├── run_cost.py              ← RunCost + EvaluationCost — actual run cost
 │   │   │   ├── enrichment_result.py     ← EnrichmentResult — per-job pre-filter verdict
 │   │   │   ├── enrichment_summary.py    ← EnrichmentSummary — run-level pre-filter surface
+│   │   │   ├── fingerprint.py           ← Fingerprint + compute_fingerprint() (pure dedup key)
+│   │   │   ├── stored_job.py            ← StoredJob — a persisted job + reused evaluation
+│   │   │   ├── sighting.py              ← Sighting — one job seen on one platform
 │   │   │   ├── scraper_name.py          ← ScraperName enum
 │   │   │   └── search_profile.py        ← SearchProfile — per-profile config model
 │   │   │
@@ -140,6 +143,7 @@ job-search-agent/
 │   │   │   ├── scraper_port.py          ← ScraperPort ABC
 │   │   │   ├── evaluator_port.py        ← EvaluatorPort ABC
 │   │   │   ├── job_enrichment_port.py   ← JobEnrichmentPort ABC (pre-filter; Job-only, no Resume)
+│   │   │   ├── job_repository_port.py   ← JobRepositoryPort ABC (persistence + dedup)
 │   │   │   └── output_port.py           ← OutputPort ABC
 │   │   │
 │   │   └── services/                    ← Business logic orchestration
@@ -165,6 +169,12 @@ job-search-agent/
 │       │   ├── gemini_enrichment.py     ← Gemini pre-filter (fail-open, circuit breaker)
 │       │   ├── prompts.py               ← Pre-filter prompt text
 │       │   └── factory.py               ← Builds pre-filter from ENRICHMENT_* / GEMINI_*
+│       │
+│       ├── repository/                  ← SQLite persistence (JobRepositoryPort)
+│       │   ├── __init__.py
+│       │   ├── sqlite_repository.py     ← SQLiteJobRepository (WAL, busy_timeout, short commits)
+│       │   ├── migrations.py            ← Forward-only migration runner (jobs + sightings)
+│       │   └── factory.py               ← Builds the repo singleton from DB_PATH
 │       │
 │       └── output/                      ← Delivery adapters
 │           ├── __init__.py
@@ -196,6 +206,9 @@ tests/
 │   │   │   ├── test_run_cost.py             ← tests for RunCost / EvaluationCost entities
 │   │   │   ├── test_enrichment_result.py    ← tests for EnrichmentResult entity
 │   │   │   ├── test_enrichment_summary.py   ← tests for EnrichmentSummary entity
+│   │   │   ├── test_fingerprint.py          ← tests for compute_fingerprint (raw→canonical table)
+│   │   │   ├── test_stored_job.py           ← tests for StoredJob entity
+│   │   │   ├── test_sighting.py             ← tests for Sighting entity
 │   │   │   ├── test_scraper_name.py         ← tests for ScraperName enum
 │   │   │   └── test_search_profile.py       ← tests for SearchProfile model
 │   │   │
@@ -203,6 +216,7 @@ tests/
 │   │   │   ├── test_scraper_port.py         ← tests for ScraperPort ABC
 │   │   │   ├── test_evaluator_port.py       ← tests for EvaluatorPort ABC
 │   │   │   ├── test_job_enrichment_port.py  ← tests for JobEnrichmentPort ABC (privacy boundary)
+│   │   │   ├── test_job_repository_port.py  ← tests for JobRepositoryPort ABC
 │   │   │   └── test_output_port.py          ← tests for OutputPort ABC
 │   │   │
 │   │   └── services/
@@ -219,6 +233,9 @@ tests/
 │       │   └── test_factory.py
 │       ├── enrichment/
 │       │   ├── test_gemini_enrichment.py
+│       │   └── test_factory.py
+│       ├── repository/
+│       │   ├── test_sqlite_repository.py
 │       │   └── test_factory.py
 │       └── output/
 │           ├── test_email_output.py
@@ -375,14 +392,21 @@ class RunReport(BaseModel):
     cost_estimate: CostEstimate | None   # None when SHOW_COST_ESTIMATE=false
     run_cost: RunCost | None             # None when SHOW_COST_ESTIMATE=false
     enrichment_summary: EnrichmentSummary | None  # None when the pre-filter did not run
+    near_miss_band: int                  # fixed offset below threshold (ADR-033); default 15
+    reused_count: int                    # jobs whose stored evaluation was reused (dedup hits)
 
     @property
     def has_qualifying_results(self) -> bool: ...
     # Returns True when qualifying_results is non-empty
 
     @property
+    def near_miss_floor(self) -> int: ...
+    # threshold - near_miss_band, floored at 0 (ADR-033)
+
+    @property
     def suggested_threshold(self) -> int | None: ...
-    # Floors the lowest near-miss score to nearest 5; None when near_miss_results empty
+    # The near_miss_floor when there are near-misses; None otherwise (ADR-033 —
+    # replaces the retired floor-the-lowest-of-five rule)
 ```
 
 ### `EnrichmentResult`
@@ -419,6 +443,61 @@ class EnrichmentSummary(BaseModel):
     @property
     def graduation_ready(self) -> bool: ...
     # True when shadow, 0 false-skips, 0 errors, >= 50 evaluated jobs
+```
+
+### `Fingerprint`
+A job's deterministic identity for exact-match deduplication (ADR-024). Built by
+the pure function `compute_fingerprint(company, title, location)` — no I/O — called
+by both the persistence write path and the dedup check so they can never disagree.
+Full normalization rules: `docs/build/vertical-story-split.md` §13.
+
+```python
+class Fingerprint(BaseModel):
+    canon_company: str      # canonicalized identity fields
+    canon_title: str
+    canon_location: str
+    version: int            # FINGERPRINT_VERSION; lets stale keys be recomputed
+
+    @property
+    def key(self) -> str | None: ...
+    # "company|title|location", or None when any field is empty (dedup disabled)
+
+# relation(a, b) -> "match" | "near_miss" | "distinct"
+#   match     — all three canonical fields equal        (skip re-eval / add sighting)
+#   near_miss — company + title equal, location differs (logged, never merged)
+#   distinct  — company or title differs, or incomplete (dedup disabled)
+```
+
+### `StoredJob`
+A job as persisted in the repository, returned by `JobRepositoryPort` lookups. On a
+dedup hit the service reuses the stored `match_result` instead of paying the
+evaluator again, and reads `seen_on` for the cross-provider read model. The
+threshold and near-miss floor are stored per evaluation (ADR-033).
+
+```python
+class StoredJob(BaseModel):
+    id: int
+    company: str; title: str; location: str; url: str | None
+    fingerprint: str | None            # canonical key; None disables dedup
+    fingerprint_version: int
+    canon_company: str; canon_title: str; canon_location: str
+    match_result: MatchResult | None   # reused on a dedup hit
+    threshold: int | None              # threshold in force at evaluation (ADR-033)
+    near_miss_floor: int | None        # threshold - NEAR_MISS_BAND (ADR-033)
+    first_seen_at: datetime; last_seen_at: datetime
+    seen_on: list[str]                 # distinct platforms sighted on
+```
+
+### `Sighting`
+One observation of a job on one platform. A single job (one fingerprint) can be
+sighted on several platforms — the set is the "seen on: linkedin, indeed" read
+model surfaced in the report (CSV column + email line).
+
+```python
+class Sighting(BaseModel):
+    platform: str            # scraper/source name
+    url: str | None          # platform-specific URL, if known
+    seen_at: datetime
 ```
 
 ---
@@ -496,6 +575,47 @@ class JobEnrichmentPort(ABC):
         ...
 ```
 
+### `JobRepositoryPort`
+
+The persistence and deduplication contract (ADR-023). The core sees only this
+port — it has no knowledge of SQLite. All writes flow through one instance so a
+scheduled run and a browser mutation are serialized safely (ADR-034 §1).
+
+```python
+from abc import ABC, abstractmethod
+
+class JobRepositoryPort(ABC):
+
+    @abstractmethod
+    def find_by_fingerprint(self, key: str) -> StoredJob | None: ...
+    # Exact fingerprint lookup — a hit reuses the stored evaluation
+
+    @abstractmethod
+    def find_near_misses(
+        self, canon_company: str, canon_title: str, exclude_key: str | None = None
+    ) -> list[StoredJob]: ...
+    # Same company + title, different location — logged, never merged
+
+    @abstractmethod
+    def save_job(self, job, fingerprint, match_result, threshold,
+                 near_miss_floor, seen_at) -> StoredJob: ...
+    # Persist a new evaluation (short per-job commit) + first sighting
+
+    @abstractmethod
+    def record_sighting(self, job_id, platform, url, seen_at) -> None: ...
+    # Idempotent per (job, platform); refreshes last_seen_at
+
+    @abstractmethod
+    def get_seen_on(self, job_id: int) -> list[str]: ...
+    # Distinct platforms a job was sighted on
+```
+
+**Schema (migration 1 — B1).** `jobs` (raw + canonical fields, evaluation, and
+`fingerprint` with a **partial UNIQUE index** `WHERE fingerprint IS NOT NULL` so
+many dedup-disabled NULL keys can coexist) and `sightings` (one row per
+`(job_id, platform)`). Stdlib `sqlite3`, WAL mode, `data/agent.db`. Each story adds
+only the tables it needs; a `schema_migrations` table records what has run.
+
 ### `OutputPort`
 
 ```python
@@ -552,12 +672,21 @@ JobSearchService.run(query, location, threshold, top_results)
         │       ├── enforce: withhold flagged jobs from evaluation
         │       └── Fail-open; quota/model circuit breaker; EnrichmentSummary → RunReport
         │
-        ├── 3. Evaluate each job against resume (GPT-4o)
+        ├── 2.6 Deduplicate — JobRepositoryPort (compute_fingerprint per job)
+        │       ├── Prior-run hit → reuse stored score (never re-evaluated) + add sighting
+        │       ├── Same posting on N platforms this run → grouped, evaluated once
+        │       ├── Near-miss (company+title equal, location differs) → logged, never merged
+        │       └── Incomplete fingerprint → dedup disabled, evaluated fresh
+        │
+        ├── 3. Evaluate each new (non-reused) job against resume (GPT-4o)
         │       ├── Semaphore limits concurrent calls to MAX_CONCURRENT_EVALUATIONS
         │       ├── EVALUATION_DELAY_SECONDS applied after each evaluation
         │       ├── Token usage extracted from API response metadata
         │       ├── CostTracker.record() called per job when SHOW_COST_ESTIMATE=true
         │       └── OpenAIEvaluatorAdapter.evaluate() → tuple[MatchResult, int, int]
+        │
+        ├── 3.5 Persist each new evaluation (threshold + near_miss_floor) + sightings;
+        │        combine reused + new results
         │
         ├── 4. Sort all evaluated by score descending
         │
@@ -565,7 +694,7 @@ JobSearchService.run(query, location, threshold, top_results)
         │
         ├── 6. Apply TOP_RESULTS cap if set
         │
-        ├── 7. If zero qualifying — collect top 5 near-misses below threshold
+        ├── 7. If zero qualifying — collect near-misses in [threshold-NEAR_MISS_BAND, threshold)
         │
         ├── 8. Build RunReport
         │

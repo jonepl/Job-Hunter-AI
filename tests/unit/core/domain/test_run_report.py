@@ -86,16 +86,33 @@ def test_has_qualifying_results_false():
     assert report.has_qualifying_results is False
 
 
-def test_suggested_threshold_rounds_down_to_five():
-    """suggested_threshold floors the lowest near-miss score to nearest 5."""
+def test_suggested_threshold_is_near_miss_floor():
+    """suggested_threshold is the fixed near-miss floor, not floor-the-lowest (ADR-033)."""
     near_misses = [
-        _make_match_result(79),
-        _make_match_result(76),
-        _make_match_result(74),
+        _make_match_result(68),
+        _make_match_result(64),
+        _make_match_result(61),
     ]
-    report = _make_report(near_miss_results=near_misses)
-    # min score is 74 → 74 // 5 * 5 = 70
+    # threshold 70, default band 15 → near_miss_floor = 55, independent of scores.
+    report = _make_report(score_threshold=70, near_miss_results=near_misses)
+    assert report.near_miss_floor == 55
+    assert report.suggested_threshold == 55
+
+
+def test_suggested_threshold_respects_custom_band():
+    """near_miss_floor tracks the configured NEAR_MISS_BAND."""
+    report = _make_report(
+        score_threshold=80,
+        near_miss_band=10,
+        near_miss_results=[_make_match_result(72)],
+    )
     assert report.suggested_threshold == 70
+
+
+def test_near_miss_floor_never_negative():
+    """near_miss_floor floors at 0 when the band exceeds the threshold."""
+    report = _make_report(score_threshold=10, near_miss_band=15)
+    assert report.near_miss_floor == 0
 
 
 def test_suggested_threshold_none_when_no_near_misses():
@@ -117,3 +134,22 @@ def test_top_results_field_accepts_none():
     """RunReport validates successfully when top_results is None."""
     report = _make_report(top_results=None)
     assert report.top_results is None
+
+
+def test_newly_evaluated_count_subtracts_reused():
+    """newly_evaluated_count is total_evaluated minus reused_count."""
+    report = _make_report(total_evaluated=10, reused_count=4)
+    assert report.newly_evaluated_count == 6
+
+
+def test_newly_evaluated_count_defaults_to_total():
+    """newly_evaluated_count equals total_evaluated when nothing was reused."""
+    report = _make_report(total_evaluated=7)
+    assert report.reused_count == 0
+    assert report.newly_evaluated_count == 7
+
+
+def test_newly_evaluated_count_never_negative():
+    """newly_evaluated_count floors at 0 if reused_count somehow exceeds total."""
+    report = _make_report(total_evaluated=3, reused_count=5)
+    assert report.newly_evaluated_count == 0

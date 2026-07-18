@@ -21,6 +21,7 @@ _CSV_FIELDS = [
     "company",
     "location",
     "platform",
+    "seen_on",
     "url",
     "summary",
     "matched_skills",
@@ -111,6 +112,7 @@ class FileOutput(OutputPort):
                 writer.writeheader()
                 for rank, result in enumerate(rows_to_write, start=1):
                     bd = result.score_breakdown
+                    seen_on = "|".join(result.seen_on) if result.seen_on else result.job.platform
                     writer.writerow({
                         "result_type": result_type_label,
                         "rank": rank,
@@ -122,6 +124,7 @@ class FileOutput(OutputPort):
                         "company": result.job.company,
                         "location": result.job.location,
                         "platform": result.job.platform,
+                        "seen_on": seen_on,
                         "url": result.job.url,
                         "summary": result.summary,
                         "matched_skills": "|".join(result.matched_skills),

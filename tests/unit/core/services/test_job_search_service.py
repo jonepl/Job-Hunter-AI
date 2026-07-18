@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.core.domain.date_posted import DatePosted
+from src.core.domain.fingerprint import compute_fingerprint
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.resume import Resume
@@ -295,9 +296,13 @@ async def test_near_misses_empty_when_qualifying_exist():
 
 @pytest.mark.asyncio
 async def test_near_misses_capped_at_five():
-    """near_miss_results contains at most 5 results even when more jobs fail threshold."""
-    jobs = [make_job(f"Job {i}") for i in range(10)]
-    scores = [60, 58, 56, 54, 52, 50, 48, 46, 44, 42]
+    """near_miss_results caps at 5, and only counts scores inside the band (ADR-033).
+
+    Threshold 70, default band 15 → near-miss window [55, 70). Six scores fall in
+    the band (capped to 5); scores below 55 are 'below', never near-miss.
+    """
+    jobs = [make_job(f"Job {i}") for i in range(8)]
+    scores = [69, 68, 67, 66, 65, 64, 50, 40]
     service, _, _, _ = make_service(
         scraper_jobs=[jobs],
         eval_scores=scores,
@@ -306,6 +311,7 @@ async def test_near_misses_capped_at_five():
     report = await service.run(query="Python Developer", location="Remote", threshold=70)
 
     assert len(report.near_miss_results) == 5
+    assert all(r.score >= 55 for r in report.near_miss_results)
 
 
 @pytest.mark.asyncio
@@ -847,3 +853,146 @@ async def test_enrichment_throttle_reads_env(no_sleep):
 
     sizes = [c.args[0] for c in mock_semaphore.call_args_list if c.args]
     assert 4 in sizes
+
+
+# ---------------------------------------------------------------------------
+# B1 — dedup, reuse, sightings, near-misses (JobRepositoryPort)
+# ---------------------------------------------------------------------------
+
+def _same_job(platform: str, url: str = "https://example.com/jobs/1") -> Job:
+    """Return a job with a fixed identity but overridable platform/url."""
+    return Job(
+        title="Senior Software Engineer",
+        company="Acme",
+        location="Remote",
+        url=url,
+        description="A job description.",
+        platform=platform,
+        scraped_at=datetime(2026, 3, 17, 9, 0, 0),
+    )
+
+
+def _service_with_repo(scraper_jobs, score_by_title=None, repository=None):
+    """Build a service wired to a real in-memory repository and a callable evaluator.
+
+    The evaluator is a callable AsyncMock so it can be invoked any number of
+    times across runs without pre-sizing a side-effect list.
+    """
+    from src.adapters.repository.sqlite_repository import SQLiteJobRepository
+
+    repository = repository or SQLiteJobRepository(db_path=":memory:")
+    score_by_title = score_by_title or {}
+
+    scraper_mocks = []
+    for jobs in scraper_jobs:
+        mock = MagicMock()
+        mock.fetch_jobs = AsyncMock(return_value=jobs)
+        scraper_mocks.append(mock)
+
+    async def _evaluate(resume, job, work_types=None):
+        return make_match_result(job, score_by_title.get(job.title, 80)), 100, 50
+
+    evaluator = MagicMock()
+    evaluator.evaluate = AsyncMock(side_effect=_evaluate)
+
+    output = MagicMock()
+    output.deliver = AsyncMock()
+
+    service = JobSearchService(
+        scrapers=scraper_mocks,
+        evaluator=evaluator,
+        outputs=[output],
+        repository=repository,
+    )
+    service._parse_resume = MagicMock(
+        return_value=Resume(raw_text="resume", parsed_at=datetime(2026, 3, 17))
+    )
+    return service, evaluator, repository
+
+
+@pytest.mark.asyncio
+async def test_seen_job_skips_reevaluation_on_second_run():
+    """A previously stored job reuses its score and is not re-evaluated."""
+    from src.adapters.repository.sqlite_repository import SQLiteJobRepository
+
+    repo = SQLiteJobRepository(db_path=":memory:")
+    service, evaluator, _ = _service_with_repo(
+        [[_same_job("linkedin")]], score_by_title={"Senior Software Engineer": 88}, repository=repo
+    )
+
+    report1 = await service.run(query="Q", location="Remote", threshold=70)
+    assert evaluator.evaluate.call_count == 1
+    assert report1.reused_count == 0
+    assert len(report1.qualifying_results) == 1
+
+    report2 = await service.run(query="Q", location="Remote", threshold=70)
+    # Not re-evaluated — the stored score is reused.
+    assert evaluator.evaluate.call_count == 1
+    assert report2.reused_count == 1
+    assert report2.qualifying_results[0].score == 88
+
+
+@pytest.mark.asyncio
+async def test_same_job_across_platforms_evaluated_once_with_seen_on():
+    """The same posting on two platforms in one run is evaluated once (seen on both)."""
+    service, evaluator, _ = _service_with_repo(
+        [[_same_job("linkedin")], [_same_job("indeed", url="https://indeed.com/1")]]
+    )
+
+    report = await service.run(query="Q", location="Remote", threshold=70)
+
+    assert evaluator.evaluate.call_count == 1
+    assert len(report.qualifying_results) == 1
+    assert report.qualifying_results[0].seen_on == ["indeed", "linkedin"]
+
+
+@pytest.mark.asyncio
+async def test_near_miss_is_logged_not_merged(caplog):
+    """A same-company/title job at a new location is logged and re-evaluated (not merged)."""
+    import logging
+
+    from src.adapters.repository.sqlite_repository import SQLiteJobRepository
+
+    repo = SQLiteJobRepository(db_path=":memory:")
+
+    ny_job = _same_job("linkedin")
+    ny_job = ny_job.model_copy(update={"location": "New York, NY"})
+    tx_job = _same_job("linkedin", url="https://example.com/jobs/2")
+    tx_job = tx_job.model_copy(update={"location": "Austin, TX"})
+
+    service_ny, evaluator, _ = _service_with_repo([[ny_job]], repository=repo)
+    await service_ny.run(query="Q", location="New York, NY", threshold=70)
+
+    service_tx, evaluator2, _ = _service_with_repo([[tx_job]], repository=repo)
+    with caplog.at_level(logging.INFO, logger="src.core.services.job_search_service"):
+        report = await service_tx.run(query="Q", location="Austin, TX", threshold=70)
+
+    # The TX job is a distinct fingerprint — evaluated fresh, not reused.
+    assert report.reused_count == 0
+    assert evaluator2.evaluate.call_count == 1
+    assert any("Near-miss" in rec.message for rec in caplog.records)
+    # Both distinct jobs persisted.
+    assert repo.find_by_fingerprint(
+        compute_fingerprint("Acme", "Senior Software Engineer", "New York, NY").key
+    ) is not None
+    assert repo.find_by_fingerprint(
+        compute_fingerprint("Acme", "Senior Software Engineer", "Austin, TX").key
+    ) is not None
+
+
+@pytest.mark.asyncio
+async def test_new_evaluation_is_persisted():
+    """A newly evaluated job is written to the repository with its threshold."""
+    from src.adapters.repository.sqlite_repository import SQLiteJobRepository
+
+    repo = SQLiteJobRepository(db_path=":memory:")
+    service, _, _ = _service_with_repo([[_same_job("linkedin")]], repository=repo)
+
+    await service.run(query="Q", location="Remote", threshold=72)
+
+    stored = repo.find_by_fingerprint(
+        compute_fingerprint("Acme", "Senior Software Engineer", "Remote").key
+    )
+    assert stored is not None
+    assert stored.threshold == 72
+    assert stored.near_miss_floor == 72 - 15

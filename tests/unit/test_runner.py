@@ -32,6 +32,8 @@ def _make_report(has_qualifying: bool = True) -> MagicMock:
     """Return a minimal RunReport-like mock."""
     report = MagicMock()
     report.has_qualifying_results = has_qualifying
+    report.reused_count = 0
+    report.newly_evaluated_count = 0
     if has_qualifying:
         result = MagicMock()
         result.score = 85
@@ -150,3 +152,30 @@ def test_log_report_results_zero_qualifying(caplog):
     combined = " ".join(caplog.messages)
     assert "0 qualifying results" in combined
     assert "55" in combined
+
+
+def test_log_report_results_logs_dedup_summary(caplog):
+    """_log_report_results() logs a 'reused / new' line when jobs were deduped."""
+    profile = _make_profile()
+    report = _make_report(has_qualifying=True)
+    report.reused_count = 3
+    report.newly_evaluated_count = 7
+    test_logger = logging.getLogger("test_runner_dedup")
+
+    with caplog.at_level(logging.INFO, logger="test_runner_dedup"):
+        _log_report_results(profile, report, test_logger)
+
+    combined = " ".join(caplog.messages)
+    assert "Deduplicated: 3 reused / 7 new" in combined
+
+
+def test_log_report_results_omits_dedup_when_nothing_reused(caplog):
+    """_log_report_results() omits the dedup line when no jobs were reused."""
+    profile = _make_profile()
+    report = _make_report(has_qualifying=True)  # reused_count defaults to 0
+    test_logger = logging.getLogger("test_runner_no_dedup")
+
+    with caplog.at_level(logging.INFO, logger="test_runner_no_dedup"):
+        _log_report_results(profile, report, test_logger)
+
+    assert "Deduplicated" not in " ".join(caplog.messages)
