@@ -298,6 +298,14 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   reused. CSV and email remain the per-run delivery formats (`OutputPort`), not the
   store. Dedup is exact-match on a normalized fingerprint (ADR-024); the near-miss
   band and per-evaluation threshold are stored per job (ADR-033).
+- ~~No application/job-status tracking~~ **Superseded (Story C, ADR-025).** Each
+  stored job now carries a nine-state lifecycle (`JobStatus`) and a `saved`
+  bookmark, with an append-only `status_history` audit trail. The `mark` CLI
+  (`python -m src.main mark --job-id N --status applied|…`, plus `--save`/`--unsave`)
+  moves a job through the six human-set states; transitions are permissive (any →
+  any) but the machine never clobbers a human-set status, and a job you have acted
+  on is suppressed from future run reports (still sighted). The web actions that
+  drive this (status dropdown, ★ save) arrive in W2/W3.
 - No user authentication
 - No Kubernetes or cloud infrastructure
 - No LangGraph orchestration

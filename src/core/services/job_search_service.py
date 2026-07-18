@@ -12,6 +12,7 @@ from src.core.domain.date_posted import DatePosted
 from src.core.domain.enrichment_summary import EnrichmentSummary
 from src.core.domain.fingerprint import Fingerprint, compute_fingerprint
 from src.core.domain.job import Job
+from src.core.domain.job_status import is_human_set
 from src.core.domain.match_result import MatchResult
 from src.core.domain.resume import Resume
 from src.core.domain.run_cost import RunCost
@@ -217,12 +218,16 @@ class JobSearchService:
         near_miss_band = int(os.getenv("NEAR_MISS_BAND", "15"))
         now = datetime.now()
         if self._repository is not None:
-            reused_results, pending_groups = self._dedup_partition(jobs_to_evaluate, now)
+            reused_results, pending_groups, suppressed_count = self._dedup_partition(
+                jobs_to_evaluate, now
+            )
             jobs_for_eval = [group_jobs[0] for _, group_jobs in pending_groups]
-            if reused_results:
+            if reused_results or suppressed_count:
                 logger.info(
-                    "Dedup — reused %d stored evaluation(s); %d new job(s) to evaluate",
+                    "Dedup — reused %d stored evaluation(s); suppressed %d acted-on "
+                    "job(s); %d new job(s) to evaluate",
                     len(reused_results),
+                    suppressed_count,
                     len(jobs_for_eval),
                 )
         else:
@@ -502,7 +507,7 @@ class JobSearchService:
 
     def _dedup_partition(
         self, jobs: list[Job], now: datetime
-    ) -> tuple[list[MatchResult], list[tuple[Fingerprint, list[Job]]]]:
+    ) -> tuple[list[MatchResult], list[tuple[Fingerprint, list[Job]]], int]:
         """Split scraped jobs into reused (dedup hits) and pending (to evaluate).
 
         For each job:
@@ -511,6 +516,11 @@ class JobSearchService:
           evaluation: record a sighting and reuse the stored score (never
           re-evaluated). Multiple scraped jobs hitting the same stored job add
           sightings but reuse the score once.
+        - **Human-acted hit** — a prior-run hit whose stored status is
+          human-set (applied, rejected, …): the sighting is still recorded so
+          the store stays current, but the job is **suppressed** — withheld from
+          this run's report so a job you have already acted on stops
+          re-surfacing (ADR-025). The stored status is never rewritten.
         - **New job** — grouped by fingerprint so the same posting seen on
           several platforms this run is evaluated once; the group's near-misses
           (same company + title, different location) are logged, never merged.
@@ -524,13 +534,15 @@ class JobSearchService:
             now: The timestamp to record sightings with.
 
         Returns:
-            A tuple of (reused MatchResults, pending groups). Each pending group
-            is (fingerprint, jobs) whose first job is the evaluation representative.
+            A tuple of (reused MatchResults, pending groups, suppressed count).
+            Each pending group is (fingerprint, jobs) whose first job is the
+            evaluation representative.
         """
         assert self._repository is not None
         repo = self._repository
 
         hit_stored: dict[int, StoredJob] = {}
+        suppressed_ids: set[int] = set()
         groups: dict[str, list[Job]] = {}
         group_fp: dict[str, Fingerprint] = {}
         group_order: list[str] = []
@@ -547,6 +559,18 @@ class JobSearchService:
             stored = repo.find_by_fingerprint(fp.key)
             if stored is not None and stored.match_result is not None:
                 repo.record_sighting(stored.id, job.platform, job.url, now)
+                if is_human_set(stored.status):
+                    # Acted-on job — record the sighting but withhold from the run.
+                    if stored.id not in suppressed_ids:
+                        suppressed_ids.add(stored.id)
+                        logger.info(
+                            "Dedup — suppressing %r @ %r from this run "
+                            "(status=%s, already acted on)",
+                            stored.title,
+                            stored.company,
+                            stored.status.value,
+                        )
+                    continue
                 hit_stored[stored.id] = stored
                 continue
 
@@ -585,7 +609,7 @@ class JobSearchService:
             (group_fp[key], groups[key]) for key in group_order
         ]
         pending_groups.extend((fp, [job]) for fp, job in no_key_groups)
-        return reused_results, pending_groups
+        return reused_results, pending_groups, len(suppressed_ids)
 
     def _parse_resume(self, path: str) -> Resume:
         """Extract text from a PDF resume using PyPDF2.

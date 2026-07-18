@@ -12,6 +12,7 @@ import pytest
 from src.adapters.repository.sqlite_repository import SQLiteJobRepository
 from src.core.domain.fingerprint import compute_fingerprint
 from src.core.domain.job import Job
+from src.core.domain.job_status import JobStatus
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 
 _NOW = datetime(2026, 7, 14, 9, 0, 0)
@@ -289,5 +290,114 @@ def test_migrations_are_idempotent_across_reopen(tmp_path):
     versions = [
         row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1]
+    assert versions == [1, 2]
     repo2.close()
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle — status, history, saved (migration 2, ADR-025)
+# ---------------------------------------------------------------------------
+
+def _history(repo: SQLiteJobRepository, job_id: int) -> list[tuple]:
+    """Return (from_status, to_status, note) history rows for a job, in order."""
+    return [
+        (r["from_status"], r["to_status"], r["note"])
+        for r in repo._conn.execute(
+            "SELECT from_status, to_status, note FROM status_history "
+            "WHERE job_id = ? ORDER BY id",
+            (job_id,),
+        ).fetchall()
+    ]
+
+
+def test_saved_evaluated_job_defaults_to_evaluated_status():
+    """An evaluated job persists as ``evaluated`` with a creation history row."""
+    repo = _repo()
+    _, stored = _save(repo, _job())
+    assert stored.status is JobStatus.EVALUATED
+    assert stored.saved is False
+    assert _history(repo, stored.id) == [(None, "evaluated", None)]
+
+
+def test_unevaluated_job_persists_as_new():
+    """A job saved without an evaluation lands as ``new``."""
+    repo = _repo()
+    job = _job()
+    fp = compute_fingerprint(job.company, job.title, job.location)
+    stored = repo.save_job(
+        job=job,
+        fingerprint=fp,
+        match_result=None,
+        threshold=None,
+        near_miss_floor=None,
+        seen_at=_NOW,
+    )
+    assert stored.status is JobStatus.NEW
+    assert _history(repo, stored.id) == [(None, "new", None)]
+
+
+def test_set_status_records_history_and_updates_job():
+    """A human transition updates the job and appends a from→to history row."""
+    repo = _repo()
+    _, stored = _save(repo, _job())
+
+    changed = repo.set_status(stored.id, JobStatus.APPLIED, note="referred")
+    assert changed is True
+
+    refreshed = repo.get_job(stored.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.APPLIED
+    assert _history(repo, stored.id) == [
+        (None, "evaluated", None),
+        ("evaluated", "applied", "referred"),
+    ]
+
+
+def test_set_status_idempotent_no_op_writes_no_history():
+    """Setting the status to its current value changes nothing and returns False."""
+    repo = _repo()
+    _, stored = _save(repo, _job())
+    repo.set_status(stored.id, JobStatus.APPLIED)
+
+    before = _history(repo, stored.id)
+    changed = repo.set_status(stored.id, JobStatus.APPLIED)
+    assert changed is False
+    assert _history(repo, stored.id) == before
+
+
+def test_machine_write_never_clobbers_human_status():
+    """A machine=True write over a human-set status is refused (ADR-025)."""
+    repo = _repo()
+    _, stored = _save(repo, _job())
+    repo.set_status(stored.id, JobStatus.APPLIED)
+
+    changed = repo.set_status(stored.id, JobStatus.EVALUATED, machine=True)
+    assert changed is False
+
+    refreshed = repo.get_job(stored.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.APPLIED
+    assert ("applied", "evaluated", None) not in _history(repo, stored.id)
+
+
+def test_set_status_missing_job_returns_false():
+    """Transitioning an unknown job is a no-op returning False."""
+    assert _repo().set_status(999, JobStatus.APPLIED) is False
+
+
+def test_set_saved_toggles_without_history():
+    """set_saved flips the bookmark and never writes a history row."""
+    repo = _repo()
+    _, stored = _save(repo, _job())
+    before = _history(repo, stored.id)
+
+    repo.set_saved(stored.id, True)
+    assert repo.get_job(stored.id).saved is True
+    repo.set_saved(stored.id, False)
+    assert repo.get_job(stored.id).saved is False
+    assert _history(repo, stored.id) == before
+
+
+def test_get_job_miss_returns_none():
+    """get_job returns None for an unknown id."""
+    assert _repo().get_job(123) is None

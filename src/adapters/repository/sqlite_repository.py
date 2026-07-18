@@ -15,6 +15,7 @@ from datetime import datetime
 from src.adapters.repository.migrations import apply_migrations
 from src.core.domain.fingerprint import Fingerprint
 from src.core.domain.job import Job
+from src.core.domain.job_status import JobStatus, is_human_set
 from src.core.domain.match_result import MatchResult
 from src.core.domain.stored_job import StoredJob
 from src.core.ports.job_repository_port import JobRepositoryPort
@@ -72,6 +73,51 @@ class SQLiteJobRepository(JobRepositoryPort):
             for row in rows
         ]
 
+    def get_job(self, job_id: int) -> StoredJob | None:
+        """Return the stored job with the given id, or None when absent."""
+        return self._get_by_id(job_id)
+
+    def set_status(
+        self,
+        job_id: int,
+        to_status: JobStatus,
+        note: str | None = None,
+        *,
+        machine: bool = False,
+    ) -> bool:
+        """Transition a job to ``to_status`` with the ADR-025 guards."""
+        row = self._conn.execute(
+            "SELECT status FROM jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if row is None:
+            return False
+
+        current = JobStatus(row["status"])
+        if to_status == current:
+            return False  # idempotent no-op — no history row
+        if machine and is_human_set(current):
+            return False  # the machine never clobbers a human-set status
+
+        now_iso = datetime.now().isoformat()
+        self._conn.execute(
+            "UPDATE jobs SET status = ? WHERE id = ?", (to_status.value, job_id)
+        )
+        self._conn.execute(
+            "INSERT INTO status_history "
+            "(job_id, from_status, to_status, note, changed_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (job_id, current.value, to_status.value, note, now_iso),
+        )
+        self._conn.commit()  # update + history commit together (ADR-034 §1)
+        return True
+
+    def set_saved(self, job_id: int, saved: bool) -> None:
+        """Set the ``saved`` bookmark (idempotent, never writes history)."""
+        self._conn.execute(
+            "UPDATE jobs SET saved = ? WHERE id = ?", (1 if saved else 0, job_id)
+        )
+        self._conn.commit()
+
     def find_by_fingerprint(self, key: str) -> StoredJob | None:
         """Return the stored job with the exact canonical fingerprint ``key``."""
         row = self._conn.execute(
@@ -104,14 +150,16 @@ class SQLiteJobRepository(JobRepositoryPort):
         now_iso = seen_at.isoformat()
         match_json = match_result.model_dump_json() if match_result is not None else None
         overall_score = match_result.score if match_result is not None else None
+        # An evaluated job lands as ``evaluated``; an unevaluated one as ``new``.
+        status = JobStatus.EVALUATED if match_result is not None else JobStatus.NEW
 
         cursor = self._conn.execute(
             "INSERT INTO jobs ("
             "fingerprint, fingerprint_version, canon_company, canon_title, "
             "canon_location, company, title, location, url, description, "
             "overall_score, threshold, near_miss_floor, match_result_json, "
-            "first_seen_at, last_seen_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "status, first_seen_at, last_seen_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 fingerprint.key,
                 fingerprint.version,
@@ -127,12 +175,21 @@ class SQLiteJobRepository(JobRepositoryPort):
                 threshold,
                 near_miss_floor,
                 match_json,
+                status.value,
                 now_iso,
                 now_iso,
             ),
         )
-        self._conn.commit()  # short per-job commit (ADR-034 §1)
         job_id = int(cursor.lastrowid)
+        # Creation history row (from NULL → initial status) keeps the audit
+        # trail complete, committed with the insert (ADR-034 §1).
+        self._conn.execute(
+            "INSERT INTO status_history "
+            "(job_id, from_status, to_status, note, changed_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (job_id, None, status.value, None, now_iso),
+        )
+        self._conn.commit()  # short per-job commit (ADR-034 §1)
 
         self.record_sighting(job_id, job.platform, job.url, seen_at)
         stored = self._get_by_id(job_id)
@@ -220,6 +277,8 @@ class SQLiteJobRepository(JobRepositoryPort):
             match_result=match_result,
             threshold=row["threshold"],
             near_miss_floor=row["near_miss_floor"],
+            status=JobStatus(row["status"]),
+            saved=bool(row["saved"]),
             first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
             last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
             seen_on=seen_on,

@@ -73,6 +73,14 @@ reimplements no business logic; a route is a second way in, not a new brain. The
 React SPA under `web/` is an HTTP client of that API. In production FastAPI serves
 the built SPA at `/` and the JSON API under `/api` from the same origin.
 
+The CLI has two modes: the default (no-subcommand) invocation runs a search; the
+`mark` subcommand moves a stored job through its lifecycle
+(`python -m src.main mark --job-id 7 --status applied --note "referred"`, plus
+`--save` / `--unsave`). `mark` dispatches to `run_mark` (`src/mark_runner.py`),
+which is argparse-free so W2's `PATCH /jobs/{id}/status` can reuse the same path.
+Only the six **human-set** statuses are selectable — machine states are never
+user-assignable (ADR-025).
+
 ```
    CLI  (src/main, src/cli) ─┐
    FastAPI (src/api)  ───────┼──▶  JobSearchService / JobRepositoryPort  ──▶  driven adapters
@@ -116,9 +124,10 @@ job-search-agent/
 │       └── resume.pdf                   ← Candidate resume (volume mounted)
 │
 ├── src/
-│   ├── main.py                          ← thin CLI entrypoint
+│   ├── main.py                          ← thin CLI entrypoint (search + mark dispatch)
 │   ├── bootstrap.py                     ← profile loading
 │   ├── runner.py                        ← immediate run logic
+│   ├── mark_runner.py                   ← run_mark() — mark CLI backend (no argparse dep)
 │   ├── scheduler.py                     ← APScheduler — cron-based multi-profile runner
 │   ├── service_factory.py               ← Builds JobSearchService from SearchProfile
 │   │
@@ -156,6 +165,7 @@ job-search-agent/
 │   │   │   ├── enrichment_summary.py    ← EnrichmentSummary — run-level pre-filter surface
 │   │   │   ├── fingerprint.py           ← Fingerprint + compute_fingerprint() (pure dedup key)
 │   │   │   ├── stored_job.py            ← StoredJob — a persisted job + reused evaluation
+│   │   │   ├── job_status.py            ← JobStatus enum + is_human_set (nine-state lifecycle)
 │   │   │   ├── sighting.py              ← Sighting — one job seen on one platform
 │   │   │   ├── scraper_name.py          ← ScraperName enum
 │   │   │   └── search_profile.py        ← SearchProfile — per-profile config model
@@ -195,7 +205,7 @@ job-search-agent/
 │       ├── repository/                  ← SQLite persistence (JobRepositoryPort)
 │       │   ├── __init__.py
 │       │   ├── sqlite_repository.py     ← SQLiteJobRepository (WAL, busy_timeout, short commits)
-│       │   ├── migrations.py            ← Forward-only migration runner (jobs + sightings)
+│       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history)
 │       │   └── factory.py               ← Builds the repo singleton from DB_PATH
 │       │
 │       └── output/                      ← Delivery adapters
@@ -225,6 +235,7 @@ tests/
 ├── unit/                                    ← mirrors src/ exactly
 │   ├── test_bootstrap.py                    ← tests for load_profiles()
 │   ├── test_runner.py                       ← tests for run_immediate()
+│   ├── test_mark_runner.py                  ← tests for run_mark() (mark CLI backend)
 │   ├── test_scheduler.py                    ← tests for run_all_profiles()
 │   ├── test_main_args.py                    ← tests for main() argument wiring
 │   ├── api/
@@ -249,6 +260,7 @@ tests/
 │   │   │   ├── test_enrichment_summary.py   ← tests for EnrichmentSummary entity
 │   │   │   ├── test_fingerprint.py          ← tests for compute_fingerprint (raw→canonical table)
 │   │   │   ├── test_stored_job.py           ← tests for StoredJob entity
+│   │   │   ├── test_job_status.py           ← tests for JobStatus enum + is_human_set
 │   │   │   ├── test_sighting.py             ← tests for Sighting entity
 │   │   │   ├── test_scraper_name.py         ← tests for ScraperName enum
 │   │   │   └── test_search_profile.py       ← tests for SearchProfile model
@@ -525,8 +537,31 @@ class StoredJob(BaseModel):
     match_result: MatchResult | None   # reused on a dedup hit
     threshold: int | None              # threshold in force at evaluation (ADR-033)
     near_miss_floor: int | None        # threshold - NEAR_MISS_BAND (ADR-033)
+    status: JobStatus                  # lifecycle state (ADR-025); default new
+    saved: bool                        # bookmark, independent of status
     first_seen_at: datetime; last_seen_at: datetime
     seen_on: list[str]                 # distinct platforms sighted on
+```
+
+### `JobStatus`
+The nine-state job lifecycle (ADR-025), a `str` enum in
+`src/core/domain/job_status.py`. Three **machine-set** states are assigned by the
+pipeline (`new`, `evaluated`, `pre_filtered`); six **human-set** states are assigned
+via the `mark` CLI (`applied`, `started`, `interviewing`, `offer`, `rejected`,
+`not_interested`). `MACHINE_STATUSES` / `HUMAN_STATUSES` frozensets and
+`is_human_set(status)` classify a state — the classification the no-clobber rule and
+the pipeline's suppression step both read.
+
+```python
+class JobStatus(str, Enum):
+    NEW = "new"; EVALUATED = "evaluated"; PRE_FILTERED = "pre_filtered"
+    APPLIED = "applied"; STARTED = "started"; INTERVIEWING = "interviewing"
+    OFFER = "offer"; REJECTED = "rejected"; NOT_INTERESTED = "not_interested"
+
+# Transitions are permissive (any → any), recorded append-only in status_history.
+# One hard domain rule: a machine write never clobbers a human-set status.
+# `saved` is a boolean column, never a JobStatus member — a job can be saved AND
+# applied.
 ```
 
 ### `Sighting`
@@ -632,6 +667,20 @@ class JobRepositoryPort(ABC):
     # All stored jobs, ranked by score desc (unevaluated last) — backs GET /api/jobs
 
     @abstractmethod
+    def get_job(self, job_id: int) -> StoredJob | None: ...
+    # Single-row lookup — backs the mark CLI (resolve + display a job)
+
+    @abstractmethod
+    def set_status(self, job_id, to_status, note=None, *, machine=False) -> bool: ...
+    # Guarded transition (ADR-025): idempotent no-op writes no history; a
+    # machine=True write never clobbers a human-set status; else updates
+    # jobs.status + appends a status_history row. Returns True iff it changed.
+
+    @abstractmethod
+    def set_saved(self, job_id: int, saved: bool) -> None: ...
+    # Toggle the saved bookmark; idempotent, never writes history
+
+    @abstractmethod
     def find_by_fingerprint(self, key: str) -> StoredJob | None: ...
     # Exact fingerprint lookup — a hit reuses the stored evaluation
 
@@ -660,6 +709,13 @@ class JobRepositoryPort(ABC):
 many dedup-disabled NULL keys can coexist) and `sightings` (one row per
 `(job_id, platform)`). Stdlib `sqlite3`, WAL mode, `data/agent.db`. Each story adds
 only the tables it needs; a `schema_migrations` table records what has run.
+
+**Schema (migration 2 — C).** Adds `status TEXT NOT NULL DEFAULT 'evaluated'` and
+`saved INTEGER NOT NULL DEFAULT 0` to `jobs`, and creates `status_history`
+(`id`, `job_id` FK → `jobs` ON DELETE CASCADE, `from_status`, `to_status`, `note`,
+`changed_at`) — the append-only audit trail behind the lifecycle (ADR-025). The
+migration backfills one creation history row per existing job
+(`NULL → its status` at `first_seen_at`) so the trail is complete.
 
 ### `OutputPort`
 
@@ -719,6 +775,8 @@ JobSearchService.run(query, location, threshold, top_results)
         │
         ├── 2.6 Deduplicate — JobRepositoryPort (compute_fingerprint per job)
         │       ├── Prior-run hit → reuse stored score (never re-evaluated) + add sighting
+        │       ├── Human-acted hit (status is human-set) → sighting recorded, but the
+        │       │     job is SUPPRESSED from this run's report (ADR-025); status untouched
         │       ├── Same posting on N platforms this run → grouped, evaluated once
         │       ├── Near-miss (company+title equal, location differs) → logged, never merged
         │       └── Incomplete fingerprint → dedup disabled, evaluated fresh
@@ -1097,3 +1155,9 @@ Key decisions at a glance (see `docs/adr.md` for full records):
 | 019 | Multiple search profiles via PROFILE_N_ prefix |
 | 020 | main.py refactored into single-responsibility modules |
 | 021 | src/api/ reserved as a placeholder |
+| 022 | Gemini pre-filter stage behind a JobEnrichmentPort |
+| 023 | SQLite persistence behind a JobRepositoryPort |
+| 024 | Exact-fingerprint deduplication on a normalized key |
+| 025 | Job lifecycle with permissive transitions and append-only history |
+| 026 | FastAPI as a driving adapter, parallel to the CLI |
+| 027 | React 18 + TypeScript + Vite frontend with React Query |

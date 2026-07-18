@@ -996,3 +996,67 @@ async def test_new_evaluation_is_persisted():
     assert stored is not None
     assert stored.threshold == 72
     assert stored.near_miss_floor == 72 - 15
+
+
+@pytest.mark.asyncio
+async def test_human_acted_job_is_suppressed_but_still_sighted():
+    """A re-scraped job with a human-set status is withheld from the report.
+
+    The sighting is still recorded (the store stays current for the later
+    TRACKED view) and the human status is never clobbered (ADR-025).
+    """
+    from src.adapters.repository.sqlite_repository import SQLiteJobRepository
+    from src.core.domain.job_status import JobStatus
+
+    repo = SQLiteJobRepository(db_path=":memory:")
+    service, evaluator, _ = _service_with_repo(
+        [[_same_job("linkedin")]],
+        score_by_title={"Senior Software Engineer": 88},
+        repository=repo,
+    )
+
+    # First run persists + evaluates the job.
+    report1 = await service.run(query="Q", location="Remote", threshold=70)
+    assert len(report1.qualifying_results) == 1
+    fp = compute_fingerprint("Acme", "Senior Software Engineer", "Remote")
+    stored = repo.find_by_fingerprint(fp.key)
+
+    # A human marks it applied.
+    repo.set_status(stored.id, JobStatus.APPLIED)
+
+    # Re-scrape on a new platform — suppressed from the report, sighting recorded.
+    service2, evaluator2, _ = _service_with_repo(
+        [[_same_job("indeed", url="https://indeed.com/1")]], repository=repo
+    )
+    report2 = await service2.run(query="Q", location="Remote", threshold=70)
+
+    assert evaluator2.evaluate.call_count == 0  # not re-evaluated
+    assert report2.qualifying_results == []  # suppressed from the report
+    assert report2.reused_count == 0
+    # Sighting still recorded; status not clobbered back to evaluated.
+    refreshed = repo.get_job(stored.id)
+    assert refreshed.status is JobStatus.APPLIED
+    assert set(refreshed.seen_on) == {"indeed", "linkedin"}
+
+
+@pytest.mark.asyncio
+async def test_machine_status_job_is_still_reused_normally():
+    """A re-scraped job whose stored status is machine-set is reused, not suppressed."""
+    from src.adapters.repository.sqlite_repository import SQLiteJobRepository
+
+    repo = SQLiteJobRepository(db_path=":memory:")
+    service, _, _ = _service_with_repo(
+        [[_same_job("linkedin")]],
+        score_by_title={"Senior Software Engineer": 88},
+        repository=repo,
+    )
+    await service.run(query="Q", location="Remote", threshold=70)
+
+    service2, evaluator2, _ = _service_with_repo(
+        [[_same_job("indeed", url="https://indeed.com/1")]], repository=repo
+    )
+    report2 = await service2.run(query="Q", location="Remote", threshold=70)
+
+    assert evaluator2.evaluate.call_count == 0
+    assert report2.reused_count == 1
+    assert report2.qualifying_results[0].score == 88
