@@ -73,16 +73,21 @@ reimplements no business logic; a route is a second way in, not a new brain. The
 React SPA under `web/` is an HTTP client of that API. In production FastAPI serves
 the built SPA at `/` and the JSON API under `/api` from the same origin.
 
-The CLI has three modes: the default (no-subcommand) invocation runs a search; the
+The CLI has four modes: the default (no-subcommand) invocation runs a search; the
 `mark` subcommand moves a stored job through its lifecycle
 (`python -m src.main mark --job-id 7 --status applied --note "referred"`, plus
 `--save` / `--unsave`); the `resume` subcommand manages the cached master resume
-(`resume upload <path>` / `resume list` / `resume activate <version>`). `mark`
-dispatches to `run_mark` (`src/mark_runner.py`) and `resume` to `src/resume_runner.py`
-— both argparse-free so the API can reuse the same paths (the resume runner shares
-the `ResumeService` the future `POST /resume` upload will use, W5). Only the six
-**human-set** statuses are selectable via `mark` — machine states are never
-user-assignable (ADR-025).
+(`resume upload <path>` / `resume list` / `resume activate <version>`); the
+`generate` subcommand produces a document for a stored job
+(`generate resume <job_id>` / `generate cover-letter <job_id>` with `--tone` /
+`--person` / `--style-notes`). Each dispatches to an argparse-free runner
+(`src/mark_runner.py`, `src/resume_runner.py`, `src/generation_runner.py`) so the API
+can reuse the same paths (the resume runner shares the `ResumeService` the future
+`POST /resume` upload will use, W5; the generation runner shares the
+`GenerationService` W6 will drive asynchronously). Only the six **human-set** statuses
+are selectable via `mark` — machine states are never user-assignable (ADR-025). The
+`generate` CLI prints only the file path and provenance, never document content
+(ADR-028/029).
 
 **API surface (as of W2).** All routes under `/api`, no business logic in the
 router (ADR-026):
@@ -147,8 +152,9 @@ job-search-agent/
 │   ├── runner.py                        ← immediate run logic
 │   ├── mark_runner.py                   ← run_mark() — mark CLI backend (no argparse dep)
 │   ├── resume_runner.py                 ← resume upload/list/activate — resume CLI backend
+│   ├── generation_runner.py             ← generate resume/cover-letter — generation CLI backend
 │   ├── scheduler.py                     ← APScheduler — cron-based multi-profile runner
-│   ├── service_factory.py               ← Builds JobSearchService + build_resume_service()
+│   ├── service_factory.py               ← Builds JobSearchService + build_resume_service() + build_generation_service()
 │   │
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
 │   │   ├── __init__.py
@@ -188,7 +194,11 @@ job-search-agent/
 │   │   │   ├── status_history_entry.py  ← StatusHistoryEntry — one lifecycle audit-trail row
 │   │   │   ├── sighting.py              ← Sighting — one job seen on one platform
 │   │   │   ├── scraper_name.py          ← ScraperName enum
-│   │   │   └── search_profile.py        ← SearchProfile — per-profile config model
+│   │   │   ├── search_profile.py        ← SearchProfile — per-profile config model
+│   │   │   ├── tailored_resume.py       ← TailoredResume + ResumeSection (generation output)
+│   │   │   ├── cover_letter.py          ← CoverLetter (generation output)
+│   │   │   ├── voice_descriptor.py      ← VoiceDescriptor — tone/person/style notes (ADR-030)
+│   │   │   └── generation.py            ← Generation — provenance-only record (no content)
 │   │   │
 │   │   ├── ports/                       ← Abstract Base Class interfaces
 │   │   │   ├── __init__.py
@@ -198,12 +208,18 @@ job-search-agent/
 │   │   │   ├── job_repository_port.py   ← JobRepositoryPort ABC (persistence + dedup)
 │   │   │   ├── resume_parser_port.py    ← ResumeParserPort ABC (bytes → text; keeps PyPDF2 out of core)
 │   │   │   ├── resume_repository_port.py ← ResumeRepositoryPort ABC (versioned resume store)
+│   │   │   ├── resume_tailor_port.py    ← ResumeTailorPort ABC (tailor a resume to a job)
+│   │   │   ├── cover_letter_port.py     ← CoverLetterPort ABC (cover letter in a voice)
+│   │   │   ├── docx_writer_port.py      ← DocxWriterPort ABC (render both artifacts to .docx)
+│   │   │   ├── generation_repository_port.py ← GenerationRepositoryPort ABC (generation records)
 │   │   │   └── output_port.py           ← OutputPort ABC
 │   │   │
 │   │   └── services/                    ← Business logic orchestration
 │   │       ├── __init__.py
 │   │       ├── job_search_service.py    ← JobSearchService (reads cached resume)
-│   │       └── resume_service.py        ← ResumeService (parse-once ingest + cache, ADR-028)
+│   │       ├── resume_service.py        ← ResumeService (parse-once ingest + cache, ADR-028)
+│   │       ├── document_formatter.py    ← Deterministic three-outcome formatter (pure, ADR-029)
+│   │       └── generation_service.py    ← GenerationService (tailor → format → write → record)
 │   │
 │   └── adapters/
 │       ├── scrapers/                    ← One adapter per platform
@@ -225,17 +241,26 @@ job-search-agent/
 │       │   ├── prompts.py               ← Pre-filter prompt text
 │       │   └── factory.py               ← Builds pre-filter from ENRICHMENT_* / GEMINI_*
 │       │
-│       ├── repository/                  ← SQLite persistence (Job + Resume repos)
+│       ├── repository/                  ← SQLite persistence (Job + Resume + Generation)
 │       │   ├── __init__.py
 │       │   ├── sqlite_repository.py     ← SQLiteJobRepository (WAL, busy_timeout, short commits)
 │       │   ├── sqlite_resume_repository.py ← SQLiteResumeRepository (versioned master resume)
-│       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history + resumes)
-│       │   └── factory.py               ← build_repository() + build_resume_repository() from DB_PATH
+│       │   ├── sqlite_generation_repository.py ← SQLiteGenerationRepository (generation records)
+│       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history + resumes + generations)
+│       │   └── factory.py               ← build_repository() + build_resume_repository() + build_generation_repository()
 │       │
 │       ├── resume/                      ← Resume parsing adapter (ResumeParserPort)
 │       │   ├── __init__.py
 │       │   ├── pdf_parser.py            ← PyPDF2ResumeParser (bytes → text)
 │       │   └── factory.py               ← build_resume_parser()
+│       │
+│       ├── generation/                  ← Document generation adapters (F, ADR-029)
+│       │   ├── __init__.py
+│       │   ├── openai_generation.py     ← OpenAITailor + OpenAICoverLetter
+│       │   ├── anthropic_generation.py  ← ClaudeTailor + ClaudeCoverLetter
+│       │   ├── docx_writer.py           ← DocxWriter (python-docx, both artifacts)
+│       │   ├── prompts.py               ← Tailor + cover-letter prompt text
+│       │   └── factory.py               ← Builds tailor/cover-letter behind the openai|anthropic allowlist
 │       │
 │       └── output/                      ← Delivery adapters
 │           ├── __init__.py
@@ -818,6 +843,62 @@ hashes the bytes, short-circuits an identical re-upload to a reactivation, enfor
 `RESUME_MAX_SIZE_BYTES`, estimates skill/role counts, and stores a new version. The
 pipeline reads the active version via this service and auto-seeds it on a first run;
 the `resume` CLI and the future `POST /resume` (W5) route through the same service.
+
+**Schema (migration 4 — F).** Adds `generations` (`id` opaque PK, `job_id` FK →
+`jobs`, `kind`, `outcome`, `file_path`, `provider`, `model`, `repair_note`,
+`review_locations` JSON, `created_at`) — one **provenance-only** row per generated
+document (ADR-029/034 §3). No document text is ever stored. W6 later adds the async
+lifecycle columns (`status`, timeout).
+
+### Generation ports — `ResumeTailorPort` / `CoverLetterPort` / `DocxWriterPort` / `GenerationRepositoryPort`
+
+The four contracts behind document generation (F, ADR-029). The two generation ports
+are **siblings, not one generic port** — the resume and cover letter have genuinely
+different validation. Both hard-allowlist `openai|anthropic` in the factory and fail
+at startup otherwise (CLAUDE.md #1). The LLM returns **structured JSON**, so section
+order is the renderer's property, never the model's. `DocxWriterPort` renders both
+artifacts (the F1+F2 merge of ADR-029's writer; keeps python-docx out of the core).
+`GenerationRepositoryPort` trades in `Generation` entities, never rows.
+
+```python
+class ResumeTailorPort(ABC):
+    @abstractmethod
+    async def tailor(self, resume, job, feedback=None) -> TailoredResume: ...
+
+class CoverLetterPort(ABC):
+    @abstractmethod
+    async def generate(self, resume, job, voice, feedback=None) -> CoverLetter: ...
+
+class DocxWriterPort(ABC):
+    @abstractmethod
+    def write_resume(self, doc: TailoredResume, path: str) -> None: ...
+    @abstractmethod
+    def write_cover_letter(self, doc: CoverLetter, path: str) -> None: ...
+
+class GenerationRepositoryPort(ABC):
+    @abstractmethod
+    def save(self, generation: Generation) -> Generation: ...
+    @abstractmethod
+    def get(self, generation_id: str) -> Generation | None: ...
+    @abstractmethod
+    def list_for_job(self, job_id: int) -> list[Generation]: ...
+```
+
+The **deterministic formatter** (`src/core/services/document_formatter.py`) is a pure
+module — the one place the hard formatting rules live (CLAUDE.md #6). It classifies
+each violation as *mechanical* (auto-repaired: `;` → `.`, em-dash → comma, `-`/`*`
+bullet → `•`) or *semantic-adjacent* (the hyphen trap: `full-stack` kept, `2020-2024`
+/ `Python - 5 years` flagged, never rewritten), yielding one of three outcomes:
+**clean**, **repaired** (mechanical fixes, with a note), or **needs_review** (a
+`[PLACEHOLDER: review]` marker at the ambiguous line plus structural locations).
+
+`GenerationService` (`src/core/services/generation_service.py`) orchestrates: load the
+active resume (E1) + the stored job (B1), call the generation port, run the formatter,
+perform **exactly one** corrective retry when it flags an ambiguous hyphen (ADR-029),
+write the `.docx` for **every** outcome, and record the provenance-only `Generation`.
+Generation is user-triggered, so this service is not wired into `JobSearchService`; the
+`generate` CLI and W6's async task route through it. Document content lives only in the
+`.docx` file — never a return value, a log line, or the `Generation` row (CLAUDE.md #2).
 
 ### `OutputPort`
 

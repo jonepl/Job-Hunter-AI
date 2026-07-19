@@ -4,7 +4,8 @@ The default (no-subcommand) invocation runs a search and takes all --query,
 --location, --work-type, --date-posted, and --scrapers arguments; all are
 optional and fall back to .env configuration via SearchProfile. The ``mark``
 subcommand moves a stored job through its lifecycle (ADR-025); the ``resume``
-subcommand manages the cached master resume (ADR-028).
+subcommand manages the cached master resume (ADR-028); the ``generate`` subcommand
+produces a tailored resume or cover letter for a stored job (F, ADR-029).
 """
 
 import argparse
@@ -20,6 +21,9 @@ _MARK_STATUS_CHOICES = [
     "not_interested",
 ]
 
+_VOICE_TONE_CHOICES = ["direct", "warm", "formal", "bold"]
+_VOICE_PERSON_CHOICES = ["first_person", "implied"]
+
 
 def parse_args() -> argparse.Namespace:
     """Parse and return CLI arguments.
@@ -29,10 +33,11 @@ def parse_args() -> argparse.Namespace:
     subcommand marks a stored job (``args.command == "mark"``).
 
     Returns:
-        Namespace whose ``command`` is None (search), "mark", or "resume". Search
-        runs carry query/location/work_type/date_posted/scrapers/evaluator_model;
-        mark runs carry job_id/status/note/save/unsave; resume runs carry a
-        ``resume_action`` (upload/list/activate) with its own arguments.
+        Namespace whose ``command`` is None (search), "mark", "resume", or
+        "generate". Search runs carry query/location/work_type/date_posted/
+        scrapers/evaluator_model; mark runs carry job_id/status/note/save/unsave;
+        resume runs carry a ``resume_action`` (upload/list/activate); generate runs
+        carry a ``generate_kind`` (resume/cover-letter), a job id, and voice flags.
     """
     parser = argparse.ArgumentParser(
         description="Job Hunter AI Agent — scrapes, evaluates, and ranks job listings."
@@ -40,6 +45,7 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command")
     _add_mark_subparser(subparsers)
     _add_resume_subparser(subparsers)
+    _add_generate_subparser(subparsers)
     parser.add_argument(
         "--query",
         type=str,
@@ -194,4 +200,68 @@ def _add_resume_subparser(subparsers: argparse._SubParsersAction) -> None:
         "version",
         type=int,
         help="The version number to activate.",
+    )
+
+
+def _add_generate_subparser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the ``generate`` subcommand for document generation (F, ADR-029).
+
+    ``generate resume <job_id>`` produces a tailored resume ``.docx``;
+    ``generate cover-letter <job_id>`` produces a cover letter in the candidate's
+    voice (``--tone`` / ``--person`` / ``--style-notes`` override the ``.env``
+    seeds). Only the file path and provenance are ever printed, never content.
+
+    Args:
+        subparsers: The subparsers action to attach the ``generate`` parser to.
+    """
+    generate = subparsers.add_parser(
+        "generate",
+        help="Generate a tailored resume or cover letter for a stored job.",
+        description=(
+            "Turn a stored, evaluated job into a tailored resume or cover-letter "
+            ".docx. The document is written to disk; only its path and provenance "
+            "are printed (F, ADR-029)."
+        ),
+    )
+    kinds = generate.add_subparsers(dest="generate_kind")
+
+    resume_gen = kinds.add_parser(
+        "resume",
+        help="Generate a resume tailored to a stored job.",
+    )
+    resume_gen.add_argument(
+        "job_id",
+        type=int,
+        help="The repository id of the job to tailor to.",
+    )
+
+    letter = kinds.add_parser(
+        "cover-letter",
+        help="Generate a cover letter for a stored job in your voice.",
+    )
+    letter.add_argument(
+        "job_id",
+        type=int,
+        help="The repository id of the job to write a letter for.",
+    )
+    letter.add_argument(
+        "--tone",
+        type=str,
+        default=None,
+        choices=_VOICE_TONE_CHOICES,
+        help="Voice tone preset. Overrides VOICE_TONE in .env.",
+    )
+    letter.add_argument(
+        "--person",
+        type=str,
+        default=None,
+        choices=_VOICE_PERSON_CHOICES,
+        help="Point of view. Overrides VOICE_PERSON in .env.",
+    )
+    letter.add_argument(
+        "--style-notes",
+        type=str,
+        default=None,
+        dest="style_notes",
+        help="Free-text style instructions. Overrides VOICE_STYLE_NOTES in .env.",
     )

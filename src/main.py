@@ -43,6 +43,10 @@ async def main() -> None:
         _dispatch_resume(args)
         return
 
+    if args.command == "generate":
+        await _dispatch_generate(args)
+        return
+
     profiles = load_profiles()
     apply_cli_overrides(profiles, args)
     apply_evaluator_override(args)
@@ -110,6 +114,46 @@ def _dispatch_resume(args) -> None:
         message, exit_code = run_resume_list(service)
     else:  # activate
         message, exit_code = run_resume_activate(service, args.version)
+
+    print(message)
+    sys.exit(exit_code)
+
+
+async def _dispatch_generate(args) -> None:
+    """Run the ``generate`` subcommand: produce a document, print, and exit.
+
+    Args:
+        args: The parsed ``generate`` namespace (generate_kind, job_id, and, for
+            cover letters, the optional voice overrides).
+    """
+    from src.core.domain.voice_descriptor import VoiceDescriptor
+    from src.generation_runner import (
+        run_generate_cover_letter,
+        run_generate_resume,
+    )
+    from src.service_factory import build_generation_service
+
+    kind = getattr(args, "generate_kind", None)
+    if kind is None:
+        print("Specify what to generate: resume <job_id> | cover-letter <job_id>")
+        sys.exit(2)
+
+    service = build_generation_service()
+    if kind == "resume":
+        message, exit_code = await run_generate_resume(service, args.job_id)
+    else:  # cover-letter
+        voice = VoiceDescriptor(
+            tone=(args.tone or os.getenv("VOICE_TONE", "direct")),
+            person=(args.person or os.getenv("VOICE_PERSON", "first_person")),
+            style_notes=(
+                args.style_notes
+                if args.style_notes is not None
+                else os.getenv("VOICE_STYLE_NOTES", "")
+            ),
+        )
+        message, exit_code = await run_generate_cover_letter(
+            service, args.job_id, voice
+        )
 
     print(message)
     sys.exit(exit_code)

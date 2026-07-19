@@ -14,3 +14,12 @@ class ModelNotFoundError(Exception):
     evaluation identically, producing a misleading zero-results run. Raising
     this lets the entrypoint fail fast with an actionable message instead.
     """
+
+
+class GenerationError(Exception):
+    """Raised when a document generation cannot start for a user-fixable reason.
+
+    Distinct from an LLM/network failure: this signals a precondition the user
+    controls — no master resume stored, or an unknown job id (F). The CLI reports
+    the message and exits non-zero without writing a generation record.
+    """

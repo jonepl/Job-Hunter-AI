@@ -1,11 +1,12 @@
-"""Unit tests for service_factory.build_service() — pre-filter + wiring."""
+"""Unit tests for service_factory — pre-filter/wiring + generation-service assembly."""
 
 from unittest.mock import MagicMock, patch
 
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
-from src.service_factory import build_service
+from src.core.services.generation_service import GenerationService
+from src.service_factory import build_generation_service, build_service
 
 
 def _profile() -> SearchProfile:
@@ -96,3 +97,34 @@ def test_build_service_normalizes_invalid_mode(monkeypatch):
     service = _build_with()
 
     assert service._enrichment_mode == "shadow"
+
+
+def test_build_generation_service_assembles_all_collaborators(monkeypatch):
+    """build_generation_service wires every generation collaborator (F).
+
+    Every builder is patched so the unit test never opens the real ``data/agent.db``
+    or the provider allowlist.
+    """
+    monkeypatch.setenv("GENERATIONS_DIR", "data/generations")
+    patchers = {
+        "build_resume_tailor": MagicMock(),
+        "build_cover_letter": MagicMock(),
+        "build_docx_writer": MagicMock(),
+        "build_generation_repository": MagicMock(),
+        "build_resume_service": MagicMock(),
+        "build_repository": MagicMock(),
+    }
+    started = [
+        patch(f"src.service_factory.{name}", return_value=value)
+        for name, value in patchers.items()
+    ]
+    for p in started:
+        p.start()
+    try:
+        service = build_generation_service()
+    finally:
+        for p in started:
+            p.stop()
+
+    assert isinstance(service, GenerationService)
+    assert service._generations_dir == "data/generations"

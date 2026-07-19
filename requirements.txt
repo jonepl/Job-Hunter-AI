@@ -20,6 +20,9 @@ requests
 # Resume parsing
 pypdf2
 
+# Document generation (tailored resume + cover letter .docx)
+python-docx
+
 # Testing
 pytest
 pytest-asyncio

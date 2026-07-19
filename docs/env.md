@@ -70,6 +70,28 @@ from `RESUME_PATH`.
 
 ---
 
+## Document Generation Settings
+
+Turn a stored, evaluated job into a tailored resume or cover-letter `.docx` with the
+`generate` CLI (`generate resume <job_id>` / `generate cover-letter <job_id>`). The
+generation provider is a **hard allowlist** — only `openai` or `anthropic` — and an
+invalid provider fails at startup (ADR-022/029). A deterministic formatter enforces
+the hard formatting rules; the document content is written to disk only and never
+printed, logged, or emailed (ADR-028/029). Voice is a structured descriptor (ADR-030);
+the CLI voice flags override these `.env` seeds, and W7 later moves voice into the
+`settings` table.
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| TAILOR_PROVIDER | Generation provider. **Allowlist: `openai` or `anthropic` only** — any other value (e.g. `gemini`) fails at startup. | `openai` |
+| TAILOR_MODEL | LLM model name for generation. Overrides the provider default. Must be valid for the active `TAILOR_PROVIDER`. | provider default (`gpt-4o` / `claude-sonnet-4-5`) |
+| GENERATIONS_DIR | Directory the generated `.docx` files are written to (opaque `{id}.docx` names). Under the DB volume so files and their `generations` rows share a lifecycle (ADR-034 §3). | `data/generations` |
+| VOICE_TONE | Default cover-letter tone preset: `direct`, `warm`, `formal`, or `bold`. | `direct` |
+| VOICE_PERSON | Default point of view: `first_person` or `implied`. | `first_person` |
+| VOICE_STYLE_NOTES | Free-text style instructions the model follows (e.g. "Keep sentences short. Lead with outcomes."). | *(empty)* |
+
+---
+
 ## Web API Settings
 
 The FastAPI driving adapter that serves the JSON API and the React SPA (ADR-021/026).
@@ -239,6 +261,17 @@ NEAR_MISS_BAND=15
 # stored version. Manage versions with the `resume` CLI (ADR-028).
 RESUME_PATH=docs/resume/resume.pdf
 RESUME_MAX_SIZE_BYTES=5000000
+
+# ── Document generation (tailored resume + cover letter, via `generate` CLI) ──
+# Provider is a HARD allowlist: openai or anthropic only (ADR-022/029). A
+# deterministic formatter enforces the hard rules; content is written to disk
+# only, never printed or logged (ADR-028/029). Voice is descriptor-only (ADR-030).
+TAILOR_PROVIDER=openai
+# TAILOR_MODEL=gpt-4o
+GENERATIONS_DIR=data/generations
+VOICE_TONE=direct
+VOICE_PERSON=first_person
+VOICE_STYLE_NOTES=
 
 # ── Web API (FastAPI serves the API + React SPA) ──────────────────────────────
 # CORS is needed only in dev (Vite :5173 → API :8000). Prod is same-origin.
