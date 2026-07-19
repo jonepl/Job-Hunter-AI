@@ -311,6 +311,17 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   any) but the machine never clobbers a human-set status, and a job you have acted
   on is suppressed from future run reports (still sighted). The web actions that
   drive this (status dropdown, ★ save) arrive in W2/W3.
+- ~~No document generation~~ **Superseded (Story F, ADR-029/030).** A `generate`
+  CLI turns a stored, evaluated job into a **tailored resume** or **cover letter**
+  `.docx` (`python -m src.main generate resume N` / `generate cover-letter N`,
+  with `--tone`/`--person`/`--style-notes`). The LLM returns structured JSON; a
+  deterministic formatter enforces the hard formatting rules with three outcomes
+  (clean / repaired / needs_review) and one corrective retry, never hard-failing to
+  nothing and never silently rewriting a number or date. Voice is a structured
+  descriptor (ADR-030). Generated content never leaves the server — only the file
+  path, provenance, and (for needs_review) structural location hints. Files live at
+  `data/generations/{id}.docx` behind `generations` (ADR-034 §3). The async web path
+  and download route arrive in W6.
 - No user authentication
 - No Kubernetes or cloud infrastructure
 - No LangGraph orchestration

@@ -108,12 +108,39 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_resumes_active
 CREATE INDEX IF NOT EXISTS idx_resumes_hash ON resumes (content_hash);
 """
 
+# Migration 4 (F) — generated documents, one row per artifact (ADR-029/034 §3).
+#
+# F owns this table (§15 gap 4/7). Each tailored resume or cover letter records
+# **provenance only** — never the document text (CLAUDE.md #2): the job it was for,
+# the provider/model, the formatter ``outcome``, the ``.docx`` path, an optional
+# repair note, and (for needs_review) a JSON array of structural location hints. No
+# backfill — the store starts empty. W6 later adds the async lifecycle columns
+# (``status``, timeout); they are intentionally absent here.
+_MIGRATION_4 = """
+CREATE TABLE IF NOT EXISTS generations (
+    id               TEXT PRIMARY KEY,
+    job_id           INTEGER NOT NULL,
+    kind             TEXT NOT NULL,
+    outcome          TEXT NOT NULL,
+    file_path        TEXT NOT NULL,
+    provider         TEXT NOT NULL,
+    model            TEXT NOT NULL,
+    repair_note      TEXT NOT NULL DEFAULT '',
+    review_locations TEXT NOT NULL DEFAULT '[]',
+    created_at       TEXT NOT NULL,
+    FOREIGN KEY (job_id) REFERENCES jobs (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_generations_job ON generations (job_id);
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
     (3, _MIGRATION_3),
+    (4, _MIGRATION_4),
 ]
 
 

@@ -290,7 +290,7 @@ def test_migrations_are_idempotent_across_reopen(tmp_path):
     versions = [
         row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3]
+    assert versions == [1, 2, 3, 4]
     repo2.close()
 
 

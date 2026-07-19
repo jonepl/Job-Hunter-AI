@@ -414,7 +414,12 @@ code is marked inferred.
 
 ## ADR-029: Document generation ports with a three-outcome formatter
 
-- **Status:** Accepted
+- **Status:** Accepted — implemented by Story F (the `generate` CLI; the async web
+  path and download route follow in W6). The sibling `ResumeTailorPort` /
+  `CoverLetterPort`, the deterministic `document_formatter`, the consolidated
+  `DocxWriterPort` (one writer for both artifacts, replacing the separately-named
+  `TailoredResumeWriterPort` now F1+F2 are merged), and the `generations` table all
+  landed in F.
 - **Context:** Tailored resumes and cover letters must obey hard formatting rules
   (no semicolons, `•` bullets only, em-dashes banned, hyphens only inside compound
   words) that an LLM will not perfectly honor. A deterministic post-processor must
@@ -455,7 +460,10 @@ code is marked inferred.
 
 ## ADR-030: Voice and tone as a structured descriptor, not writing samples
 
-- **Status:** Accepted (supersedes an earlier samples-primary proposal)
+- **Status:** Accepted (supersedes an earlier samples-primary proposal) —
+  implemented by Story F as the `VoiceDescriptor` entity (tone / first-person toggle
+  / style notes), fed to `CoverLetterPort`. Persistence in the `settings` table and
+  the live-preview tuning loop follow in W7.
 - **Context:** Generated cover letters should sound like the candidate. Two
   mechanisms were considered: few-shot **writing samples** (high fidelity, captures
   rhythm and vocabulary) versus an explicit **descriptor** (easy to configure, but

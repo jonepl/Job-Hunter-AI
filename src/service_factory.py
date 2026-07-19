@@ -4,12 +4,22 @@ import os
 
 from src.adapters.enrichment.factory import build_enrichment
 from src.adapters.evaluator.factory import build_evaluator
+from src.adapters.generation.factory import (
+    build_cover_letter,
+    build_docx_writer,
+    build_resume_tailor,
+)
 from src.adapters.output.email_output import EmailOutput
 from src.adapters.output.file_output import FileOutput
-from src.adapters.repository.factory import build_repository, build_resume_repository
+from src.adapters.repository.factory import (
+    build_generation_repository,
+    build_repository,
+    build_resume_repository,
+)
 from src.adapters.resume.factory import build_resume_parser
 from src.adapters.scrapers.scraper_factory import build_scrapers
 from src.core.domain.search_profile import SearchProfile
+from src.core.services.generation_service import GenerationService
 from src.core.services.job_search_service import JobSearchService
 from src.core.services.resume_service import ResumeService
 
@@ -24,6 +34,27 @@ def build_resume_service() -> ResumeService:
         A ready ResumeService.
     """
     return ResumeService(build_resume_parser(), build_resume_repository())
+
+
+def build_generation_service() -> GenerationService:
+    """Build the GenerationService for the ``generate`` CLI (and later W6) (F).
+
+    Assembles the tailor + cover-letter adapters (behind the ``openai|anthropic``
+    allowlist), the ``.docx`` writer, the generation repository, the resume service,
+    and the job repository. Reads ``GENERATIONS_DIR`` for the output directory.
+
+    Returns:
+        A ready GenerationService.
+    """
+    return GenerationService(
+        tailor=build_resume_tailor(),
+        cover_letter=build_cover_letter(),
+        writer=build_docx_writer(),
+        generation_repo=build_generation_repository(),
+        resume_service=build_resume_service(),
+        job_repository=build_repository(),
+        generations_dir=os.getenv("GENERATIONS_DIR", "data/generations"),
+    )
 
 
 def build_service(profile: SearchProfile) -> JobSearchService:

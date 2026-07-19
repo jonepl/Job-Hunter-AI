@@ -3,8 +3,12 @@
 import logging
 import os
 
+from src.adapters.repository.sqlite_generation_repository import (
+    SQLiteGenerationRepository,
+)
 from src.adapters.repository.sqlite_repository import SQLiteJobRepository
 from src.adapters.repository.sqlite_resume_repository import SQLiteResumeRepository
+from src.core.ports.generation_repository_port import GenerationRepositoryPort
 from src.core.ports.job_repository_port import JobRepositoryPort
 from src.core.ports.resume_repository_port import ResumeRepositoryPort
 
@@ -15,6 +19,7 @@ logger = logging.getLogger(__name__)
 # all writes through one instance to serialize concurrent writers safely.
 _REPOSITORIES: dict[str, JobRepositoryPort] = {}
 _RESUME_REPOSITORIES: dict[str, ResumeRepositoryPort] = {}
+_GENERATION_REPOSITORIES: dict[str, GenerationRepositoryPort] = {}
 
 
 def build_repository() -> JobRepositoryPort:
@@ -54,3 +59,22 @@ def build_resume_repository() -> ResumeRepositoryPort:
             db_path=db_path, busy_timeout_ms=busy_timeout_ms
         )
     return _RESUME_REPOSITORIES[db_path]
+
+
+def build_generation_repository() -> GenerationRepositoryPort:
+    """Build (or return the cached) SQLite generation repository (F, ADR-029).
+
+    Reads the same ``DB_PATH`` / ``DB_BUSY_TIMEOUT_MS`` as the job repository — the
+    generation records live in the same database file. Repeated calls for the same
+    path return the same instance so writes route through one connection (ADR-034 §1).
+
+    Returns:
+        A ready SQLiteGenerationRepository with its schema migrated.
+    """
+    db_path = os.getenv("DB_PATH", "data/agent.db")
+    if db_path not in _GENERATION_REPOSITORIES:
+        busy_timeout_ms = int(os.getenv("DB_BUSY_TIMEOUT_MS", "5000"))
+        _GENERATION_REPOSITORIES[db_path] = SQLiteGenerationRepository(
+            db_path=db_path, busy_timeout_ms=busy_timeout_ms
+        )
+    return _GENERATION_REPOSITORIES[db_path]
