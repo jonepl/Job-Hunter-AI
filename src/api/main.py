@@ -11,6 +11,7 @@ never runs ``src/main.py`` — config is env-driven with no shared loader.
 
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -18,11 +19,54 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.api.routers import generations, jobs, profiles, resume, settings
+from src.scheduler import SchedulerManager, set_scheduler_manager
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DEV_ORIGIN = "http://localhost:5173"
 _DEFAULT_SPA_DIST = "web/dist"
+_DEFAULT_CRON = "0 8 * * 1-5"
+_DEFAULT_TIMEZONE = "America/New_York"
+
+
+def _maybe_start_scheduler() -> SchedulerManager | None:
+    """Start the in-process scheduler when ``SCHEDULE_ENABLED=true`` (ADR-032).
+
+    The web server co-locates uvicorn and a ``BackgroundScheduler`` in one process so
+    a cron edit can reschedule it live. When scheduling is disabled this is a no-op, so
+    the app boots identically for API-only / CLI-immediate use.
+
+    Returns:
+        The started manager (registered as the process singleton), or None.
+    """
+    if os.getenv("SCHEDULE_ENABLED", "false").lower() != "true":
+        logger.info("SCHEDULE_ENABLED is not true — no in-process scheduler")
+        return None
+
+    from src.service_factory import build_settings_service
+
+    service = build_settings_service()
+    service.apply_to_environment()
+    app_settings = service.get_settings()
+    cron = app_settings.schedule_cron or os.getenv("SCHEDULE_CRON", _DEFAULT_CRON)
+    tz = app_settings.schedule_timezone or os.getenv("SCHEDULE_TIMEZONE", _DEFAULT_TIMEZONE)
+
+    manager = SchedulerManager()
+    manager.start(cron, tz)
+    set_scheduler_manager(manager)
+    return manager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Own the in-process scheduler's lifecycle alongside the web server (ADR-032)."""
+    manager = _maybe_start_scheduler()
+    try:
+        yield
+    finally:
+        if manager is not None:
+            manager.shutdown()
+            set_scheduler_manager(None)
 
 
 def create_app() -> FastAPI:
@@ -34,7 +78,7 @@ def create_app() -> FastAPI:
     """
     load_dotenv()
 
-    app = FastAPI(title="Job Hunter AI", version="1.0.0")
+    app = FastAPI(title="Job Hunter AI", version="1.0.0", lifespan=lifespan)
 
     # Dev only: the Vite dev server is a different origin. Same-origin in prod
     # (the SPA is served by this process), so this is a no-op there.

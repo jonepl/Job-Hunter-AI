@@ -181,7 +181,7 @@ job-search-agent/
 │   ├── mark_runner.py                   ← run_mark() — mark CLI backend (no argparse dep)
 │   ├── resume_runner.py                 ← resume upload/list/activate — resume CLI backend
 │   ├── generation_runner.py             ← generate resume/cover-letter — generation CLI backend
-│   ├── scheduler.py                     ← APScheduler — cron-based multi-profile runner
+│   ├── scheduler.py                     ← APScheduler — Blocking (CLI) + in-process Background (web) schedulers, live reschedule
 │   ├── service_factory.py               ← Builds JobSearchService + build_resume_service() + build_generation_service()
 │   │
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
@@ -1114,13 +1114,21 @@ The agent supports two trigger modes:
 | Mode | Mechanism | How To Use |
 |---|---|---|
 | **Immediate** | Run once and exit | `python -m src.main` (SCHEDULE_ENABLED=false or not set) |
-| **Scheduled** | APScheduler inside container runs indefinitely | `docker-compose up` (SCHEDULE_ENABLED=true) |
+| **Scheduled (web)** | `BackgroundScheduler` co-located with uvicorn in one process | `docker compose up` / `uvicorn src.api.main:app` (SCHEDULE_ENABLED=true) |
+| **Scheduled (CLI)** | Standalone `BlockingScheduler`, no web server | `python -m src.main` (SCHEDULE_ENABLED=true) |
 
-Immediate mode is used for local testing and manual runs. Scheduled mode is
-used for Docker-based automated execution — APScheduler runs on SCHEDULE_CRON
-indefinitely inside the container with no host cron dependency.
+Immediate mode is used for local testing and manual runs. Scheduled mode runs on
+SCHEDULE_CRON with no host cron dependency. The **web deployment** (the shipped
+container CMD) runs uvicorn in the foreground with an in-process
+`BackgroundScheduler` started on FastAPI's `lifespan` (`SchedulerManager`, ADR-032);
+because the API and scheduler share a process, editing the cron in the Settings
+screen reschedules the running job by a direct method call (`PUT /api/settings` →
+`SchedulerManager.reschedule`), no restart. Each fire re-reads settings + profiles
+from the DB (`run_scheduled_cycle`). The standalone `BlockingScheduler`
+(`start_scheduler`) remains for the CLI scheduled mode, which never boots the server.
 
-**Technical Terms:** `Immediate Mode`, `APScheduler`, `BlockingScheduler`, `CronTrigger`
+**Technical Terms:** `Immediate Mode`, `APScheduler`, `BackgroundScheduler`,
+`BlockingScheduler`, `SchedulerManager`, `CronTrigger`, `lifespan`
 
 ---
 

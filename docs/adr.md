@@ -488,11 +488,12 @@ code is marked inferred.
 
 - **Status:** Accepted — implemented by **W7** (the `settings` + `search_profiles`
   tables, `SettingsService`, `GET/PUT /api/settings`, `PUT/DELETE
-  /api/settings/secrets/{name}`, profile CRUD, and the browser Settings screen). Two
-  parts are **deferred to a follow-up**: the in-process scheduler on FastAPI lifespan
-  + live cron reschedule (ADR-032) — until then a saved cron applies on the next
-  process start — and per-run DB re-reads (W7 applies settings once at run start via
-  the env bridge, ADR-035). One amendment: secrets are **editable and persisted in
+  /api/settings/secrets/{name}`, profile CRUD, and the browser Settings screen). The
+  two parts deferred at W7 — the in-process scheduler on FastAPI lifespan + live cron
+  reschedule, and per-run DB re-reads — **landed in the ADR-032 follow-up**:
+  `run_scheduled_cycle` re-reads settings + profiles from the DB on every scheduled
+  fire, and a cron edit reschedules the running `BackgroundScheduler` live. One
+  amendment: secrets are **editable and persisted in
   the DB**, seeded from `.env`, with a server-computed **"differs from .env"** flag —
   not `.env`-only. The API still never returns a full secret (masked suffix +
   configured/overridden flags only).
@@ -519,7 +520,17 @@ code is marked inferred.
 
 ## ADR-032: Multi-stage single container with an in-process scheduler
 
-- **Status:** Accepted (extends ADR-008 and revises ADR-018)
+- **Status:** Accepted — **implemented**. The multi-stage Docker build and same-origin
+  SPA serving landed with the web stories (the `node` build stage in `Dockerfile`,
+  FastAPI's `StaticFiles` mount at `/`). The in-process scheduler landed as a
+  follow-up after W7: `SchedulerManager` (a `BackgroundScheduler`) starts on FastAPI's
+  `lifespan` when `SCHEDULE_ENABLED=true`, and a cron/timezone edit in the Settings
+  screen reschedules it by a direct `reschedule_job` call (`PUT /api/settings`). Each
+  fire re-reads settings + profiles from the DB (`run_scheduled_cycle`), closing the
+  two W7 deferrals (live cron reschedule + per-run DB re-reads). The standalone
+  `BlockingScheduler` (`start_scheduler`) remains for the CLI `python -m src.main`
+  scheduled mode, which never boots the web server and cannot be rescheduled live.
+  (Extends ADR-008 and revises ADR-018.)
 - **Context:** ADR-008 ships one all-in-one container. Adding a React frontend
   introduces a Node build step, and the web server must coexist with APScheduler.
   ADR-018 used a `BlockingScheduler`, which cannot share a process with uvicorn.

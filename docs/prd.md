@@ -335,9 +335,11 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   from .env" indicator, never a key; a replace persists and a reset reverts to `.env`.
   Runs pick up the DB config through an env bridge that writes effective settings into
   `os.environ` at run start (ADR-035), so edits take effect with no adapter changes.
-  **Deferred:** the live cron reschedule without a restart (needs the in-process
-  scheduler, ADR-032) — a saved cron applies on the next process start; and
-  per-profile provider/voice.
+  **The ADR-032 follow-up then closed the two W7 deferrals:** the web deployment runs
+  an in-process `BackgroundScheduler` (`SchedulerManager`) on FastAPI's lifespan
+  (`SCHEDULE_ENABLED=true`), so a saved cron reschedules the running job live — no
+  restart — and every scheduled fire re-reads settings + profiles from the DB
+  (`run_scheduled_cycle`). **Still deferred:** per-profile provider/voice.
 - ~~No database — file output only~~ **Superseded (B1, ADR-023).** A SQLite store
   (`data/agent.db`) now persists jobs and their cross-provider sightings behind
   `JobRepositoryPort`: a seen job is not re-scored, and its stored evaluation is
