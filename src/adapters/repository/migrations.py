@@ -114,8 +114,8 @@ CREATE INDEX IF NOT EXISTS idx_resumes_hash ON resumes (content_hash);
 # **provenance only** — never the document text (CLAUDE.md #2): the job it was for,
 # the provider/model, the formatter ``outcome``, the ``.docx`` path, an optional
 # repair note, and (for needs_review) a JSON array of structural location hints. No
-# backfill — the store starts empty. W6 later adds the async lifecycle columns
-# (``status``, timeout); they are intentionally absent here.
+# backfill — the store starts empty. W6 adds the async lifecycle column in
+# migration 5.
 _MIGRATION_4 = """
 CREATE TABLE IF NOT EXISTS generations (
     id               TEXT PRIMARY KEY,
@@ -134,6 +134,17 @@ CREATE TABLE IF NOT EXISTS generations (
 CREATE INDEX IF NOT EXISTS idx_generations_job ON generations (job_id);
 """
 
+# Migration 5 (W6) — the async generation lifecycle column.
+#
+# The browser's "Tailor"/"Cover letter" flow generates asynchronously: a row is
+# created ``pending`` before the (slow) LLM call, then updated to ``ready`` when the
+# ``.docx`` exists or ``failed`` on error/timeout. The default ``ready`` is correct
+# for the synchronous CLI path, which only ever inserts a finished record. Timeout
+# detection reuses ``created_at`` (the pending row's insert time) — no extra column.
+_MIGRATION_5 = """
+ALTER TABLE generations ADD COLUMN status TEXT NOT NULL DEFAULT 'ready';
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -141,6 +152,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (2, _MIGRATION_2),
     (3, _MIGRATION_3),
     (4, _MIGRATION_4),
+    (5, _MIGRATION_5),
 ]
 
 

@@ -10,8 +10,8 @@ import { ThresholdRail } from "./ThresholdRail";
 
 // The right-hand detail pane (ui-spec §6.1), reduced to what the data model
 // carries: identity, provider set, score + breakdown, the lifecycle controls
-// (status dropdown + ★ save), skills, description, and the status timeline. The
-// Generated-documents block is a stub until Story F. Salary / posted-age /
+// (status dropdown + ★ save), skills, description, the status timeline, and the
+// Generated-documents chips (async tailor / cover-letter, W6). Salary / posted-age /
 // job-type / profile provenance are not in the model and are omitted.
 
 interface Props {
@@ -107,11 +107,10 @@ export function JobDetail({ jobId, onClose }: Props) {
       </Section>
 
       <Section title="Generated documents">
-        <div className="flex flex-wrap gap-2">
-          <GenerationChip kind="resume" />
-          <GenerationChip kind="cover_letter" />
+        <div className="flex flex-wrap gap-3">
+          <GenerationChip jobId={jobId} kind="resume" />
+          <GenerationChip jobId={jobId} kind="cover_letter" />
         </div>
-        <p className="mt-2 text-caption text-text-3">Document generation arrives with a later story.</p>
       </Section>
 
       {job.url && (

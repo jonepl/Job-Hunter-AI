@@ -1,4 +1,5 @@
 import type {
+  GenerationOut,
   JobDetail,
   JobSummary,
   ResumeOut,
@@ -98,4 +99,19 @@ export function makeResumeState(overrides: Partial<ResumeState> = {}): ResumeSta
   const versions = overrides.versions ?? [makeResume()];
   const active = overrides.active ?? versions.find((v) => v.isActive) ?? null;
   return { active, versions, ...overrides };
+}
+
+/** Build a GenerationOut fixture (a ready resume by default); override any field. */
+export function makeGeneration(overrides: Partial<GenerationOut> = {}): GenerationOut {
+  return {
+    id: "gen-abc123",
+    jobId: 1,
+    kind: "resume",
+    status: "ready",
+    outcome: "clean",
+    reviewLocations: [],
+    repairNote: "",
+    createdAt: "2026-07-05T09:00:00",
+    ...overrides,
+  };
 }

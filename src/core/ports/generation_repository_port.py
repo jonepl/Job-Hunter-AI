@@ -28,6 +28,22 @@ class GenerationRepositoryPort(ABC):
         ...
 
     @abstractmethod
+    def update(self, generation: Generation) -> Generation:
+        """Persist changes to an existing generation record and return it.
+
+        Used by the async lifecycle (W6) to transition a ``pending`` row to
+        ``ready``/``failed`` — updating status, outcome, file path, repair note,
+        and review locations for the row with the matching ``id``.
+
+        Args:
+            generation: The record whose stored row (keyed by ``id``) to overwrite.
+
+        Returns:
+            The updated Generation.
+        """
+        ...
+
+    @abstractmethod
     def get(self, generation_id: str) -> Generation | None:
         """Return the generation with ``generation_id``, or None when absent.
 

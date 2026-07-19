@@ -58,13 +58,14 @@ class SQLiteGenerationRepository(GenerationRepositoryPort):
         """Persist a generation record and return it."""
         self._conn.execute(
             "INSERT INTO generations ("
-            "id, job_id, kind, outcome, file_path, provider, model, "
+            "id, job_id, kind, status, outcome, file_path, provider, model, "
             "repair_note, review_locations, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 generation.id,
                 generation.job_id,
                 generation.kind,
+                generation.status,
                 generation.outcome,
                 generation.file_path,
                 generation.provider,
@@ -76,10 +77,37 @@ class SQLiteGenerationRepository(GenerationRepositoryPort):
         )
         self._conn.commit()
         logger.info(
-            "Recorded %s generation %s for job %d (%s)",
+            "Recorded %s generation %s for job %d (%s/%s)",
             generation.kind,
             generation.id,
             generation.job_id,
+            generation.status,
+            generation.outcome,
+        )
+        return generation
+
+    def update(self, generation: Generation) -> Generation:
+        """Persist changes to an existing generation row (W6 async lifecycle)."""
+        self._conn.execute(
+            "UPDATE generations SET "
+            "status = ?, outcome = ?, file_path = ?, "
+            "repair_note = ?, review_locations = ? "
+            "WHERE id = ?",
+            (
+                generation.status,
+                generation.outcome,
+                generation.file_path,
+                generation.repair_note,
+                json.dumps(generation.review_locations),
+                generation.id,
+            ),
+        )
+        self._conn.commit()
+        logger.info(
+            "Updated generation %s for job %d → %s (%s)",
+            generation.id,
+            generation.job_id,
+            generation.status,
             generation.outcome,
         )
         return generation
@@ -110,6 +138,7 @@ class SQLiteGenerationRepository(GenerationRepositoryPort):
             id=row["id"],
             job_id=row["job_id"],
             kind=row["kind"],
+            status=row["status"],
             outcome=row["outcome"],
             file_path=row["file_path"],
             provider=row["provider"],

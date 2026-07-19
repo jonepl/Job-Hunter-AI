@@ -54,6 +54,9 @@ def build_generation_service() -> GenerationService:
         resume_service=build_resume_service(),
         job_repository=build_repository(),
         generations_dir=os.getenv("GENERATIONS_DIR", "data/generations"),
+        generation_timeout_seconds=float(
+            os.getenv("GENERATION_TIMEOUT_SECONDS", "120")
+        ),
     )
 
 
