@@ -9,7 +9,13 @@ from src.core.domain.date_posted import DatePosted
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
 from src.core.exceptions import ModelNotFoundError
-from src.scheduler import run_all_profiles
+from src.scheduler import (
+    SchedulerManager,
+    get_scheduler_manager,
+    run_all_profiles,
+    run_scheduled_cycle,
+    set_scheduler_manager,
+)
 
 
 def _make_profile(profile_id: int, query: str = "Engineer", location: str = "Remote") -> SearchProfile:
@@ -105,3 +111,94 @@ class TestRunAllProfiles:
         log_text = " ".join(caplog.messages)
         assert "Senior Engineer" in log_text
         assert "United States" in log_text
+
+
+class TestRunScheduledCycle:
+    """Tests for run_scheduled_cycle() — the per-fire refresh + run."""
+
+    @pytest.mark.asyncio
+    async def test_reloads_settings_and_profiles_then_runs(self):
+        """The cycle applies DB settings and runs the freshly loaded profiles."""
+        profiles = [_make_profile(1), _make_profile(2)]
+        settings_service = MagicMock()
+        settings_service.list_profiles.return_value = profiles
+
+        factory = MagicMock()
+        with patch(
+            "src.service_factory.build_settings_service", return_value=settings_service
+        ), patch("src.scheduler.run_all_profiles", new=AsyncMock()) as mock_run:
+            await run_scheduled_cycle(factory)
+
+        settings_service.apply_to_environment.assert_called_once()
+        mock_run.assert_awaited_once_with(profiles, factory)
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_profiles(self):
+        """With no configured profiles the cycle returns without running."""
+        settings_service = MagicMock()
+        settings_service.list_profiles.return_value = []
+
+        with patch(
+            "src.service_factory.build_settings_service", return_value=settings_service
+        ), patch("src.scheduler.run_all_profiles", new=AsyncMock()) as mock_run:
+            await run_scheduled_cycle(MagicMock())
+
+        mock_run.assert_not_awaited()
+
+
+class TestSchedulerManager:
+    """Tests for the in-process BackgroundScheduler wrapper (ADR-032)."""
+
+    def test_start_registers_job_and_starts(self):
+        """start() builds a BackgroundScheduler, adds the job, and starts it."""
+        fake = MagicMock()
+        with patch("src.scheduler.BackgroundScheduler", return_value=fake):
+            manager = SchedulerManager()
+            manager.start("0 8 * * 1-5", "UTC")
+
+        fake.add_job.assert_called_once()
+        assert fake.add_job.call_args.kwargs["id"] == SchedulerManager._JOB_ID
+        fake.start.assert_called_once()
+
+    def test_reschedule_repoints_the_job(self):
+        """reschedule() calls reschedule_job with a new trigger when running."""
+        fake = MagicMock()
+        fake.running = True
+        with patch("src.scheduler.BackgroundScheduler", return_value=fake):
+            manager = SchedulerManager()
+            manager.start("0 8 * * 1-5", "UTC")
+            manager.reschedule("30 6 * * *", "America/New_York")
+
+        fake.reschedule_job.assert_called_once()
+        assert fake.reschedule_job.call_args.args[0] == SchedulerManager._JOB_ID
+
+    def test_reschedule_before_start_is_noop(self):
+        """reschedule() on an unstarted manager does nothing and does not raise."""
+        SchedulerManager().reschedule("0 8 * * 1-5", "UTC")
+
+    def test_shutdown_stops_and_clears(self):
+        """shutdown() stops a running scheduler and leaves the manager not running."""
+        fake = MagicMock()
+        fake.running = True
+        with patch("src.scheduler.BackgroundScheduler", return_value=fake):
+            manager = SchedulerManager()
+            manager.start("0 8 * * 1-5", "UTC")
+            manager.shutdown()
+
+        fake.shutdown.assert_called_once()
+        assert manager.running is False
+
+
+class TestSchedulerManagerSingleton:
+    """The process-wide manager accessor used by the API lifespan + router."""
+
+    def test_set_get_and_clear(self):
+        """set/get expose the singleton; clearing returns it to None."""
+        assert get_scheduler_manager() is None
+        manager = SchedulerManager()
+        set_scheduler_manager(manager)
+        try:
+            assert get_scheduler_manager() is manager
+        finally:
+            set_scheduler_manager(None)
+        assert get_scheduler_manager() is None

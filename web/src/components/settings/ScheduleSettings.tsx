@@ -14,8 +14,8 @@ import {
 } from "./shared";
 
 // Run schedule section: the cron expression + timezone that drive scheduled runs,
-// with a live "Next 3 runs" preview computed server-side. The live in-process
-// reschedule is a later story, so a saved cron takes effect on the next restart.
+// with a live "Next 3 runs" preview computed server-side. When the in-process
+// scheduler is running (SCHEDULE_ENABLED), a saved cron reschedules it live (ADR-032).
 
 /** Debounce a value so the preview query does not fire on every keystroke. */
 function useDebounced<T>(value: T, ms: number): T {
@@ -59,7 +59,7 @@ export function ScheduleSettings() {
     <section data-testid="schedule-settings" className="space-y-6">
       <PanelHeader
         title="Run schedule"
-        subtitle="When scheduled searches run. A saved change applies on the next restart."
+        subtitle="When scheduled searches run. A saved change reschedules a running scheduler live."
       />
 
       <Field label="Cron expression" htmlFor="cron" hint="Five fields, e.g. 0 8 * * 1-5">
