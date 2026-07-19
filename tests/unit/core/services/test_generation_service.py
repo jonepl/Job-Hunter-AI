@@ -5,7 +5,7 @@ for every outcome, provenance recording, the precondition errors, and — critic
 that no document content leaks onto the record or through any port argument.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -69,20 +69,26 @@ class _FakeWriter(DocxWriterPort):
 
 
 class _FakeGenRepo(GenerationRepositoryPort):
-    """A generation repository that records saves in memory."""
+    """An in-memory generation repository (records saves; supports update/get)."""
 
     def __init__(self) -> None:
-        self.saved = []
+        self.saved: list = []
+        self._by_id: dict = {}
 
     def save(self, generation):
         self.saved.append(generation)
+        self._by_id[generation.id] = generation
+        return generation
+
+    def update(self, generation):
+        self._by_id[generation.id] = generation
         return generation
 
     def get(self, generation_id):
-        return None
+        return self._by_id.get(generation_id)
 
     def list_for_job(self, job_id):
-        return []
+        return [g for g in self._by_id.values() if g.job_id == job_id]
 
 
 class _FakeResumeService:
@@ -260,3 +266,112 @@ async def test_generation_record_never_contains_document_content():
 
     assert secret not in gen.model_dump_json()
     assert secret not in repo.saved[0].model_dump_json()
+
+
+# --- W6: async lifecycle (create_pending / run_generation / get_generation) ---
+
+
+class _RaisingTailor(ResumeTailorPort):
+    """A tailor whose call always fails (simulates a provider error)."""
+
+    def __init__(self) -> None:
+        self.provider = "openai"
+        self.model = "gpt-4o"
+
+    async def tailor(self, resume, job, feedback=None):
+        raise RuntimeError("SECRETMODELOUTPUT boom")
+
+
+@pytest.mark.asyncio
+async def test_create_pending_inserts_a_pending_row():
+    """create_pending stores a pending row carrying the port's provenance."""
+    service, _, repo = _service()
+
+    gen = await service.create_pending(7, "resume")
+
+    assert gen.status == "pending"
+    assert gen.job_id == 7 and gen.kind == "resume"
+    assert gen.file_path == ""
+    assert gen.provider == "openai" and gen.model == "gpt-4o"
+    assert repo.get(gen.id).status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_create_pending_validates_before_returning_an_id():
+    """A missing resume / unknown job raises synchronously — no orphaned pending row."""
+    no_resume, _, repo_a = _service(resume=None)
+    with pytest.raises(GenerationError, match="No master resume"):
+        await no_resume.create_pending(7, "resume")
+    assert repo_a.saved == []
+
+    no_job, _, repo_b = _service(job=None)
+    with pytest.raises(GenerationError, match="No stored job"):
+        await no_job.create_pending(7, "cover_letter")
+    assert repo_b.saved == []
+
+
+@pytest.mark.asyncio
+async def test_run_generation_transitions_pending_to_ready():
+    """run_generation fulfils a pending row: status ready, outcome + path recorded."""
+    tailor = _FakeTailor([TailoredResume(summary="Clean summary.")])
+    service, writer, repo = _service(tailor=tailor)
+    pending = await service.create_pending(7, "resume")
+
+    await service.run_generation(pending.id)
+
+    done = repo.get(pending.id)
+    assert done.status == "ready"
+    assert done.outcome == "clean"
+    assert done.file_path == f"data/generations/{pending.id}.docx"
+    assert len(writer.resume_writes) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_generation_marks_failed_without_raising_or_leaking(caplog):
+    """A provider error flips the row to failed; no raise, no content in logs."""
+    service, _, repo = _service(tailor=_RaisingTailor())
+    pending = await service.create_pending(7, "resume")
+
+    await service.run_generation(pending.id)  # must not raise
+
+    failed = repo.get(pending.id)
+    assert failed.status == "failed"
+    assert "SECRETMODELOUTPUT" not in caplog.text  # only the exception type is logged
+
+
+@pytest.mark.asyncio
+async def test_run_generation_ignores_a_non_pending_row():
+    """run_generation on an already-terminal (or absent) id is a no-op."""
+    tailor = _FakeTailor([TailoredResume(summary="Clean summary.")])
+    service, writer, repo = _service(tailor=tailor)
+
+    await service.run_generation("does-not-exist")  # absent id → no-op
+
+    assert writer.resume_writes == []
+
+
+@pytest.mark.asyncio
+async def test_get_generation_flips_a_stale_pending_row_to_failed():
+    """A pending row older than the timeout self-heals to failed on read."""
+    service, _, repo = _service()
+    service._generation_timeout_seconds = 60
+    pending = await service.create_pending(7, "resume")
+    # Backdate the row well past the timeout.
+    repo.update(pending.model_copy(update={"created_at": _NOW - timedelta(hours=1)}))
+
+    result = service.get_generation(pending.id)
+
+    assert result.status == "failed"
+    assert repo.get(pending.id).status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_get_generation_leaves_a_fresh_pending_row_alone():
+    """A pending row within the timeout stays pending on read."""
+    service, _, _ = _service()
+    service._generation_timeout_seconds = 3600
+    pending = await service.create_pending(7, "resume")
+
+    result = service.get_generation(pending.id)
+
+    assert result.status == "pending"

@@ -311,8 +311,21 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   restores an earlier version. The panel shows provenance only (filename, size, parsed
   counts, upload date) — never resume content (ADR-028) — with parse-status and clear
   error feedback. Deferred (E1 stores extracted text + provenance, not the original
-  bytes or a note field): downloading the original file and per-version notes. Later W
-  stories add document generation and the rest of Settings.
+  bytes or a note field): downloading the original file and per-version notes. **W6
+  added browser document generation** — a job's detail pane now has live **Resume**
+  and **Cover letter** chips: `POST /api/jobs/{id}/generate` starts an *asynchronous*
+  background task (an LLM call is too slow to block the request) and returns a
+  `generation_id`; the chip polls `GET /api/generations/{id}` via React Query until a
+  terminal status, then downloads the `.docx` from
+  `GET /api/generations/{id}/download` (a plain link — content never enters the DOM,
+  ADR-034 §3). The five chip states map onto the run: `empty → pending → ready`
+  (with a `needs_review` variant that lists the structural locations to check, never
+  the text). A stuck `pending` past `GENERATION_TIMEOUT_SECONDS` self-heals to
+  `failed` on the next poll (recovering a task lost to a restart), and a `ready` row
+  whose file has vanished returns **410 Gone** so the chip re-generates. This reuses
+  Story F's whole synchronous pipeline; W6 added only the async `status` column, the
+  API, and the chip. The in-browser voice form (cover letters use the env-seeded
+  default voice for now) and the rest of Settings arrive with W7.
 - ~~No database — file output only~~ **Superseded (B1, ADR-023).** A SQLite store
   (`data/agent.db`) now persists jobs and their cross-provider sightings behind
   `JobRepositoryPort`: a seen job is not re-scored, and its stored evaluation is

@@ -8,6 +8,9 @@ export type ScoreCategoryRow = components["schemas"]["ScoreCategoryRow"];
 export type StatusHistoryEntry = components["schemas"]["StatusHistoryEntryOut"];
 export type ResumeOut = components["schemas"]["ResumeOut"];
 export type ResumeState = components["schemas"]["ResumeState"];
+export type GenerationOut = components["schemas"]["GenerationOut"];
+export type GenerationKind = GenerationOut["kind"];
+export type GenerationStatus = GenerationOut["status"];
 
 // The six human-set statuses the API accepts for a write (ui-spec §4).
 export type HumanStatus = components["schemas"]["StatusUpdate"]["status"];
@@ -72,4 +75,20 @@ export const api = {
     request<ResumeState>(`/api/resume/versions/${version}/activate`, {
       method: "POST",
     }),
+  listJobGenerations: (jobId: number) =>
+    request<GenerationOut[]>(`/api/jobs/${jobId}/generations`),
+  generate: (jobId: number, kind: GenerationKind) =>
+    request<GenerationOut>(`/api/jobs/${jobId}/generate`, {
+      method: "POST",
+      body: { kind },
+    }),
+  getGeneration: (id: string) => request<GenerationOut>(`/api/generations/${id}`),
 };
+
+/**
+ * The download URL for a ready generation. Used as a plain anchor href so the
+ * browser streams the .docx to disk — the document bytes never pass through JS,
+ * keeping generated content out of the DOM (ADR-034 §3, ui-spec §7).
+ */
+export const generationDownloadUrl = (id: string): string =>
+  `/api/generations/${id}/download`;

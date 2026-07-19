@@ -12,10 +12,17 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from src.core.domain.generation import (
+    Generation,
+    GenerationKind,
+    GenerationOutcome,
+    GenerationStatus,
+)
 from src.core.domain.match_result import ScoreBreakdown
 from src.core.domain.resume import Resume
 from src.core.domain.status_history_entry import StatusHistoryEntry
 from src.core.domain.stored_job import StoredJob
+from src.core.domain.voice_descriptor import Person, Tone, VoiceDescriptor
 
 # The six human-set statuses — the only values the API accepts for a status write
 # (machine states are never user-selectable, ui-spec §4). A bad value 422s.
@@ -146,7 +153,7 @@ class JobDetail(BaseModel):
     status: str
     saved: bool
     status_history: list[StatusHistoryEntryOut]
-    generations: list = []  # stub until F ships the generations table + endpoints
+    generations: list = []  # unused stub; the chip reads GET /jobs/{id}/generations (W6)
     last_seen_at: datetime
 
     @classmethod
@@ -273,3 +280,68 @@ class ResumeState(BaseModel):
             active=ResumeOut.from_resume(active) if active is not None else None,
             versions=[ResumeOut.from_resume(r) for r in versions],
         )
+
+
+class GenerationOut(BaseModel):
+    """One generated-document record for the chip, provenance only (ui-spec §5.4/§7).
+
+    Carries the async ``status``, the formatter ``outcome`` (only meaningful once
+    ``status == "ready"`` — surfaced as null while pending/failed), the repair note,
+    and the structural ``reviewLocations`` for a ``needs_review`` outcome. It
+    **never** carries document content or the server-side ``file_path``: the client
+    reaches the file through ``GET /generations/{id}/download`` (ADR-034 §3).
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: str
+    job_id: int
+    kind: GenerationKind
+    status: GenerationStatus
+    outcome: GenerationOutcome | None
+    review_locations: list[str]
+    repair_note: str
+    created_at: datetime
+
+    @classmethod
+    def from_generation(cls, generation: Generation) -> "GenerationOut":
+        """Build the response model, hiding the placeholder outcome until ready."""
+        return cls(
+            id=generation.id,
+            job_id=generation.job_id,
+            kind=generation.kind,
+            status=generation.status,
+            outcome=generation.outcome if generation.status == "ready" else None,
+            review_locations=generation.review_locations,
+            repair_note=generation.repair_note,
+            created_at=generation.created_at,
+        )
+
+
+class VoiceIn(BaseModel):
+    """Optional cover-letter voice on a generate request (ADR-030, structured only)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    tone: Tone = "direct"
+    person: Person = "first_person"
+    style_notes: str = ""
+
+    def to_descriptor(self) -> VoiceDescriptor:
+        """Map the request voice to the domain VoiceDescriptor."""
+        return VoiceDescriptor(
+            tone=self.tone, person=self.person, style_notes=self.style_notes
+        )
+
+
+class GenerateRequest(BaseModel):
+    """Request body for ``POST /jobs/{id}/generate`` — start an async generation.
+
+    ``voice`` applies only to a cover letter; when omitted the router seeds the
+    env-configured default voice (the in-browser voice form arrives with W7).
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    kind: GenerationKind
+    voice: VoiceIn | None = None

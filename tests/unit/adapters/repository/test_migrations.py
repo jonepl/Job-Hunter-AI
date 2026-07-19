@@ -1,8 +1,9 @@
-"""Unit tests for the forward-only migration runner (migrations 3 + 4).
+"""Unit tests for the forward-only migration runner (migrations 3 + 4 + 5).
 
 Migration 3 (E1) adds the ``resumes`` table; migration 4 (F) adds the
-``generations`` table. These tests prove each applies cleanly on a fresh database
-and upgrades an existing store in place without touching any ``jobs`` row.
+``generations`` table; migration 5 (W6) adds the async ``status`` column to it.
+These tests prove each applies cleanly on a fresh database and upgrades an existing
+store in place without touching any ``jobs`` row.
 """
 
 import sqlite3
@@ -59,6 +60,13 @@ def _match_result() -> MatchResult:
     )
 
 
+def _generations_columns(conn: sqlite3.Connection) -> dict[str, str]:
+    """Return the ``generations`` table's column name → default expression."""
+    rows = conn.execute("PRAGMA table_info(generations)").fetchall()
+    # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
+    return {row[1]: row[4] for row in rows}
+
+
 def test_migrations_create_all_tables_on_fresh_db():
     """A fresh database gains every table (incl. resumes + generations) and records all."""
     conn = sqlite3.connect(":memory:")
@@ -68,7 +76,12 @@ def test_migrations_create_all_tables_on_fresh_db():
     assert "resumes" in tables
     assert "generations" in tables
     versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations")]
-    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4]
+    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5]
+
+    # Migration 5 (W6): the async status column exists and defaults to 'ready'.
+    columns = _generations_columns(conn)
+    assert "status" in columns
+    assert columns["status"] == "'ready'"
     conn.close()
 
 
@@ -124,21 +137,22 @@ def test_migration_3_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     versions = [
         row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4]
+    assert versions == [1, 2, 3, 4, 5]
     repo2.close()
 
 
-def test_migration_4_upgrades_existing_store_without_touching_jobs(tmp_path):
-    """Opening a v1/v2/v3 store applies migration 4 and preserves every job row."""
+def test_migrations_4_and_5_upgrade_existing_store_without_touching_jobs(tmp_path):
+    """Opening a v1/v2/v3 store applies migrations 4 + 5 and preserves every job row."""
     db_path = str(tmp_path / "agent.db")
 
-    # Build a database at migrations 1+2+3 only, with a real job row.
+    # Build a database at migrations 1+2+3 only, with a real job row. Migration 5
+    # alters the generations table, so both 4 and 5 must be withheld together.
     conn = sqlite3.connect(db_path)
     conn.execute(
         "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
     )
     for version, sql in MIGRATIONS:
-        if version == 4:
+        if version >= 4:
             continue
         conn.executescript(sql)
         conn.execute(
@@ -148,7 +162,7 @@ def test_migration_4_upgrades_existing_store_without_touching_jobs(tmp_path):
     conn.commit()
     conn.close()
 
-    repo = SQLiteJobRepository(db_path=db_path)  # opening applies migration 4
+    repo = SQLiteJobRepository(db_path=db_path)  # opening applies migrations 4 + 5
     job = Job(
         title="Senior Software Engineer",
         company="Acme Corp",
@@ -169,11 +183,12 @@ def test_migration_4_upgrades_existing_store_without_touching_jobs(tmp_path):
     )
 
     assert "generations" in _table_names(repo._conn)
+    assert "status" in _generations_columns(repo._conn)
     assert len(repo.list_jobs()) == 1
     gen_count = repo._conn.execute("SELECT COUNT(*) FROM generations").fetchone()[0]
     assert gen_count == 0
     versions = [
         row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4]
+    assert versions == [1, 2, 3, 4, 5]
     repo.close()

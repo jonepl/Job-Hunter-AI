@@ -414,8 +414,10 @@ code is marked inferred.
 
 ## ADR-029: Document generation ports with a three-outcome formatter
 
-- **Status:** Accepted — implemented by Story F (the `generate` CLI; the async web
-  path and download route follow in W6). The sibling `ResumeTailorPort` /
+- **Status:** Accepted — implemented by Story F (the `generate` CLI) and **W6** (the
+  async web path: the `generations.status` column, `POST /generate` +
+  background task, the `GET /generations/{id}` poll, and the download route with the
+  410-Gone fallback). The sibling `ResumeTailorPort` /
   `CoverLetterPort`, the deterministic `document_formatter`, the consolidated
   `DocxWriterPort` (one writer for both artifacts, replacing the separately-named
   `TailoredResumeWriterPort` now F1+F2 are merged), and the `generations` table all

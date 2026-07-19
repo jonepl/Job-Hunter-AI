@@ -199,6 +199,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Generation
+         * @description Start an async resume/cover-letter generation and return its pending record.
+         *
+         *     Preconditions (a stored master resume, a known job) are checked synchronously so
+         *     a user-fixable problem is a clear 400 rather than a silently failed background job.
+         *
+         *     Args:
+         *         job_id: The repository id of the job to generate for.
+         *         body: The generation kind and, for a cover letter, the optional voice.
+         *         background_tasks: FastAPI's post-response task runner.
+         *         service: The shared GenerationService (injected).
+         *
+         *     Returns:
+         *         The pending GenerationOut (poll it via ``GET /generations/{id}``).
+         *
+         *     Raises:
+         *         HTTPException: 400 when no resume is stored or the job id is unknown.
+         */
+        post: operations["start_generation_api_jobs__job_id__generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Job Generations
+         * @description List every generation recorded for a job, newest first (the chip's initial state).
+         *
+         *     Args:
+         *         job_id: The repository id of the job.
+         *         service: The shared GenerationService (injected).
+         *
+         *     Returns:
+         *         The job's generations as provenance-only response models.
+         */
+        get: operations["list_job_generations_api_jobs__job_id__generations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/generations/{generation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll Generation
+         * @description Return one generation's current state, flipping a timed-out pending row to failed.
+         *
+         *     Args:
+         *         generation_id: The id returned by the generate call.
+         *         service: The shared GenerationService (injected).
+         *
+         *     Returns:
+         *         The generation's current GenerationOut.
+         *
+         *     Raises:
+         *         HTTPException: 404 when no generation has that id.
+         */
+        get: operations["poll_generation_api_generations__generation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/generations/{generation_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Generation
+         * @description Stream a ready generation's ``.docx`` (never its content in JSON).
+         *
+         *     Args:
+         *         generation_id: The id of the generation to download.
+         *         service: The shared GenerationService (injected).
+         *
+         *     Returns:
+         *         A FileResponse streaming the ``.docx`` with a friendly filename.
+         *
+         *     Raises:
+         *         HTTPException: 404 unknown id; 409 not yet ready; 410 when the ``ready``
+         *             row's file is missing on disk (the chip falls back to regenerate,
+         *             ADR-034 §3).
+         */
+        get: operations["download_generation_api_generations__generation_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -207,6 +331,58 @@ export interface components {
         Body_upload_resume_api_resume_post: {
             /** File */
             file: string;
+        };
+        /**
+         * GenerateRequest
+         * @description Request body for ``POST /jobs/{id}/generate`` — start an async generation.
+         *
+         *     ``voice`` applies only to a cover letter; when omitted the router seeds the
+         *     env-configured default voice (the in-browser voice form arrives with W7).
+         */
+        GenerateRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "resume" | "cover_letter";
+            voice?: components["schemas"]["VoiceIn"] | null;
+        };
+        /**
+         * GenerationOut
+         * @description One generated-document record for the chip, provenance only (ui-spec §5.4/§7).
+         *
+         *     Carries the async ``status``, the formatter ``outcome`` (only meaningful once
+         *     ``status == "ready"`` — surfaced as null while pending/failed), the repair note,
+         *     and the structural ``reviewLocations`` for a ``needs_review`` outcome. It
+         *     **never** carries document content or the server-side ``file_path``: the client
+         *     reaches the file through ``GET /generations/{id}/download`` (ADR-034 §3).
+         */
+        GenerationOut: {
+            /** Id */
+            id: string;
+            /** Jobid */
+            jobId: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "resume" | "cover_letter";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "ready" | "failed";
+            /** Outcome */
+            outcome: ("clean" | "repaired" | "needs_review") | null;
+            /** Reviewlocations */
+            reviewLocations: string[];
+            /** Repairnote */
+            repairNote: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -420,6 +596,29 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /**
+         * VoiceIn
+         * @description Optional cover-letter voice on a generate request (ADR-030, structured only).
+         */
+        VoiceIn: {
+            /**
+             * Tone
+             * @default direct
+             * @enum {string}
+             */
+            tone: "direct" | "warm" | "formal" | "bold";
+            /**
+             * Person
+             * @default first_person
+             * @enum {string}
+             */
+            person: "first_person" | "implied";
+            /**
+             * Stylenotes
+             * @default
+             */
+            styleNotes: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -621,6 +820,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_generation_api_jobs__job_id__generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_job_generations_api_jobs__job_id__generations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    poll_generation_api_generations__generation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                generation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_generation_api_generations__generation_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                generation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

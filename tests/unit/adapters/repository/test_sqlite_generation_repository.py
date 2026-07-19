@@ -100,3 +100,35 @@ def test_list_for_job_returns_newest_first():
 def test_list_for_job_empty():
     """A job with no generations returns an empty list."""
     assert _repo().list_for_job(1) == []
+
+
+def test_save_persists_status():
+    """The async status column round-trips (defaults to ready via the entity)."""
+    repo = _repo()
+    repo.save(_generation("ddd"))
+    assert repo.get("ddd").status == "ready"
+
+    repo.save(_generation("eee", status="pending", outcome="clean", file_path=""))
+    assert repo.get("eee").status == "pending"
+
+
+def test_update_transitions_a_pending_row():
+    """update overwrites status/outcome/path/notes/locations for an existing row (W6)."""
+    repo = _repo()
+    repo.save(_generation("fff", status="pending", outcome="clean", file_path=""))
+
+    updated = _generation(
+        "fff",
+        status="ready",
+        outcome="needs_review",
+        file_path="data/generations/fff.docx",
+        repair_note="",
+        review_locations=["Summary"],
+    )
+    repo.update(updated)
+
+    fetched = repo.get("fff")
+    assert fetched.status == "ready"
+    assert fetched.outcome == "needs_review"
+    assert fetched.file_path == "data/generations/fff.docx"
+    assert fetched.review_locations == ["Summary"]

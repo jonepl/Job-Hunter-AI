@@ -84,12 +84,12 @@ The CLI has four modes: the default (no-subcommand) invocation runs a search; th
 (`src/mark_runner.py`, `src/resume_runner.py`, `src/generation_runner.py`) so the API
 can reuse the same paths (the resume runner shares the `ResumeService` the browser
 `POST /api/resume` upload now drives, W5; the generation runner shares the
-`GenerationService` W6 will drive asynchronously). Only the six **human-set** statuses
+`GenerationService` the browser now drives asynchronously, W6). Only the six **human-set** statuses
 are selectable via `mark` — machine states are never user-assignable (ADR-025). The
 `generate` CLI prints only the file path and provenance, never document content
 (ADR-028/029).
 
-**API surface (as of W5).** All routes under `/api`, no business logic in the
+**API surface (as of W6).** All routes under `/api`, no business logic in the
 router (ADR-026):
 
 | Method | Path | Purpose |
@@ -101,14 +101,24 @@ router (ADR-026):
 | `GET` | `/api/resume` | Master-resume panel state — active `ResumeOut` + version history (provenance only) |
 | `POST` | `/api/resume` | Multipart upload → `ResumeService.ingest` (parse-once); 400 on oversize/unparseable/unsupported |
 | `POST` | `/api/resume/versions/{v}/activate` | Restore an earlier stored version; 404 if absent |
+| `POST` | `/api/jobs/{id}/generate` | `{kind}` → `create_pending` + background task; **202** with a pending `GenerationOut`; 400 on no-resume/unknown-job (W6) |
+| `GET` | `/api/jobs/{id}/generations` | The job's generations, newest first (the chip's initial state) |
+| `GET` | `/api/generations/{id}` | Poll one generation; flips a timed-out `pending` → `failed`; 404 if absent |
+| `GET` | `/api/generations/{id}/download` | Stream the ready `.docx`; **409** if not ready, **410 Gone** if the file has vanished (ADR-034 §3) |
 
 The `jobs` `PATCH` routes are the web app's first mutations; the React client
 applies them optimistically (ui-spec §8) and rolls back on error. The `resume`
 routes (W5) drive the browser master-resume upload — the same `ResumeService` the
-CLI uses. No endpoint ever returns generated-document content or raw resume text —
-`ResumeOut` carries provenance only, never `raw_text`/`content_hash` (ui-spec §7,
-ADR-028). Run history, generation, and the rest of Settings arrive with later
-stories.
+CLI uses. The `generate`/`generations` routes (W6) drive the detail pane's document
+chips: because an LLM call is too slow to block the request, `POST …/generate`
+creates a `pending` row, schedules the work as a FastAPI `BackgroundTask`, and
+returns immediately; the client polls the row until a terminal `status`, then
+downloads the `.docx`. A stuck `pending` self-heals to `failed` on read past
+`GENERATION_TIMEOUT_SECONDS`, and a `ready` row whose file is gone streams a **410**.
+No endpoint ever returns generated-document content or raw resume text — `ResumeOut`
+and `GenerationOut` carry provenance only, never `raw_text`/`content_hash` or document
+text (ui-spec §7, ADR-028/029/034). Run history and the rest of Settings arrive with
+later stories.
 
 ```
    CLI  (src/main, src/cli) ─┐
@@ -165,12 +175,13 @@ job-search-agent/
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
 │   │   ├── __init__.py
 │   │   ├── main.py                      ← app factory (create_app); uvicorn entrypoint
-│   │   ├── deps.py                      ← get_repository() + get_resume_service()
-│   │   ├── schemas.py                   ← JobSummary / JobDetail / ResumeOut / ResumeState + bodies (camelCase)
+│   │   ├── deps.py                      ← get_repository() + get_resume_service() + get_generation_service()
+│   │   ├── schemas.py                   ← JobSummary / JobDetail / ResumeOut / ResumeState / GenerationOut + bodies (camelCase)
 │   │   └── routers/
 │   │       ├── __init__.py
 │   │       ├── jobs.py                  ← GET /api/jobs · GET/PATCH /api/jobs/{id}
-│   │       └── resume.py               ← GET/POST /api/resume · POST .../versions/{v}/activate (W5)
+│   │       ├── resume.py               ← GET/POST /api/resume · POST .../versions/{v}/activate (W5)
+│   │       └── generations.py          ← POST /api/jobs/{id}/generate · GET poll/list/download (async, W6)
 │   │
 │   ├── cli/                             ← CLI concerns
 │   │   ├── __init__.py
@@ -253,7 +264,7 @@ job-search-agent/
 │       │   ├── sqlite_repository.py     ← SQLiteJobRepository (WAL, busy_timeout, short commits)
 │       │   ├── sqlite_resume_repository.py ← SQLiteResumeRepository (versioned master resume)
 │       │   ├── sqlite_generation_repository.py ← SQLiteGenerationRepository (generation records)
-│       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history + resumes + generations)
+│       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history + resumes + generations + generation.status)
 │       │   └── factory.py               ← build_repository() + build_resume_repository() + build_generation_repository()
 │       │
 │       ├── resume/                      ← Resume parsing adapters (ResumeParserPort)
@@ -284,10 +295,12 @@ web/                                     ← Job Hunter AI Web (Vite + React + T
 │   ├── api/
 │   │   ├── client.ts                    ← typed fetch wrapper (the only place fetch is called)
 │   │   └── types.ts                     ← generated from OpenAPI (npm run gen:types)
-│   ├── hooks/                           ← React Query hooks (useJobs; useJob/useMarkStatus/useSaved — optimistic)
+│   ├── hooks/                           ← React Query hooks (useJobs; useJob/useMarkStatus/useSaved — optimistic;
+│   │                                       useResume — W5; useGeneration — async poll, W6)
 │   ├── components/                      ← ThresholdRail, ScoreChip, JobCard, ProviderBadges, StatusPill,
-│   │                                       JobDetail, ScoreBreakdown, StatusDropdown, SaveStar, GenerationChip, ThemeToggle
-│   ├── screens/                         ← JobList (list + detail pane; loading / empty / error states)
+│   │                                       JobDetail, ScoreBreakdown, StatusDropdown, SaveStar, MasterResumePanel (W5),
+│   │                                       GenerationChip (5-state async, W6), ThemeToggle
+│   ├── screens/                         ← JobList (list + detail pane); Settings (Master resume, W5)
 │   ├── lib/                             ← queryClient, theme, score (ADR-033), platforms, status (vocabulary)
 │   └── styles/                          ← tokens.css (wired copy) + index.css (Tailwind)
 ├── tests/                              ← Jest + React Testing Library
@@ -856,8 +869,13 @@ the `resume` CLI and the future `POST /resume` (W5) route through the same servi
 **Schema (migration 4 — F).** Adds `generations` (`id` opaque PK, `job_id` FK →
 `jobs`, `kind`, `outcome`, `file_path`, `provider`, `model`, `repair_note`,
 `review_locations` JSON, `created_at`) — one **provenance-only** row per generated
-document (ADR-029/034 §3). No document text is ever stored. W6 later adds the async
-lifecycle columns (`status`, timeout).
+document (ADR-029/034 §3). No document text is ever stored.
+
+**Schema (migration 5 — W6).** Adds `status` (`pending`/`ready`/`failed`, default
+`ready`) to `generations` for the browser's async generation flow: a row is created
+`pending` before the LLM call and updated to `ready`/`failed` by the background task.
+The synchronous CLI path never leaves the `ready` default; timeout detection reuses
+`created_at`, so no extra column is needed.
 
 ### Generation ports — `ResumeTailorPort` / `CoverLetterPort` / `DocxWriterPort` / `GenerationRepositoryPort`
 

@@ -26,7 +26,7 @@ def test_incomplete_subclass_fails_at_instantiation():
 
 
 def test_port_declares_the_expected_methods():
-    """The contract exposes exactly the save/get/list operations."""
+    """The contract exposes exactly the save/update/get/list operations."""
     methods = {
         name
         for name, _ in inspect.getmembers(
@@ -34,4 +34,4 @@ def test_port_declares_the_expected_methods():
         )
         if not name.startswith("_")
     }
-    assert methods == {"save", "get", "list_for_job"}
+    assert methods == {"save", "update", "get", "list_for_job"}

@@ -3,9 +3,15 @@ import userEvent from "@testing-library/user-event";
 
 import { JobDetail } from "../../src/components/JobDetail";
 import { useJob, useMarkStatus, useSaved } from "../../src/hooks/useJob";
+import {
+  useGenerate,
+  useGeneration,
+  useJobGenerations,
+} from "../../src/hooks/useGeneration";
 import { makeJobDetail } from "../helpers";
 
 jest.mock("../../src/hooks/useJob");
+jest.mock("../../src/hooks/useGeneration");
 
 const mockedUseJob = useJob as jest.MockedFunction<typeof useJob>;
 const mockedUseMarkStatus = useMarkStatus as jest.MockedFunction<typeof useMarkStatus>;
@@ -26,6 +32,10 @@ function mockJobState(state: Partial<ReturnType<typeof useJob>>) {
 beforeEach(() => {
   markMutate.mockReset();
   savedMutate.mockReset();
+  // The generation chips call these; inert defaults keep them out of the network.
+  (useJobGenerations as jest.Mock).mockReturnValue({ data: [] });
+  (useGenerate as jest.Mock).mockReturnValue({ mutate: jest.fn(), isPending: false });
+  (useGeneration as jest.Mock).mockReturnValue({ data: undefined });
   mockedUseMarkStatus.mockReturnValue({
     mutate: markMutate,
     isPending: false,
