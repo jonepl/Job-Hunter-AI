@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.api.routers import jobs
+from src.api.routers import jobs, resume
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
 
     # API routes are registered before the SPA catch-all mount so /api wins.
     app.include_router(jobs.router, prefix="/api")
+    app.include_router(resume.router, prefix="/api")
 
     # Serve the built SPA at / when present; skip in dev (Vite serves it) so the
     # app still boots without a frontend build.

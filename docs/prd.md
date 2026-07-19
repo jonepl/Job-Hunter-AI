@@ -301,8 +301,18 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   `N active · M total` count. Filtering is client-side over the single cached job
   list (no backend change) with a distinct filtered-empty state per view. Deferred:
   the per-run pre-filter count (needs run persistence — no runs table yet) and the
-  persistent left-rail nav (arrives with the profiles/runs-nav story). Later W stories
-  add document generation, upload, and settings.
+  persistent left-rail nav (arrives with the profiles/runs-nav story). **W5 added the
+  browser master-resume upload** — a minimal **Settings** screen (reached from the
+  header; a `CONFIGURATION` rail with only *Master resume* live, the other five
+  sections disabled until W7) hosts a **Master resume** panel: `GET /api/resume`
+  returns the active version plus history, `POST /api/resume` (multipart) parses and
+  stores a dropped `.pdf` **or** `.docx` once (a new `DocxResumeParser` joins the PDF
+  parser behind a format-sniffing router), and `POST /api/resume/versions/{v}/activate`
+  restores an earlier version. The panel shows provenance only (filename, size, parsed
+  counts, upload date) — never resume content (ADR-028) — with parse-status and clear
+  error feedback. Deferred (E1 stores extracted text + provenance, not the original
+  bytes or a note field): downloading the original file and per-version notes. Later W
+  stories add document generation and the rest of Settings.
 - ~~No database — file output only~~ **Superseded (B1, ADR-023).** A SQLite store
   (`data/agent.db`) now persists jobs and their cross-provider sightings behind
   `JobRepositoryPort`: a seen job is not re-scored, and its stored evaluation is
