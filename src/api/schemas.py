@@ -12,6 +12,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from src.core.domain.app_settings import AppSettings
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.generation import (
     Generation,
     GenerationKind,
@@ -20,9 +22,12 @@ from src.core.domain.generation import (
 )
 from src.core.domain.match_result import ScoreBreakdown
 from src.core.domain.resume import Resume
+from src.core.domain.scraper_name import ScraperName
+from src.core.domain.search_profile import SearchProfile
 from src.core.domain.status_history_entry import StatusHistoryEntry
 from src.core.domain.stored_job import StoredJob
 from src.core.domain.voice_descriptor import Person, Tone, VoiceDescriptor
+from src.core.domain.work_type import WorkType
 
 # The six human-set statuses — the only values the API accepts for a status write
 # (machine states are never user-selectable, ui-spec §4). A bad value 422s.
@@ -345,3 +350,204 @@ class GenerateRequest(BaseModel):
 
     kind: GenerationKind
     voice: VoiceIn | None = None
+
+
+# --- W7: settings, secrets, and search profiles ---------------------------
+
+
+class SettingsOut(BaseModel):
+    """The global settings screen state — effective values + the ``.env`` defaults.
+
+    ``envDefaults`` lets the UI show a "differs from .env" indicator per field
+    (ADR-031). ``secrets`` carries **masked** status only — never a key value.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    evaluator_provider: str
+    evaluator_model: str | None
+    schedule_cron: str
+    schedule_timezone: str
+    enrichment_mode: str
+    voice: VoiceIn
+    env_defaults: "SettingsDefaults"
+    secrets: list["SecretStatus"]
+
+    @classmethod
+    def build(
+        cls,
+        settings: AppSettings,
+        env_defaults: AppSettings,
+        secrets: list[dict],
+    ) -> "SettingsOut":
+        """Assemble the response from the effective settings, the .env seed, secrets."""
+        return cls(
+            evaluator_provider=settings.evaluator_provider,
+            evaluator_model=settings.evaluator_model,
+            schedule_cron=settings.schedule_cron,
+            schedule_timezone=settings.schedule_timezone,
+            enrichment_mode=settings.enrichment_mode,
+            voice=VoiceIn(
+                tone=settings.voice.tone,
+                person=settings.voice.person,
+                style_notes=settings.voice.style_notes,
+            ),
+            env_defaults=SettingsDefaults.from_settings(env_defaults),
+            secrets=[SecretStatus(**s) for s in secrets],
+        )
+
+
+class SettingsDefaults(BaseModel):
+    """The `.env`-derived global settings, for the UI's differs-from-.env diff."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    evaluator_provider: str
+    evaluator_model: str | None
+    schedule_cron: str
+    schedule_timezone: str
+    enrichment_mode: str
+    voice: VoiceIn
+
+    @classmethod
+    def from_settings(cls, settings: AppSettings) -> "SettingsDefaults":
+        """Build from an AppSettings derived purely from ``.env``."""
+        return cls(
+            evaluator_provider=settings.evaluator_provider,
+            evaluator_model=settings.evaluator_model,
+            schedule_cron=settings.schedule_cron,
+            schedule_timezone=settings.schedule_timezone,
+            enrichment_mode=settings.enrichment_mode,
+            voice=VoiceIn(
+                tone=settings.voice.tone,
+                person=settings.voice.person,
+                style_notes=settings.voice.style_notes,
+            ),
+        )
+
+
+class SettingsUpdate(BaseModel):
+    """Request body for ``PUT /api/settings`` — the editable global settings."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    evaluator_provider: Literal["openai", "anthropic"]
+    evaluator_model: str | None = None
+    schedule_cron: str = ""
+    schedule_timezone: str = "UTC"
+    enrichment_mode: Literal["shadow", "enforce"] = "shadow"
+    voice: VoiceIn = VoiceIn()
+
+    def to_settings(self) -> AppSettings:
+        """Map the request to the domain AppSettings entity."""
+        return AppSettings(
+            evaluator_provider=self.evaluator_provider,
+            evaluator_model=self.evaluator_model or None,
+            schedule_cron=self.schedule_cron,
+            schedule_timezone=self.schedule_timezone,
+            enrichment_mode=self.enrichment_mode,
+            voice=self.voice.to_descriptor(),
+        )
+
+
+class SecretStatus(BaseModel):
+    """A secret's masked status — never its value (ADR-031)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    name: str
+    configured: bool
+    masked: str
+    overridden: bool
+
+
+class SecretUpdate(BaseModel):
+    """Request body for ``PUT /api/settings/secrets/{name}`` — a write-only replace."""
+
+    value: str
+
+
+class SchedulePreview(BaseModel):
+    """The next few cron fire times for the schedule preview."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    next_runs: list[datetime]
+
+
+class ProfileOut(BaseModel):
+    """One stored search profile as the Settings UI sees it."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: int
+    name: str
+    query: str
+    location: str
+    work_types: list[str] | None
+    date_posted: str | None
+    active_scrapers: list[str]
+    score_threshold: int
+    top_results: int | None
+
+    @classmethod
+    def from_profile(cls, profile: SearchProfile) -> "ProfileOut":
+        """Build the response model from a stored SearchProfile."""
+        return cls(
+            id=profile.profile_id,
+            name=profile.name,
+            query=profile.query,
+            location=profile.location,
+            work_types=(
+                [w.value for w in profile.work_types] if profile.work_types else None
+            ),
+            date_posted=profile.date_posted.value if profile.date_posted else None,
+            active_scrapers=[s.value for s in profile.active_scrapers],
+            score_threshold=profile.score_threshold,
+            top_results=profile.top_results,
+        )
+
+
+class ProfileIn(BaseModel):
+    """Request body for creating/updating a search profile."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    name: str = ""
+    query: str
+    location: str | None = None
+    work_types: list[str] | None = None
+    date_posted: str | None = "3days"
+    active_scrapers: list[str] = ["linkedin", "indeed", "glassdoor", "ziprecruiter"]
+    score_threshold: int = 75
+    top_results: int | None = None
+
+    def to_profile(self, profile_id: int = 0) -> SearchProfile:
+        """Map the request to a SearchProfile, applying the location-resolution rule.
+
+        Raises:
+            ValueError: On an unknown enum value, or a missing location when the work
+                type is not remote-only (mirrors ``SearchProfile.from_env``).
+        """
+        work_types = (
+            [WorkType(w) for w in self.work_types] if self.work_types else None
+        )
+        location = self.location
+        if not location:
+            if work_types == [WorkType.REMOTE]:
+                location = "United States"
+            else:
+                raise ValueError(
+                    "location is required unless the work type is remote only"
+                )
+        return SearchProfile(
+            profile_id=profile_id,
+            name=self.name,
+            query=self.query,
+            location=location,
+            work_types=work_types,
+            date_posted=DatePosted(self.date_posted) if self.date_posted else None,
+            active_scrapers=[ScraperName(s) for s in self.active_scrapers],
+            score_threshold=self.score_threshold,
+            top_results=self.top_results,
+        )

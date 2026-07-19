@@ -75,8 +75,10 @@ def test_migrations_create_all_tables_on_fresh_db():
     tables = _table_names(conn)
     assert "resumes" in tables
     assert "generations" in tables
+    assert "settings" in tables  # migration 6 (W7)
+    assert "search_profiles" in tables  # migration 6 (W7)
     versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations")]
-    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5]
+    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5, 6]
 
     # Migration 5 (W6): the async status column exists and defaults to 'ready'.
     columns = _generations_columns(conn)
@@ -137,7 +139,7 @@ def test_migration_3_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     versions = [
         row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4, 5]
+    assert versions == [1, 2, 3, 4, 5, 6]
     repo2.close()
 
 
@@ -190,5 +192,5 @@ def test_migrations_4_and_5_upgrade_existing_store_without_touching_jobs(tmp_pat
     versions = [
         row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4, 5]
+    assert versions == [1, 2, 3, 4, 5, 6]
     repo.close()

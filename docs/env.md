@@ -7,6 +7,16 @@ env_file in docker-compose.yml.
 Never commit .env to Git. Copy .env.example to .env and replace
 all placeholder values with real credentials before running.
 
+**`.env` seeds the database, then the DB wins (W7, ADR-031).** On first run the
+operational settings (evaluator provider/model, cron, timezone, `ENRICHMENT_MODE`,
+voice) and the search profiles (`PROFILE_N_*` / legacy `SEARCH_QUERY`) are copied into
+the SQLite `settings` + `search_profiles` tables and are **authoritative thereafter** —
+edit them in the browser Settings screen, not `.env`. Editing `.env` after the first
+run no longer changes those values (the web UI shows a "differs from .env" indicator
+when they diverge). **Secrets are the exception:** an API key in `.env` stays the
+fallback default and is only overridden when you replace it in the UI. `.env`-only
+toggles that are not web-editable (e.g. `SCHEDULE_ENABLED`, `DB_PATH`) still apply.
+
 ---
 
 ## Required Variables

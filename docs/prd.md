@@ -324,8 +324,20 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   `failed` on the next poll (recovering a task lost to a restart), and a `ready` row
   whose file has vanished returns **410 Gone** so the chip re-generates. This reuses
   Story F's whole synchronous pipeline; W6 added only the async `status` column, the
-  API, and the chip. The in-browser voice form (cover letters use the env-seeded
-  default voice for now) and the rest of Settings arrive with W7.
+  API, and the chip. **W7 made the Settings screen fully live** — the `.env`-only
+  config is now web-editable and persistent: a `settings` table and a
+  `search_profiles` table are seeded from `.env` on first run and authoritative
+  thereafter (ADR-031). All five rail sections work: **Voice & tone** (global voice
+  descriptor + live preview), **Match threshold** (per-profile, ADR-033), **Run
+  schedule** (cron + timezone with a "Next 3 runs" preview), **Search profiles** (full
+  CRUD), and **Evaluator provider** (provider/model + the API keys). Secrets are
+  **write-only** — the API returns only a masked suffix and a server-computed "differs
+  from .env" indicator, never a key; a replace persists and a reset reverts to `.env`.
+  Runs pick up the DB config through an env bridge that writes effective settings into
+  `os.environ` at run start (ADR-035), so edits take effect with no adapter changes.
+  **Deferred:** the live cron reschedule without a restart (needs the in-process
+  scheduler, ADR-032) — a saved cron applies on the next process start; and
+  per-profile provider/voice.
 - ~~No database — file output only~~ **Superseded (B1, ADR-023).** A SQLite store
   (`data/agent.db`) now persists jobs and their cross-provider sightings behind
   `JobRepositoryPort`: a seen job is not re-scored, and its stored evaluation is

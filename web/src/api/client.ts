@@ -11,6 +11,12 @@ export type ResumeState = components["schemas"]["ResumeState"];
 export type GenerationOut = components["schemas"]["GenerationOut"];
 export type GenerationKind = GenerationOut["kind"];
 export type GenerationStatus = GenerationOut["status"];
+export type SettingsOut = components["schemas"]["SettingsOut"];
+export type SettingsUpdate = components["schemas"]["SettingsUpdate"];
+export type SecretStatus = components["schemas"]["SecretStatus"];
+export type SchedulePreview = components["schemas"]["SchedulePreview"];
+export type ProfileOut = components["schemas"]["ProfileOut"];
+export type ProfileIn = components["schemas"]["ProfileIn"];
 
 // The six human-set statuses the API accepts for a write (ui-spec §4).
 export type HumanStatus = components["schemas"]["StatusUpdate"]["status"];
@@ -33,6 +39,10 @@ async function request<T>(
   });
   if (!res.ok) {
     throw new Error(`API request failed: ${res.status} ${res.statusText}`);
+  }
+  // 204 No Content (e.g. DELETE) has no body to parse.
+  if (res.status === 204) {
+    return undefined as T;
   }
   return (await res.json()) as T;
 }
@@ -83,6 +93,27 @@ export const api = {
       body: { kind },
     }),
   getGeneration: (id: string) => request<GenerationOut>(`/api/generations/${id}`),
+  getSettings: () => request<SettingsOut>("/api/settings"),
+  updateSettings: (body: SettingsUpdate) =>
+    request<SettingsOut>("/api/settings", { method: "PUT", body }),
+  setSecret: (name: string, value: string) =>
+    request<SecretStatus>(`/api/settings/secrets/${name}`, {
+      method: "PUT",
+      body: { value },
+    }),
+  clearSecret: (name: string) =>
+    request<SecretStatus>(`/api/settings/secrets/${name}`, { method: "DELETE" }),
+  getSchedulePreview: (cron: string, timezone: string) =>
+    request<SchedulePreview>(
+      `/api/settings/schedule/preview?cron=${encodeURIComponent(cron)}&timezone=${encodeURIComponent(timezone)}`,
+    ),
+  listProfiles: () => request<ProfileOut[]>("/api/profiles"),
+  createProfile: (body: ProfileIn) =>
+    request<ProfileOut>("/api/profiles", { method: "POST", body }),
+  updateProfile: (id: number, body: ProfileIn) =>
+    request<ProfileOut>(`/api/profiles/${id}`, { method: "PUT", body }),
+  deleteProfile: (id: number) =>
+    request<void>(`/api/profiles/${id}`, { method: "DELETE" }),
 };
 
 /**

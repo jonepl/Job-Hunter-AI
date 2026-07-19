@@ -13,8 +13,10 @@ from src.adapters.output.email_output import EmailOutput
 from src.adapters.output.file_output import FileOutput
 from src.adapters.repository.factory import (
     build_generation_repository,
+    build_profile_repository,
     build_repository,
     build_resume_repository,
+    build_settings_repository,
 )
 from src.adapters.resume.factory import build_resume_parser
 from src.adapters.scrapers.scraper_factory import build_scrapers
@@ -22,6 +24,19 @@ from src.core.domain.search_profile import SearchProfile
 from src.core.services.generation_service import GenerationService
 from src.core.services.job_search_service import JobSearchService
 from src.core.services.resume_service import ResumeService
+from src.core.services.settings_service import SettingsService
+
+
+def build_settings_service() -> SettingsService:
+    """Build the SettingsService over the settings + profile repositories (W7).
+
+    Shared by the run pipeline (seed + per-run env bridge) and the API's Settings
+    routes so the DB-backed config lives in exactly one place (ADR-031).
+
+    Returns:
+        A ready SettingsService.
+    """
+    return SettingsService(build_settings_repository(), build_profile_repository())
 
 
 def build_resume_service() -> ResumeService:

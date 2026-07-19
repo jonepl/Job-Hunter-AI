@@ -33,8 +33,12 @@
 
 ## Multi-profile config
 
-- `PROFILE_COUNT` sets the number of active profiles; each profile is configured
-  via `PROFILE_N_*` variables (query, location, work type, date posted, scrapers,
-  score threshold, top results).
-- Falls back to legacy single-search mode (`SEARCH_QUERY` etc.) when
-  `PROFILE_COUNT` is not set.
+- **Profiles and global settings load from the DB, not `.env` directly (W7,
+  ADR-031).** `SettingsService` seeds the `search_profiles` + `settings` tables from
+  `.env` on first run and is authoritative thereafter; `bootstrap.load_profiles()`
+  reads the store, and the run entrypoint bridges the global settings into
+  `os.environ` (ADR-035). Edit profiles/settings in the browser Settings screen.
+- `PROFILE_COUNT` + `PROFILE_N_*` (or legacy `SEARCH_QUERY`) are the **seed** source
+  for the profile store on first run (query, location, work type, date posted,
+  scrapers, score threshold, top results); after seeding, `.env` changes to these no
+  longer take effect.

@@ -486,7 +486,16 @@ code is marked inferred.
 
 ## ADR-031: Settings persistence — DB for preferences, write-only secrets
 
-- **Status:** Accepted
+- **Status:** Accepted — implemented by **W7** (the `settings` + `search_profiles`
+  tables, `SettingsService`, `GET/PUT /api/settings`, `PUT/DELETE
+  /api/settings/secrets/{name}`, profile CRUD, and the browser Settings screen). Two
+  parts are **deferred to a follow-up**: the in-process scheduler on FastAPI lifespan
+  + live cron reschedule (ADR-032) — until then a saved cron applies on the next
+  process start — and per-run DB re-reads (W7 applies settings once at run start via
+  the env bridge, ADR-035). One amendment: secrets are **editable and persisted in
+  the DB**, seeded from `.env`, with a server-computed **"differs from .env"** flag —
+  not `.env`-only. The API still never returns a full secret (masked suffix +
+  configured/overridden flags only).
 - **Context:** All configuration lived in `.env`, read at process start. A web
   Settings screen requires a writable store, and a rule for how a running scheduler
   picks up changes. Secrets need different handling from preferences.
@@ -601,3 +610,31 @@ code is marked inferred.
   rules in B1 (contention), W1 (binding), and F/W6 (file storage) instead of silent
   assumptions. If the app ever leaves localhost, the binding trigger forces the auth
   decision rather than leaving it implicit.
+
+## ADR-035: Settings applied to the environment (the env bridge)
+
+- **Status:** Accepted (implements part of ADR-031, added in W7)
+- **Context:** ADR-031 moves operational config from `.env` into a DB `settings`
+  table. But every existing factory and adapter already reads its config from
+  `os.getenv` — `EVALUATOR_PROVIDER`, `EVALUATOR_MODEL`, `*_API_KEY`,
+  `ENRICHMENT_MODE`, `GEMINI_MODEL`, `SCHEDULE_CRON`, cost rates, and more. Making DB
+  edits take effect could mean threading a settings object through every one of those
+  constructors — a wide, invasive refactor for a single-user tool.
+- **Decision:** Bridge, don't rewire. `SettingsService.apply_to_environment()` writes
+  the effective DB settings (and any secret overrides) **back into `os.environ`** at
+  the run entrypoint (`src/main.py`, before CLI overrides), so the unchanged factories
+  read the current configuration transparently. Precedence is **`.env` → DB → CLI**:
+  `.env` seeds and is the fallback, the DB overrides it, and a CLI flag (testing only)
+  overrides both because it is applied last. **Search profiles are the exception** —
+  they are read directly from the DB (`ProfileRepository`), never bridged through the
+  environment, since they are structured records, not scalar env vars. Secrets are
+  seeded lazily: the `.env` value stays the default and is only copied into the DB
+  when the user explicitly replaces it (so keys are not duplicated into SQLite
+  unnecessarily).
+- **Consequences:** DB-backed settings take effect with **zero changes** to the
+  evaluator, enrichment, scheduler, and cost factories. The cost is one `os.environ`
+  mutation per run — contained, reversible, and easy to reason about. Because the
+  bridge runs at the entrypoint (not per adapter build), settings are read **once at
+  run start**; per-run re-reads inside a long-lived scheduler process arrive with the
+  in-process scheduler (ADR-032). If a future entrypoint (an API-triggered run, W8)
+  needs current settings, it calls `apply_to_environment()` itself.
