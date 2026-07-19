@@ -66,7 +66,7 @@ from `RESUME_PATH`.
 | Variable | Description | Default |
 | --- | --- | --- |
 | RESUME_PATH | Path to the master resume PDF used to **auto-seed** the cache on a first run (when no version has been uploaded yet). Once cached, runs read the stored version and never re-open this file. Persists via the `./docs/resume` volume mount. | `docs/resume/resume.pdf` |
-| RESUME_MAX_SIZE_BYTES | Upper size limit (in bytes) for an ingested resume. An upload over this is rejected with a clear error before parsing. Reused by the future browser upload (W5). | `5000000` |
+| RESUME_MAX_SIZE_BYTES | Upper size limit (in bytes) for an ingested resume. An upload over this is rejected with a clear error before parsing. Enforced for both the CLI and the browser upload (`POST /api/resume`, W5), which also accepts `.docx` as well as `.pdf`. | `5000000` |
 
 ---
 

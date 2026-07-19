@@ -125,10 +125,89 @@ export interface paths {
         patch: operations["update_saved_api_jobs__job_id__saved_patch"];
         trace?: never;
     };
+    "/api/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Resume
+         * @description Return the active master resume and its version history.
+         *
+         *     Args:
+         *         service: The shared ResumeService (injected).
+         *
+         *     Returns:
+         *         The panel state — active version plus every version, newest-first. An empty
+         *         store yields ``{active: null, versions: []}`` (a normal empty state).
+         */
+        get: operations["get_resume_api_resume_get"];
+        put?: never;
+        /**
+         * Upload Resume
+         * @description Parse and store an uploaded resume as the new active version.
+         *
+         *     Identical bytes to an existing version are re-activated, not re-parsed (ADR-028).
+         *
+         *     Args:
+         *         file: The uploaded ``.pdf`` or ``.docx`` file.
+         *         service: The shared ResumeService (injected).
+         *
+         *     Returns:
+         *         The refreshed panel state after the upload.
+         *
+         *     Raises:
+         *         HTTPException: 400 when the file is too large, empty, unparseable, or an
+         *             unsupported format — with a clear message.
+         */
+        post: operations["upload_resume_api_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resume/versions/{version}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Version
+         * @description Restore an earlier stored version as the active one.
+         *
+         *     Args:
+         *         version: The version number to activate.
+         *         service: The shared ResumeService (injected).
+         *
+         *     Returns:
+         *         The refreshed panel state after the switch.
+         *
+         *     Raises:
+         *         HTTPException: 404 when no version with that number exists.
+         */
+        post: operations["activate_version_api_resume_versions__version__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_upload_resume_api_resume_post */
+        Body_upload_resume_api_resume_post: {
+            /** File */
+            file: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -235,6 +314,42 @@ export interface components {
              * Format: date-time
              */
             lastSeenAt: string;
+        };
+        /**
+         * ResumeOut
+         * @description One stored master-resume version, provenance only (ui-spec §14.2).
+         *
+         *     Carries *about* the resume — version, source file, size, parsed counts, which
+         *     version is active — never the resume text itself (``raw_text``) or its content
+         *     hash. The privacy boundary (ADR-028): resume content never leaves the API.
+         */
+        ResumeOut: {
+            /** Version */
+            version: number;
+            /** Filename */
+            filename: string;
+            /** Sizebytes */
+            sizeBytes: number;
+            /** Skillcount */
+            skillCount: number;
+            /** Rolecount */
+            roleCount: number;
+            /** Isactive */
+            isActive: boolean;
+            /** Uploadedat */
+            uploadedAt: string | null;
+        };
+        /**
+         * ResumeState
+         * @description The master-resume panel's full read model — active version plus history.
+         *
+         *     ``versions`` is newest-first; ``active`` is the one with ``is_active`` (or None
+         *     when nothing is stored yet — a normal empty state, not an error).
+         */
+        ResumeState: {
+            active: components["schemas"]["ResumeOut"] | null;
+            /** Versions */
+            versions: components["schemas"]["ResumeOut"][];
         };
         /**
          * SavedUpdate
@@ -422,6 +537,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_resume_api_resume_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeState"];
+                };
+            };
+        };
+    };
+    upload_resume_api_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_resume_api_resume_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_version_api_resume_versions__version__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeState"];
                 };
             };
             /** @description Validation Error */

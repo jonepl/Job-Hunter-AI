@@ -82,14 +82,14 @@ The CLI has four modes: the default (no-subcommand) invocation runs a search; th
 (`generate resume <job_id>` / `generate cover-letter <job_id>` with `--tone` /
 `--person` / `--style-notes`). Each dispatches to an argparse-free runner
 (`src/mark_runner.py`, `src/resume_runner.py`, `src/generation_runner.py`) so the API
-can reuse the same paths (the resume runner shares the `ResumeService` the future
-`POST /resume` upload will use, W5; the generation runner shares the
+can reuse the same paths (the resume runner shares the `ResumeService` the browser
+`POST /api/resume` upload now drives, W5; the generation runner shares the
 `GenerationService` W6 will drive asynchronously). Only the six **human-set** statuses
 are selectable via `mark` — machine states are never user-assignable (ADR-025). The
 `generate` CLI prints only the file path and provenance, never document content
 (ADR-028/029).
 
-**API surface (as of W2).** All routes under `/api`, no business logic in the
+**API surface (as of W5).** All routes under `/api`, no business logic in the
 router (ADR-026):
 
 | Method | Path | Purpose |
@@ -98,11 +98,17 @@ router (ADR-026):
 | `GET` | `/api/jobs/{id}` | Detail fan-out — `JobDetail` (breakdown, skills, status history); 404 if missing |
 | `PATCH` | `/api/jobs/{id}/status` | `{status, note?}` → `set_status` + history row; 422 on a machine status |
 | `PATCH` | `/api/jobs/{id}/saved` | `{saved}` → `set_saved` (no history row) |
+| `GET` | `/api/resume` | Master-resume panel state — active `ResumeOut` + version history (provenance only) |
+| `POST` | `/api/resume` | Multipart upload → `ResumeService.ingest` (parse-once); 400 on oversize/unparseable/unsupported |
+| `POST` | `/api/resume/versions/{v}/activate` | Restore an earlier stored version; 404 if absent |
 
-The two `PATCH` routes are the web app's first mutations; the React client applies
-them optimistically (ui-spec §8) and rolls back on error. No endpoint ever returns
-generated-document content or raw resume text (ui-spec §7). Run history,
-generation, settings, and resume-upload routes arrive with later stories.
+The `jobs` `PATCH` routes are the web app's first mutations; the React client
+applies them optimistically (ui-spec §8) and rolls back on error. The `resume`
+routes (W5) drive the browser master-resume upload — the same `ResumeService` the
+CLI uses. No endpoint ever returns generated-document content or raw resume text —
+`ResumeOut` carries provenance only, never `raw_text`/`content_hash` (ui-spec §7,
+ADR-028). Run history, generation, and the rest of Settings arrive with later
+stories.
 
 ```
    CLI  (src/main, src/cli) ─┐
@@ -159,11 +165,12 @@ job-search-agent/
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
 │   │   ├── __init__.py
 │   │   ├── main.py                      ← app factory (create_app); uvicorn entrypoint
-│   │   ├── deps.py                      ← get_repository() — reuses build_repository()
-│   │   ├── schemas.py                   ← JobSummary / JobDetail + PATCH bodies (camelCase)
+│   │   ├── deps.py                      ← get_repository() + get_resume_service()
+│   │   ├── schemas.py                   ← JobSummary / JobDetail / ResumeOut / ResumeState + bodies (camelCase)
 │   │   └── routers/
 │   │       ├── __init__.py
-│   │       └── jobs.py                  ← GET /api/jobs · GET/PATCH /api/jobs/{id}
+│   │       ├── jobs.py                  ← GET /api/jobs · GET/PATCH /api/jobs/{id}
+│   │       └── resume.py               ← GET/POST /api/resume · POST .../versions/{v}/activate (W5)
 │   │
 │   ├── cli/                             ← CLI concerns
 │   │   ├── __init__.py
@@ -249,10 +256,12 @@ job-search-agent/
 │       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history + resumes + generations)
 │       │   └── factory.py               ← build_repository() + build_resume_repository() + build_generation_repository()
 │       │
-│       ├── resume/                      ← Resume parsing adapter (ResumeParserPort)
+│       ├── resume/                      ← Resume parsing adapters (ResumeParserPort)
 │       │   ├── __init__.py
-│       │   ├── pdf_parser.py            ← PyPDF2ResumeParser (bytes → text)
-│       │   └── factory.py               ← build_resume_parser()
+│       │   ├── pdf_parser.py            ← PyPDF2ResumeParser (PDF bytes → text)
+│       │   ├── docx_parser.py           ← DocxResumeParser (.docx bytes → text, W5)
+│       │   ├── format_router.py         ← ResumeFormatRouter (magic-byte PDF/DOCX dispatch, W5)
+│       │   └── factory.py               ← build_resume_parser() → format router
 │       │
 │       ├── generation/                  ← Document generation adapters (F, ADR-029)
 │       │   ├── __init__.py

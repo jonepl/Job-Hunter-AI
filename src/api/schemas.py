@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from src.core.domain.match_result import ScoreBreakdown
+from src.core.domain.resume import Resume
 from src.core.domain.status_history_entry import StatusHistoryEntry
 from src.core.domain.stored_job import StoredJob
 
@@ -218,3 +219,57 @@ class SavedUpdate(BaseModel):
     """Request body for ``PATCH /jobs/{id}/saved`` — the bookmark toggle."""
 
     saved: bool
+
+
+class ResumeOut(BaseModel):
+    """One stored master-resume version, provenance only (ui-spec §14.2).
+
+    Carries *about* the resume — version, source file, size, parsed counts, which
+    version is active — never the resume text itself (``raw_text``) or its content
+    hash. The privacy boundary (ADR-028): resume content never leaves the API.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    version: int
+    filename: str
+    size_bytes: int
+    skill_count: int
+    role_count: int
+    is_active: bool
+    uploaded_at: datetime | None
+
+    @classmethod
+    def from_resume(cls, resume: Resume) -> "ResumeOut":
+        """Build the provenance-only response model from a stored Resume."""
+        return cls(
+            version=resume.version,
+            filename=resume.filename,
+            size_bytes=resume.size_bytes,
+            skill_count=resume.skill_count,
+            role_count=resume.role_count,
+            is_active=resume.is_active,
+            uploaded_at=resume.uploaded_at,
+        )
+
+
+class ResumeState(BaseModel):
+    """The master-resume panel's full read model — active version plus history.
+
+    ``versions`` is newest-first; ``active`` is the one with ``is_active`` (or None
+    when nothing is stored yet — a normal empty state, not an error).
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    active: ResumeOut | None
+    versions: list[ResumeOut]
+
+    @classmethod
+    def from_versions(cls, versions: list[Resume]) -> "ResumeState":
+        """Build the panel state from a list of stored versions (newest-first)."""
+        active = next((r for r in versions if r.is_active), None)
+        return cls(
+            active=ResumeOut.from_resume(active) if active is not None else None,
+            versions=[ResumeOut.from_resume(r) for r in versions],
+        )

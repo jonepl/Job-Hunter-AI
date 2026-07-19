@@ -1,4 +1,10 @@
-import type { JobDetail, JobSummary, ScoreCategoryRow } from "../src/api/client";
+import type {
+  JobDetail,
+  JobSummary,
+  ResumeOut,
+  ResumeState,
+  ScoreCategoryRow,
+} from "../src/api/client";
 
 /** Build a JobSummary fixture with sensible defaults; override any field. */
 export function makeJob(overrides: Partial<JobSummary> = {}): JobSummary {
@@ -71,4 +77,25 @@ export function makeJobDetail(overrides: Partial<JobDetail> = {}): JobDetail {
     lastSeenAt: "2026-07-14T09:00:00",
     ...overrides,
   };
+}
+
+/** Build a ResumeOut (one stored version) fixture; override any field. */
+export function makeResume(overrides: Partial<ResumeOut> = {}): ResumeOut {
+  return {
+    version: 1,
+    filename: "avery-reyes_master-resume.pdf",
+    sizeBytes: 214_000,
+    skillCount: 41,
+    roleCount: 5,
+    isActive: true,
+    uploadedAt: "2026-06-28T09:00:00",
+    ...overrides,
+  };
+}
+
+/** Build a ResumeState (active + version history) from the given versions. */
+export function makeResumeState(overrides: Partial<ResumeState> = {}): ResumeState {
+  const versions = overrides.versions ?? [makeResume()];
+  const active = overrides.active ?? versions.find((v) => v.isActive) ?? null;
+  return { active, versions, ...overrides };
 }
