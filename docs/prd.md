@@ -295,8 +295,14 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   /api/jobs/{id}` fans out the nine-category breakdown, skills, and status history;
   `PATCH /api/jobs/{id}/status` and `/saved` let you mark status (with the
   reactivation soft-confirm) and bookmark a job from the UI, applied optimistically
-  (ADR-025). Later W stories add status filter views, document generation, upload,
-  and settings.
+  (ADR-025). **W3 added the status filter views** — the list opens on the **Triage**
+  queue (`new`/`evaluated`), with **Pipeline** (`applied`/`started`/`interviewing`),
+  **All**, and **Saved** one tap away, a visible clearable filter chip, and a live
+  `N active · M total` count. Filtering is client-side over the single cached job
+  list (no backend change) with a distinct filtered-empty state per view. Deferred:
+  the per-run pre-filter count (needs run persistence — no runs table yet) and the
+  persistent left-rail nav (arrives with the profiles/runs-nav story). Later W stories
+  add document generation, upload, and settings.
 - ~~No database — file output only~~ **Superseded (B1, ADR-023).** A SQLite store
   (`data/agent.db`) now persists jobs and their cross-provider sightings behind
   `JobRepositoryPort`: a seen job is not re-scored, and its stored evaluation is
