@@ -9,6 +9,7 @@ import type {
   ProfileOut,
   ResumeOut,
   ResumeState,
+  RunOut,
   ScoreCategoryRow,
   SecretStatus,
   SettingsOut,
@@ -184,6 +185,23 @@ export function makeProfile(overrides: Partial<ProfileOut> = {}): ProfileOut {
     activeScrapers: ["linkedin", "indeed"],
     scoreThreshold: 75,
     topResults: null,
+    ...overrides,
+  };
+}
+
+/** Build a RunOut fixture with sensible defaults; override any field. */
+export function makeRun(overrides: Partial<RunOut> = {}): RunOut {
+  return {
+    id: "run-abc",
+    status: "running",
+    trigger: "web",
+    profilesRun: 0,
+    jobsFound: 0,
+    newJobs: 0,
+    qualifying: 0,
+    error: "",
+    startedAt: "2026-07-19T09:00:00",
+    finishedAt: null,
     ...overrides,
   };
 }

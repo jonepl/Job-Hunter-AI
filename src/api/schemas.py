@@ -22,6 +22,7 @@ from src.core.domain.generation import (
 )
 from src.core.domain.match_result import ScoreBreakdown
 from src.core.domain.resume import Resume
+from src.core.domain.run_record import RunRecord, RunStatus, RunTrigger
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
 from src.core.domain.status_history_entry import StatusHistoryEntry
@@ -550,4 +551,47 @@ class ProfileIn(BaseModel):
             active_scrapers=[ScraperName(s) for s in self.active_scrapers],
             score_threshold=self.score_threshold,
             top_results=self.top_results,
+        )
+
+
+# --- W8: web-triggered runs ------------------------------------------------
+
+
+class RunOut(BaseModel):
+    """One run's lifecycle + summary for the "Run search now" control (W8).
+
+    Carries the async ``status`` and the summary counts (only meaningful once
+    ``status == "succeeded"``), the trigger, and timing. ``error`` is a bare
+    exception *type name* on a failed run — never a raw message (CLAUDE.md #2).
+    It carries no job content: the evaluated jobs land in the job list, which the
+    client refetches when a run succeeds.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: str
+    status: RunStatus
+    trigger: RunTrigger
+    profiles_run: int
+    jobs_found: int
+    new_jobs: int
+    qualifying: int
+    error: str
+    started_at: datetime
+    finished_at: datetime | None
+
+    @classmethod
+    def from_run(cls, run: RunRecord) -> "RunOut":
+        """Build the response model from a RunRecord."""
+        return cls(
+            id=run.id,
+            status=run.status,
+            trigger=run.trigger,
+            profiles_run=run.profiles_run,
+            jobs_found=run.jobs_found,
+            new_jobs=run.new_jobs,
+            qualifying=run.qualifying,
+            error=run.error,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
         )

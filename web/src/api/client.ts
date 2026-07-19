@@ -17,6 +17,8 @@ export type SecretStatus = components["schemas"]["SecretStatus"];
 export type SchedulePreview = components["schemas"]["SchedulePreview"];
 export type ProfileOut = components["schemas"]["ProfileOut"];
 export type ProfileIn = components["schemas"]["ProfileIn"];
+export type RunOut = components["schemas"]["RunOut"];
+export type RunStatus = RunOut["status"];
 
 // The six human-set statuses the API accepts for a write (ui-spec §4).
 export type HumanStatus = components["schemas"]["StatusUpdate"]["status"];
@@ -114,6 +116,9 @@ export const api = {
     request<ProfileOut>(`/api/profiles/${id}`, { method: "PUT", body }),
   deleteProfile: (id: number) =>
     request<void>(`/api/profiles/${id}`, { method: "DELETE" }),
+  startRun: () => request<RunOut>("/api/runs", { method: "POST" }),
+  getRun: (id: string) => request<RunOut>(`/api/runs/${id}`),
+  listRuns: () => request<RunOut[]>("/api/runs"),
 };
 
 /**

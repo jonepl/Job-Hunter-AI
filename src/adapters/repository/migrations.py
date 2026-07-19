@@ -179,6 +179,32 @@ CREATE INDEX IF NOT EXISTS idx_search_profiles_position
     ON search_profiles (position);
 """
 
+# Migration 7 (W8) — the web-triggered run lifecycle.
+#
+# The browser "Run search now" button starts the multi-profile pipeline as a
+# background task and polls a row here for status. A run is created ``running``,
+# then updated to ``succeeded`` (with a small summary — profiles run, jobs found,
+# newly evaluated, qualifying) or ``failed`` (type-name only, never a raw message).
+# ``created_at``/``started_at`` doubles as the timeout clock so a task lost to a
+# restart self-heals to ``failed`` on the next poll. Summary only — no job content
+# lives here; the pipeline writes jobs to the ``jobs`` table as always.
+_MIGRATION_7 = """
+CREATE TABLE IF NOT EXISTS runs (
+    id            TEXT PRIMARY KEY,
+    status        TEXT NOT NULL,
+    trigger       TEXT NOT NULL DEFAULT 'web',
+    profiles_run  INTEGER NOT NULL DEFAULT 0,
+    jobs_found    INTEGER NOT NULL DEFAULT 0,
+    new_jobs      INTEGER NOT NULL DEFAULT 0,
+    qualifying    INTEGER NOT NULL DEFAULT 0,
+    error         TEXT NOT NULL DEFAULT '',
+    started_at    TEXT NOT NULL,
+    finished_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_runs_started ON runs (started_at);
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -188,6 +214,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (4, _MIGRATION_4),
     (5, _MIGRATION_5),
     (6, _MIGRATION_6),
+    (7, _MIGRATION_7),
 ]
 
 

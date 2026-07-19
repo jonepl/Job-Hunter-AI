@@ -340,6 +340,13 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   (`SCHEDULE_ENABLED=true`), so a saved cron reschedules the running job live — no
   restart — and every scheduled fire re-reads settings + profiles from the DB
   (`run_scheduled_cycle`). **Still deferred:** per-profile provider/voice.
+  **W8 then added "Run search now":** `POST /api/runs` kicks the same multi-profile
+  pipeline a scheduled fire runs, without waiting for cron. It reuses the W6 async
+  shape — a `running` `RunRecord` (migration 7) is returned immediately and a FastAPI
+  background task executes the pipeline, re-reading settings + profiles from the DB;
+  the browser polls the run, then refetches the job list. Only one run executes at a
+  time (single-flight → 409); a run with no profiles is a 400; a run lost to a restart
+  self-heals to `failed`. The record is summary-only (no job content).
 - ~~No database — file output only~~ **Superseded (B1, ADR-023).** A SQLite store
   (`data/agent.db`) now persists jobs and their cross-provider sightings behind
   `JobRepositoryPort`: a seen job is not re-scored, and its stored evaluation is

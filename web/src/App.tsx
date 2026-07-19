@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { JobList } from "./screens/JobList";
 import { Settings } from "./screens/Settings";
+import { RunButton } from "./components/RunButton";
 import { ThemeToggle } from "./components/ThemeToggle";
 
 // A lightweight view switch held in local state — the app has two top-level
@@ -18,6 +19,7 @@ export function App() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <span className="font-display text-h2">Job Hunter AI</span>
           <div className="flex items-center gap-3">
+            {view === "search" && <RunButton />}
             {view === "search" && (
               <button
                 type="button"

@@ -110,6 +110,9 @@ router (ADR-026):
 | `GET` | `/api/settings/schedule/preview` | Next 3 cron fire times; **400** on an invalid expression |
 | `GET/POST` | `/api/profiles` | List / create search profiles |
 | `PUT/DELETE` | `/api/profiles/{id}` | Update / delete a profile; 404 unknown; **409** deleting the last one (W7) |
+| `POST` | `/api/runs` | Start a background pipeline run (202); **409** if one is already running, **400** if no profiles (W8) |
+| `GET` | `/api/runs` | Recent runs, newest first (summary only) |
+| `GET` | `/api/runs/{id}` | Poll one run; flips a timed-out `running` → `failed`; 404 if absent |
 
 The `jobs` `PATCH` routes are the web app's first mutations; the React client
 applies them optimistically (ui-spec §8) and rolls back on error. The `resume`
@@ -125,8 +128,19 @@ and `GenerationOut` carry provenance only, never `raw_text`/`content_hash` or do
 text (ui-spec §7, ADR-028/029/034). The `settings`/`profiles` routes (W7) make the
 operational config web-editable over a DB-backed `SettingsService`: `.env` seeds the
 `settings` + `search_profiles` tables on first run and is authoritative thereafter
-(ADR-031). Secrets are **write-only** — the API returns only a masked suffix and a
-server-computed "differs from .env" flag, never a key. Because every factory reads
+(ADR-031). The `runs` routes (W8) let the browser kick a run without waiting for cron:
+`POST /api/runs` runs the same multi-profile pipeline a scheduled fire does, but a run
+is far too slow to block the request, so it reuses the W6 async shape — a `running`
+`RunRecord` is created and returned immediately (202), a FastAPI `BackgroundTask`
+executes the pipeline (re-reading settings + profiles from the DB via the same env
+bridge, ADR-035), and the client polls the row until a terminal `status`, then refetches
+the job list. Only **one run executes at a time** (one SQLite writer, ADR-034 §1) — a
+second `POST` is a **409**; a run with no profiles is a **400**; a run lost to a restart
+self-heals to `failed` on read past `RUN_TIMEOUT_SECONDS`. `RunOut` carries a **summary
+only** (profiles run, jobs found, newly evaluated, qualifying) — never job content, and a
+failed run's `error` is a bare exception type name. Secrets are **write-only** — the API
+returns only a masked suffix and a server-computed "differs from .env" flag, never a key.
+Because every factory reads
 `os.getenv`, `SettingsService.apply_to_environment()` bridges the DB values back into
 the environment at the run entrypoint (ADR-035), so DB edits take effect with no
 adapter changes (precedence `.env` → DB → CLI). Run history and the live cron
@@ -182,20 +196,21 @@ job-search-agent/
 │   ├── resume_runner.py                 ← resume upload/list/activate — resume CLI backend
 │   ├── generation_runner.py             ← generate resume/cover-letter — generation CLI backend
 │   ├── scheduler.py                     ← APScheduler — Blocking (CLI) + in-process Background (web) schedulers, live reschedule
-│   ├── service_factory.py               ← Builds JobSearchService + build_resume_service() + build_generation_service()
+│   ├── service_factory.py               ← Builds JobSearchService + build_resume/generation/run_service()
 │   │
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
 │   │   ├── __init__.py
 │   │   ├── main.py                      ← app factory (create_app); uvicorn entrypoint
-│   │   ├── deps.py                      ← get_repository/resume/generation/settings_service()
-│   │   ├── schemas.py                   ← Job/Resume/Generation/Settings/Profile models + bodies (camelCase)
+│   │   ├── deps.py                      ← get_repository/resume/generation/settings/run_service()
+│   │   ├── schemas.py                   ← Job/Resume/Generation/Settings/Profile/Run models + bodies (camelCase)
 │   │   └── routers/
 │   │       ├── __init__.py
 │   │       ├── jobs.py                  ← GET /api/jobs · GET/PATCH /api/jobs/{id}
 │   │       ├── resume.py               ← GET/POST /api/resume · POST .../versions/{v}/activate (W5)
 │   │       ├── generations.py          ← POST /api/jobs/{id}/generate · GET poll/list/download (async, W6)
 │   │       ├── settings.py             ← GET/PUT /api/settings · secrets · schedule preview (W7)
-│   │       └── profiles.py             ← GET/POST/PUT/DELETE /api/profiles (CRUD, W7)
+│   │       ├── profiles.py             ← GET/POST/PUT/DELETE /api/profiles (CRUD, W7)
+│   │       └── runs.py                 ← POST /api/runs (background run) · GET poll/list (async, W8)
 │   │
 │   ├── cli/                             ← CLI concerns
 │   │   ├── __init__.py
@@ -273,13 +288,14 @@ job-search-agent/
 │       │   ├── prompts.py               ← Pre-filter prompt text
 │       │   └── factory.py               ← Builds pre-filter from ENRICHMENT_* / GEMINI_*
 │       │
-│       ├── repository/                  ← SQLite persistence (Job + Resume + Generation)
+│       ├── repository/                  ← SQLite persistence (Job + Resume + Generation + Run)
 │       │   ├── __init__.py
 │       │   ├── sqlite_repository.py     ← SQLiteJobRepository (WAL, busy_timeout, short commits)
 │       │   ├── sqlite_resume_repository.py ← SQLiteResumeRepository (versioned master resume)
 │       │   ├── sqlite_generation_repository.py ← SQLiteGenerationRepository (generation records)
-│       │   ├── migrations.py            ← Forward-only runner (… + generations + generation.status + settings + search_profiles)
-│       │   └── factory.py               ← build_repository() + build_resume_repository() + build_generation_repository()
+│       │   ├── sqlite_run_repository.py ← SQLiteRunRepository (web-run lifecycle, W8)
+│       │   ├── migrations.py            ← Forward-only runner (… + generations + settings + search_profiles + runs)
+│       │   └── factory.py               ← build_repository/resume/generation/settings/profile/run_repository()
 │       │
 │       ├── resume/                      ← Resume parsing adapters (ResumeParserPort)
 │       │   ├── __init__.py
@@ -899,6 +915,15 @@ search definition: `name`, `query`, `location`, JSON `work_types`/`active_scrape
 `.env` on first access by `SettingsService` and authoritative thereafter (ADR-031),
 behind `SettingsRepositoryPort` / `ProfileRepositoryPort`. Runs read profiles from the
 store and pick up the global settings through the env bridge (ADR-035).
+
+**Schema (migration 7 — W8).** Adds `runs` (`id` opaque PK, `status`
+`running`/`succeeded`/`failed`, `trigger`, the summary counts `profiles_run` /
+`jobs_found` / `new_jobs` / `qualifying`, `error` type-name, `started_at`,
+`finished_at`) — one **summary-only** row per web-triggered run, behind
+`RunRepositoryPort`. A run is created `running`, updated to a terminal status by the
+background task, and self-heals to `failed` on read past `RUN_TIMEOUT_SECONDS`. Only one
+row is ever `running` (single-flight, ADR-034 §1). No job content is stored — the
+pipeline writes evaluated jobs to `jobs` as always.
 
 ### Generation ports — `ResumeTailorPort` / `CoverLetterPort` / `DocxWriterPort` / `GenerationRepositoryPort`
 
