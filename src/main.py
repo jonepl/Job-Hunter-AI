@@ -48,6 +48,14 @@ async def main() -> None:
         return
 
     profiles = load_profiles()
+
+    # Apply DB-backed settings into the environment (W7 env bridge, ADR-035) so the
+    # evaluator/enrichment/schedule factories read the current config. Runs before the
+    # CLI overrides so precedence stays .env → DB → CLI (CLI wins, for testing).
+    from src.service_factory import build_settings_service
+
+    build_settings_service().apply_to_environment()
+
     apply_cli_overrides(profiles, args)
     apply_evaluator_override(args)
 

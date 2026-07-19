@@ -145,6 +145,40 @@ _MIGRATION_5 = """
 ALTER TABLE generations ADD COLUMN status TEXT NOT NULL DEFAULT 'ready';
 """
 
+# Migration 6 (W7) — web-editable, persistent configuration (ADR-031).
+#
+# ``.env`` becomes a bootstrap **seed**: on first access these tables are populated
+# from the environment and are authoritative thereafter. ``settings`` is a flat
+# key/value store for the global scalars **and** secret values (API keys); the API
+# never returns a raw secret, only a masked suffix + an "overridden vs .env" flag.
+# ``search_profiles`` is the CRUD store for the search definitions (one row per
+# profile), replacing the ``PROFILE_N_`` env-loading path at run time. JSON list
+# columns (``work_types``, ``active_scrapers``) round-trip via ``json.dumps``.
+_MIGRATION_6 = """
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS search_profiles (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    query           TEXT NOT NULL,
+    location        TEXT NOT NULL,
+    work_types      TEXT,
+    date_posted     TEXT,
+    active_scrapers TEXT NOT NULL,
+    score_threshold INTEGER NOT NULL,
+    top_results     INTEGER,
+    position        INTEGER NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_profiles_position
+    ON search_profiles (position);
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -153,6 +187,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (3, _MIGRATION_3),
     (4, _MIGRATION_4),
     (5, _MIGRATION_5),
+    (6, _MIGRATION_6),
 ]
 
 

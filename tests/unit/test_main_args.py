@@ -80,9 +80,9 @@ def _make_report_mock() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_scrapers_cli_overrides_env():
+async def test_scrapers_cli_overrides_env(tmp_path):
     """--scrapers indeed via CLI overrides ACTIVE_SCRAPERS in env."""
-    env = {**_BASE_ENV, "ACTIVE_SCRAPERS": "linkedin"}
+    env = {**_BASE_ENV, "ACTIVE_SCRAPERS": "linkedin", "DB_PATH": str(tmp_path / "a.db")}
     mock_svc = MagicMock()
     mock_svc.run = AsyncMock(return_value=_make_report_mock())
 
@@ -104,9 +104,9 @@ async def test_scrapers_cli_overrides_env():
 
 
 @pytest.mark.asyncio
-async def test_scrapers_invalid_name_exits():
+async def test_scrapers_invalid_name_exits(tmp_path):
     """--scrapers linkedin,monster → sys.exit(1) with 'Invalid scraper name' message."""
-    env = {**_BASE_ENV}
+    env = {**_BASE_ENV, "DB_PATH": str(tmp_path / "a.db")}
 
     with patch("sys.argv", ["prog", "--scrapers", "linkedin,monster"]), \
          patch.dict("os.environ", env, clear=True), \
@@ -122,9 +122,9 @@ async def test_scrapers_invalid_name_exits():
 
 
 @pytest.mark.asyncio
-async def test_scrapers_empty_string_exits():
+async def test_scrapers_empty_string_exits(tmp_path):
     """--scrapers '' (empty string) → sys.exit(1) due to empty parse result."""
-    env = {**_BASE_ENV}
+    env = {**_BASE_ENV, "DB_PATH": str(tmp_path / "a.db")}
 
     with patch("sys.argv", ["prog", "--scrapers", ""]), \
          patch.dict("os.environ", env, clear=True), \
@@ -138,9 +138,9 @@ async def test_scrapers_empty_string_exits():
 
 
 @pytest.mark.asyncio
-async def test_query_cli_overrides_env():
+async def test_query_cli_overrides_env(tmp_path):
     """--query via CLI overrides profile.query for all profiles."""
-    env = {**_BASE_ENV}
+    env = {**_BASE_ENV, "DB_PATH": str(tmp_path / "a.db")}
     mock_svc = MagicMock()
     mock_svc.run = AsyncMock(return_value=_make_report_mock())
 

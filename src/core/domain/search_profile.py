@@ -18,7 +18,10 @@ class SearchProfile(BaseModel):
     """
 
     profile_id: int
-    """Profile number (1, 2, 3...)."""
+    """Profile number (1, 2, 3...). Maps to the DB row id once stored (W7)."""
+
+    name: str = ""
+    """Human-readable label for the profile, shown in the Settings UI (W7)."""
 
     query: str
     """Job search query string."""

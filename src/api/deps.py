@@ -11,12 +11,18 @@ from src.adapters.repository.factory import build_repository
 from src.core.ports.job_repository_port import JobRepositoryPort
 from src.core.services.generation_service import GenerationService
 from src.core.services.resume_service import ResumeService
-from src.service_factory import build_generation_service, build_resume_service
+from src.core.services.settings_service import SettingsService
+from src.service_factory import (
+    build_generation_service,
+    build_resume_service,
+    build_settings_service,
+)
 
 # Built once and reused: the async generation flow schedules a background task that
 # runs after the request returns, so the poll and the task must share one service
 # instance (and its repository connection, ADR-034 §1).
 _GENERATION_SERVICE: GenerationService | None = None
+_SETTINGS_SERVICE: SettingsService | None = None
 
 
 def get_repository() -> JobRepositoryPort:
@@ -51,3 +57,18 @@ def get_generation_service() -> GenerationService:
     if _GENERATION_SERVICE is None:
         _GENERATION_SERVICE = build_generation_service()
     return _GENERATION_SERVICE
+
+
+def get_settings_service() -> SettingsService:
+    """Return the shared SettingsService (the DB-backed config layer, W7/ADR-031).
+
+    Cached at module scope so the Settings routes operate over one repository
+    connection (ADR-034 §1).
+
+    Returns:
+        The process-wide SettingsService instance.
+    """
+    global _SETTINGS_SERVICE
+    if _SETTINGS_SERVICE is None:
+        _SETTINGS_SERVICE = build_settings_service()
+    return _SETTINGS_SERVICE

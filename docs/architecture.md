@@ -89,7 +89,7 @@ are selectable via `mark` — machine states are never user-assignable (ADR-025)
 `generate` CLI prints only the file path and provenance, never document content
 (ADR-028/029).
 
-**API surface (as of W6).** All routes under `/api`, no business logic in the
+**API surface (as of W7).** All routes under `/api`, no business logic in the
 router (ADR-026):
 
 | Method | Path | Purpose |
@@ -105,6 +105,11 @@ router (ADR-026):
 | `GET` | `/api/jobs/{id}/generations` | The job's generations, newest first (the chip's initial state) |
 | `GET` | `/api/generations/{id}` | Poll one generation; flips a timed-out `pending` → `failed`; 404 if absent |
 | `GET` | `/api/generations/{id}/download` | Stream the ready `.docx`; **409** if not ready, **410 Gone** if the file has vanished (ADR-034 §3) |
+| `GET/PUT` | `/api/settings` | Global settings + `.env` defaults + **masked** secret status; PUT persists (bad provider → 422) (W7) |
+| `PUT/DELETE` | `/api/settings/secrets/{name}` | Write-only secret replace / reset-to-`.env`; **no endpoint returns a raw key** (ADR-031); 404 unknown |
+| `GET` | `/api/settings/schedule/preview` | Next 3 cron fire times; **400** on an invalid expression |
+| `GET/POST` | `/api/profiles` | List / create search profiles |
+| `PUT/DELETE` | `/api/profiles/{id}` | Update / delete a profile; 404 unknown; **409** deleting the last one (W7) |
 
 The `jobs` `PATCH` routes are the web app's first mutations; the React client
 applies them optimistically (ui-spec §8) and rolls back on error. The `resume`
@@ -117,8 +122,15 @@ downloads the `.docx`. A stuck `pending` self-heals to `failed` on read past
 `GENERATION_TIMEOUT_SECONDS`, and a `ready` row whose file is gone streams a **410**.
 No endpoint ever returns generated-document content or raw resume text — `ResumeOut`
 and `GenerationOut` carry provenance only, never `raw_text`/`content_hash` or document
-text (ui-spec §7, ADR-028/029/034). Run history and the rest of Settings arrive with
-later stories.
+text (ui-spec §7, ADR-028/029/034). The `settings`/`profiles` routes (W7) make the
+operational config web-editable over a DB-backed `SettingsService`: `.env` seeds the
+`settings` + `search_profiles` tables on first run and is authoritative thereafter
+(ADR-031). Secrets are **write-only** — the API returns only a masked suffix and a
+server-computed "differs from .env" flag, never a key. Because every factory reads
+`os.getenv`, `SettingsService.apply_to_environment()` bridges the DB values back into
+the environment at the run entrypoint (ADR-035), so DB edits take effect with no
+adapter changes (precedence `.env` → DB → CLI). Run history and the live cron
+reschedule arrive with later stories.
 
 ```
    CLI  (src/main, src/cli) ─┐
@@ -175,13 +187,15 @@ job-search-agent/
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
 │   │   ├── __init__.py
 │   │   ├── main.py                      ← app factory (create_app); uvicorn entrypoint
-│   │   ├── deps.py                      ← get_repository() + get_resume_service() + get_generation_service()
-│   │   ├── schemas.py                   ← JobSummary / JobDetail / ResumeOut / ResumeState / GenerationOut + bodies (camelCase)
+│   │   ├── deps.py                      ← get_repository/resume/generation/settings_service()
+│   │   ├── schemas.py                   ← Job/Resume/Generation/Settings/Profile models + bodies (camelCase)
 │   │   └── routers/
 │   │       ├── __init__.py
 │   │       ├── jobs.py                  ← GET /api/jobs · GET/PATCH /api/jobs/{id}
 │   │       ├── resume.py               ← GET/POST /api/resume · POST .../versions/{v}/activate (W5)
-│   │       └── generations.py          ← POST /api/jobs/{id}/generate · GET poll/list/download (async, W6)
+│   │       ├── generations.py          ← POST /api/jobs/{id}/generate · GET poll/list/download (async, W6)
+│   │       ├── settings.py             ← GET/PUT /api/settings · secrets · schedule preview (W7)
+│   │       └── profiles.py             ← GET/POST/PUT/DELETE /api/profiles (CRUD, W7)
 │   │
 │   ├── cli/                             ← CLI concerns
 │   │   ├── __init__.py
@@ -264,7 +278,7 @@ job-search-agent/
 │       │   ├── sqlite_repository.py     ← SQLiteJobRepository (WAL, busy_timeout, short commits)
 │       │   ├── sqlite_resume_repository.py ← SQLiteResumeRepository (versioned master resume)
 │       │   ├── sqlite_generation_repository.py ← SQLiteGenerationRepository (generation records)
-│       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history + resumes + generations + generation.status)
+│       │   ├── migrations.py            ← Forward-only runner (… + generations + generation.status + settings + search_profiles)
 │       │   └── factory.py               ← build_repository() + build_resume_repository() + build_generation_repository()
 │       │
 │       ├── resume/                      ← Resume parsing adapters (ResumeParserPort)
@@ -296,11 +310,12 @@ web/                                     ← Job Hunter AI Web (Vite + React + T
 │   │   ├── client.ts                    ← typed fetch wrapper (the only place fetch is called)
 │   │   └── types.ts                     ← generated from OpenAPI (npm run gen:types)
 │   ├── hooks/                           ← React Query hooks (useJobs; useJob/useMarkStatus/useSaved — optimistic;
-│   │                                       useResume — W5; useGeneration — async poll, W6)
+│   │                                       useResume — W5; useGeneration — async poll, W6; useSettings/useProfiles — W7)
 │   ├── components/                      ← ThresholdRail, ScoreChip, JobCard, ProviderBadges, StatusPill,
 │   │                                       JobDetail, ScoreBreakdown, StatusDropdown, SaveStar, MasterResumePanel (W5),
-│   │                                       GenerationChip (5-state async, W6), ThemeToggle
-│   ├── screens/                         ← JobList (list + detail pane); Settings (Master resume, W5)
+│   │                                       GenerationChip (5-state async, W6), ThemeToggle,
+│   │                                       settings/ (Voice, Threshold, Schedule, Profile, Provider panels — W7)
+│   ├── screens/                         ← JobList (list + detail pane); Settings (interactive rail, all sections live — W7)
 │   ├── lib/                             ← queryClient, theme, score (ADR-033), platforms, status (vocabulary)
 │   └── styles/                          ← tokens.css (wired copy) + index.css (Tailwind)
 ├── tests/                              ← Jest + React Testing Library
@@ -876,6 +891,14 @@ document (ADR-029/034 §3). No document text is ever stored.
 `pending` before the LLM call and updated to `ready`/`failed` by the background task.
 The synchronous CLI path never leaves the `ready` default; timeout detection reuses
 `created_at`, so no extra column is needed.
+
+**Schema (migration 6 — W7).** Adds `settings` (`key`/`value`/`updated_at` — a flat
+store for the global scalars and secret values) and `search_profiles` (one row per
+search definition: `name`, `query`, `location`, JSON `work_types`/`active_scrapers`,
+`date_posted`, `score_threshold`, `top_results`, `position`). Both are seeded from
+`.env` on first access by `SettingsService` and authoritative thereafter (ADR-031),
+behind `SettingsRepositoryPort` / `ProfileRepositoryPort`. Runs read profiles from the
+store and pick up the global settings through the env bridge (ADR-035).
 
 ### Generation ports — `ResumeTailorPort` / `CoverLetterPort` / `DocxWriterPort` / `GenerationRepositoryPort`
 

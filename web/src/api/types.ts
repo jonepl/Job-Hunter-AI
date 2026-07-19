@@ -323,6 +323,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Settings
+         * @description Return the global settings, the ``.env`` defaults, and masked secret status.
+         */
+        get: operations["get_settings_api_settings_get"];
+        /**
+         * Update Settings
+         * @description Persist the editable global settings (provider allowlist enforced by the schema).
+         */
+        put: operations["update_settings_api_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/secrets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Secret
+         * @description Replace a secret (write-only). The value is stored, never returned.
+         *
+         *     Raises:
+         *         HTTPException: 404 for an unknown secret name.
+         */
+        put: operations["set_secret_api_settings_secrets__name__put"];
+        post?: never;
+        /**
+         * Clear Secret
+         * @description Clear a secret's DB override, reverting to the ``.env`` value.
+         *
+         *     Raises:
+         *         HTTPException: 404 for an unknown secret name.
+         */
+        delete: operations["clear_secret_api_settings_secrets__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/schedule/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Schedule Preview
+         * @description Return the next 3 fire times for a cron expression (no live scheduler).
+         *
+         *     Raises:
+         *         HTTPException: 400 for an invalid cron expression or timezone.
+         */
+        get: operations["schedule_preview_api_settings_schedule_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Profiles
+         * @description List every stored search profile, ordered by position.
+         */
+        get: operations["list_profiles_api_profiles_get"];
+        put?: never;
+        /**
+         * Create Profile
+         * @description Create a new search profile.
+         *
+         *     Raises:
+         *         HTTPException: 400 on an invalid location/work-type combination or enum value.
+         */
+        post: operations["create_profile_api_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Profile
+         * @description Update an existing search profile.
+         *
+         *     Raises:
+         *         HTTPException: 404 when the profile does not exist; 400 on invalid input.
+         */
+        put: operations["update_profile_api_profiles__profile_id__put"];
+        post?: never;
+        /**
+         * Delete Profile
+         * @description Delete a search profile.
+         *
+         *     Raises:
+         *         HTTPException: 404 when the profile does not exist; 409 when it is the last
+         *             remaining profile (a run must always have something to do).
+         */
+        delete: operations["delete_profile_api_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -492,6 +627,69 @@ export interface components {
             lastSeenAt: string;
         };
         /**
+         * ProfileIn
+         * @description Request body for creating/updating a search profile.
+         */
+        ProfileIn: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Query */
+            query: string;
+            /** Location */
+            location?: string | null;
+            /** Worktypes */
+            workTypes?: string[] | null;
+            /**
+             * Dateposted
+             * @default 3days
+             */
+            datePosted: string | null;
+            /**
+             * Activescrapers
+             * @default [
+             *       "linkedin",
+             *       "indeed",
+             *       "glassdoor",
+             *       "ziprecruiter"
+             *     ]
+             */
+            activeScrapers: string[];
+            /**
+             * Scorethreshold
+             * @default 75
+             */
+            scoreThreshold: number;
+            /** Topresults */
+            topResults?: number | null;
+        };
+        /**
+         * ProfileOut
+         * @description One stored search profile as the Settings UI sees it.
+         */
+        ProfileOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Query */
+            query: string;
+            /** Location */
+            location: string;
+            /** Worktypes */
+            workTypes: string[] | null;
+            /** Dateposted */
+            datePosted: string | null;
+            /** Activescrapers */
+            activeScrapers: string[];
+            /** Scorethreshold */
+            scoreThreshold: number;
+            /** Topresults */
+            topResults: number | null;
+        };
+        /**
          * ResumeOut
          * @description One stored master-resume version, provenance only (ui-spec §14.2).
          *
@@ -536,6 +734,14 @@ export interface components {
             saved: boolean;
         };
         /**
+         * SchedulePreview
+         * @description The next few cron fire times for the schedule preview.
+         */
+        SchedulePreview: {
+            /** Nextruns */
+            nextRuns: string[];
+        };
+        /**
          * ScoreCategoryRow
          * @description One row of the nine-category score breakdown, in rubric order.
          *
@@ -552,6 +758,105 @@ export interface components {
             max: number;
             /** Reasoning */
             reasoning: string;
+        };
+        /**
+         * SecretStatus
+         * @description A secret's masked status — never its value (ADR-031).
+         */
+        SecretStatus: {
+            /** Name */
+            name: string;
+            /** Configured */
+            configured: boolean;
+            /** Masked */
+            masked: string;
+            /** Overridden */
+            overridden: boolean;
+        };
+        /**
+         * SecretUpdate
+         * @description Request body for ``PUT /api/settings/secrets/{name}`` — a write-only replace.
+         */
+        SecretUpdate: {
+            /** Value */
+            value: string;
+        };
+        /**
+         * SettingsDefaults
+         * @description The `.env`-derived global settings, for the UI's differs-from-.env diff.
+         */
+        SettingsDefaults: {
+            /** Evaluatorprovider */
+            evaluatorProvider: string;
+            /** Evaluatormodel */
+            evaluatorModel: string | null;
+            /** Schedulecron */
+            scheduleCron: string;
+            /** Scheduletimezone */
+            scheduleTimezone: string;
+            /** Enrichmentmode */
+            enrichmentMode: string;
+            voice: components["schemas"]["VoiceIn"];
+        };
+        /**
+         * SettingsOut
+         * @description The global settings screen state — effective values + the ``.env`` defaults.
+         *
+         *     ``envDefaults`` lets the UI show a "differs from .env" indicator per field
+         *     (ADR-031). ``secrets`` carries **masked** status only — never a key value.
+         */
+        SettingsOut: {
+            /** Evaluatorprovider */
+            evaluatorProvider: string;
+            /** Evaluatormodel */
+            evaluatorModel: string | null;
+            /** Schedulecron */
+            scheduleCron: string;
+            /** Scheduletimezone */
+            scheduleTimezone: string;
+            /** Enrichmentmode */
+            enrichmentMode: string;
+            voice: components["schemas"]["VoiceIn"];
+            envDefaults: components["schemas"]["SettingsDefaults"];
+            /** Secrets */
+            secrets: components["schemas"]["SecretStatus"][];
+        };
+        /**
+         * SettingsUpdate
+         * @description Request body for ``PUT /api/settings`` — the editable global settings.
+         */
+        SettingsUpdate: {
+            /**
+             * Evaluatorprovider
+             * @enum {string}
+             */
+            evaluatorProvider: "openai" | "anthropic";
+            /** Evaluatormodel */
+            evaluatorModel?: string | null;
+            /**
+             * Schedulecron
+             * @default
+             */
+            scheduleCron: string;
+            /**
+             * Scheduletimezone
+             * @default UTC
+             */
+            scheduleTimezone: string;
+            /**
+             * Enrichmentmode
+             * @default shadow
+             * @enum {string}
+             */
+            enrichmentMode: "shadow" | "enforce";
+            /**
+             * @default {
+             *       "tone": "direct",
+             *       "person": "first_person",
+             *       "styleNotes": ""
+             *     }
+             */
+            voice: components["schemas"]["VoiceIn"];
         };
         /**
          * StatusHistoryEntryOut
@@ -949,6 +1254,274 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_api_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+        };
+    };
+    update_settings_api_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_secret_api_settings_secrets__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_secret_api_settings_secrets__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schedule_preview_api_settings_schedule_preview_get: {
+        parameters: {
+            query: {
+                cron: string;
+                timezone?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_profiles_api_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"][];
+                };
+            };
+        };
+    };
+    create_profile_api_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_profile_api_profiles__profile_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_profile_api_profiles__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

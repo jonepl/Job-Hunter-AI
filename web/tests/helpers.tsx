@@ -1,11 +1,29 @@
+import type { ReactElement, ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render } from "@testing-library/react";
+
 import type {
   GenerationOut,
   JobDetail,
   JobSummary,
+  ProfileOut,
   ResumeOut,
   ResumeState,
   ScoreCategoryRow,
+  SecretStatus,
+  SettingsOut,
 } from "../src/api/client";
+
+/** Render a component wrapped in a fresh (retry-free) React Query provider. */
+export function renderWithClient(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  return { client, ...render(ui, { wrapper }) };
+}
 
 /** Build a JobSummary fixture with sensible defaults; override any field. */
 export function makeJob(overrides: Partial<JobSummary> = {}): JobSummary {
@@ -112,6 +130,60 @@ export function makeGeneration(overrides: Partial<GenerationOut> = {}): Generati
     reviewLocations: [],
     repairNote: "",
     createdAt: "2026-07-05T09:00:00",
+    ...overrides,
+  };
+}
+
+/** Build a SecretStatus fixture (configured, not overridden); override any field. */
+export function makeSecretStatus(overrides: Partial<SecretStatus> = {}): SecretStatus {
+  return {
+    name: "openai_api_key",
+    configured: true,
+    masked: "1234",
+    overridden: false,
+    ...overrides,
+  };
+}
+
+/** Build a SettingsOut fixture with sensible defaults; override any field. */
+export function makeSettings(overrides: Partial<SettingsOut> = {}): SettingsOut {
+  const voice = { tone: "direct", person: "first_person", styleNotes: "" } as const;
+  return {
+    evaluatorProvider: "openai",
+    evaluatorModel: null,
+    scheduleCron: "0 8 * * 1-5",
+    scheduleTimezone: "UTC",
+    enrichmentMode: "shadow",
+    voice: { ...voice },
+    envDefaults: {
+      evaluatorProvider: "openai",
+      evaluatorModel: null,
+      scheduleCron: "0 8 * * 1-5",
+      scheduleTimezone: "UTC",
+      enrichmentMode: "shadow",
+      voice: { ...voice },
+    },
+    secrets: [
+      makeSecretStatus({ name: "openai_api_key" }),
+      makeSecretStatus({ name: "anthropic_api_key", configured: false, masked: "" }),
+      makeSecretStatus({ name: "gemini_api_key" }),
+    ],
+    ...overrides,
+  };
+}
+
+/** Build a ProfileOut fixture with sensible defaults; override any field. */
+export function makeProfile(overrides: Partial<ProfileOut> = {}): ProfileOut {
+  return {
+    id: 1,
+    name: "Backend",
+    query: "Senior Software Engineer",
+    location: "United States",
+    workTypes: ["remote"],
+    datePosted: "3days",
+    activeScrapers: ["linkedin", "indeed"],
+    scoreThreshold: 75,
+    topResults: null,
     ...overrides,
   };
 }
