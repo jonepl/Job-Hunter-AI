@@ -3,6 +3,17 @@ import { useState } from "react";
 import { useJobs } from "../hooks/useJobs";
 import { JobCard } from "../components/JobCard";
 import { JobDetail } from "../components/JobDetail";
+import { JobFilterBar } from "../components/JobFilterBar";
+import { DEFAULT_FILTER, filterJobs, type JobFilterId } from "../lib/filters";
+
+// The empty-view copy shown when jobs exist but the active filter matches none —
+// distinct from the global "No jobs yet" (ui-spec §6.4).
+const FILTERED_EMPTY: Record<JobFilterId, string> = {
+  triage: "Nothing left to triage — every job has a decision. Switch to All to review them.",
+  pipeline: "No jobs in your pipeline yet. Mark a job applied to track it here.",
+  all: "No jobs match this view.",
+  saved: "No saved jobs yet. Star a job to keep it here.",
+};
 
 // The hub: a scannable list on the left, a detail pane on the right (ui-spec §3).
 // Selecting a card drives the pane in place — no routing, matching the design's
@@ -21,6 +32,7 @@ function StateShell({ title, body }: { title: string; body: string }) {
 export function JobList() {
   const { data, isLoading, isError, refetch } = useJobs();
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [filter, setFilter] = useState<JobFilterId>(DEFAULT_FILTER);
 
   if (isLoading) {
     return (
@@ -57,17 +69,28 @@ export function JobList() {
     );
   }
 
+  const visible = filterJobs(data, filter);
+
   return (
     <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-6">
-      <div className="space-y-4" data-testid="job-list">
-        {data.map((job) => (
-          <JobCard
-            key={job.id}
-            job={job}
-            selected={job.id === selectedId}
-            onSelect={setSelectedId}
-          />
-        ))}
+      <div data-testid="job-list">
+        <JobFilterBar jobs={data} active={filter} onChange={setFilter} />
+        {visible.length === 0 ? (
+          <div className="rounded-card border border-dashed border-border bg-surface p-8 text-center text-small text-text-2">
+            {FILTERED_EMPTY[filter]}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {visible.map((job) => (
+              <JobCard
+                key={job.id}
+                job={job}
+                selected={job.id === selectedId}
+                onSelect={setSelectedId}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {selectedId === null ? (

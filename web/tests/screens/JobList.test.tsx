@@ -77,4 +77,55 @@ describe("<JobList>", () => {
     await userEvent.click(screen.getByTestId("job-card"));
     expect(screen.getByTestId("job-detail")).toBeInTheDocument();
   });
+
+  it("opens on the triage view, hiding non-triage jobs", () => {
+    mockState({
+      data: [
+        makeJob({ id: 1, title: "Triage One", status: "evaluated" }),
+        makeJob({ id: 2, title: "In Pipeline", status: "applied" }),
+      ],
+    });
+    render(<JobList />);
+    expect(screen.getByText("Triage One")).toBeInTheDocument();
+    expect(screen.queryByText("In Pipeline")).not.toBeInTheDocument();
+  });
+
+  it("switches to the pipeline view on demand", async () => {
+    mockState({
+      data: [
+        makeJob({ id: 1, title: "Triage One", status: "evaluated" }),
+        makeJob({ id: 2, title: "In Pipeline", status: "applied" }),
+      ],
+    });
+    render(<JobList />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Pipeline/ }));
+    expect(screen.getByText("In Pipeline")).toBeInTheDocument();
+    expect(screen.queryByText("Triage One")).not.toBeInTheDocument();
+  });
+
+  it("shows every job under the All view", async () => {
+    mockState({
+      data: [
+        makeJob({ id: 1, title: "Triage One", status: "evaluated" }),
+        makeJob({ id: 2, title: "In Pipeline", status: "applied" }),
+      ],
+    });
+    render(<JobList />);
+
+    await userEvent.click(screen.getByRole("button", { name: /All/ }));
+    expect(screen.getByText("Triage One")).toBeInTheDocument();
+    expect(screen.getByText("In Pipeline")).toBeInTheDocument();
+  });
+
+  it("shows a filtered-empty state when the active view has no jobs", () => {
+    mockState({ data: [makeJob({ id: 1, title: "In Pipeline", status: "applied" })] });
+    render(<JobList />);
+    // Default triage view is empty even though a job exists.
+    expect(screen.getByText(/Nothing left to triage/)).toBeInTheDocument();
+    // The global empty copy must not appear.
+    expect(screen.queryByText("No jobs yet")).not.toBeInTheDocument();
+    // The filter bar stays visible so the user can switch out.
+    expect(screen.getByTestId("job-filter-bar")).toBeInTheDocument();
+  });
 });
