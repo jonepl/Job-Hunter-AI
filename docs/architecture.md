@@ -73,12 +73,15 @@ reimplements no business logic; a route is a second way in, not a new brain. The
 React SPA under `web/` is an HTTP client of that API. In production FastAPI serves
 the built SPA at `/` and the JSON API under `/api` from the same origin.
 
-The CLI has two modes: the default (no-subcommand) invocation runs a search; the
+The CLI has three modes: the default (no-subcommand) invocation runs a search; the
 `mark` subcommand moves a stored job through its lifecycle
 (`python -m src.main mark --job-id 7 --status applied --note "referred"`, plus
-`--save` / `--unsave`). `mark` dispatches to `run_mark` (`src/mark_runner.py`),
-which is argparse-free so the API's status write reuses the same repository path.
-Only the six **human-set** statuses are selectable — machine states are never
+`--save` / `--unsave`); the `resume` subcommand manages the cached master resume
+(`resume upload <path>` / `resume list` / `resume activate <version>`). `mark`
+dispatches to `run_mark` (`src/mark_runner.py`) and `resume` to `src/resume_runner.py`
+— both argparse-free so the API can reuse the same paths (the resume runner shares
+the `ResumeService` the future `POST /resume` upload will use, W5). Only the six
+**human-set** statuses are selectable via `mark` — machine states are never
 user-assignable (ADR-025).
 
 **API surface (as of W2).** All routes under `/api`, no business logic in the
@@ -139,12 +142,13 @@ job-search-agent/
 │       └── resume.pdf                   ← Candidate resume (volume mounted)
 │
 ├── src/
-│   ├── main.py                          ← thin CLI entrypoint (search + mark dispatch)
+│   ├── main.py                          ← thin CLI entrypoint (search + mark + resume dispatch)
 │   ├── bootstrap.py                     ← profile loading
 │   ├── runner.py                        ← immediate run logic
 │   ├── mark_runner.py                   ← run_mark() — mark CLI backend (no argparse dep)
+│   ├── resume_runner.py                 ← resume upload/list/activate — resume CLI backend
 │   ├── scheduler.py                     ← APScheduler — cron-based multi-profile runner
-│   ├── service_factory.py               ← Builds JobSearchService from SearchProfile
+│   ├── service_factory.py               ← Builds JobSearchService + build_resume_service()
 │   │
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
 │   │   ├── __init__.py
@@ -171,7 +175,7 @@ job-search-agent/
 │   │   │   ├── __init__.py
 │   │   │   ├── date_posted.py           ← DatePosted enum
 │   │   │   ├── job.py                   ← Job entity
-│   │   │   ├── resume.py                ← Resume entity
+│   │   │   ├── resume.py                ← Resume entity (corpus + provenance, cached)
 │   │   │   ├── match_result.py          ← MatchResult entity
 │   │   │   ├── run_report.py            ← RunReport entity
 │   │   │   ├── cost_estimate.py         ← CostEstimate — pre-run cost prediction
@@ -192,11 +196,14 @@ job-search-agent/
 │   │   │   ├── evaluator_port.py        ← EvaluatorPort ABC
 │   │   │   ├── job_enrichment_port.py   ← JobEnrichmentPort ABC (pre-filter; Job-only, no Resume)
 │   │   │   ├── job_repository_port.py   ← JobRepositoryPort ABC (persistence + dedup)
+│   │   │   ├── resume_parser_port.py    ← ResumeParserPort ABC (bytes → text; keeps PyPDF2 out of core)
+│   │   │   ├── resume_repository_port.py ← ResumeRepositoryPort ABC (versioned resume store)
 │   │   │   └── output_port.py           ← OutputPort ABC
 │   │   │
 │   │   └── services/                    ← Business logic orchestration
 │   │       ├── __init__.py
-│   │       └── job_search_service.py    ← JobSearchService
+│   │       ├── job_search_service.py    ← JobSearchService (reads cached resume)
+│   │       └── resume_service.py        ← ResumeService (parse-once ingest + cache, ADR-028)
 │   │
 │   └── adapters/
 │       ├── scrapers/                    ← One adapter per platform
@@ -218,11 +225,17 @@ job-search-agent/
 │       │   ├── prompts.py               ← Pre-filter prompt text
 │       │   └── factory.py               ← Builds pre-filter from ENRICHMENT_* / GEMINI_*
 │       │
-│       ├── repository/                  ← SQLite persistence (JobRepositoryPort)
+│       ├── repository/                  ← SQLite persistence (Job + Resume repos)
 │       │   ├── __init__.py
 │       │   ├── sqlite_repository.py     ← SQLiteJobRepository (WAL, busy_timeout, short commits)
-│       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history)
-│       │   └── factory.py               ← Builds the repo singleton from DB_PATH
+│       │   ├── sqlite_resume_repository.py ← SQLiteResumeRepository (versioned master resume)
+│       │   ├── migrations.py            ← Forward-only runner (jobs + sightings + status_history + resumes)
+│       │   └── factory.py               ← build_repository() + build_resume_repository() from DB_PATH
+│       │
+│       ├── resume/                      ← Resume parsing adapter (ResumeParserPort)
+│       │   ├── __init__.py
+│       │   ├── pdf_parser.py            ← PyPDF2ResumeParser (bytes → text)
+│       │   └── factory.py               ← build_resume_parser()
 │       │
 │       └── output/                      ← Delivery adapters
 │           ├── __init__.py
@@ -349,12 +362,25 @@ class Job(BaseModel):
 ```
 
 ### `Resume`
-Represents the parsed candidate resume.
+The parsed candidate resume — a single comprehensive corpus applied to all
+profiles, cached once (ADR-028). Enriched **in place** (same type, richer fields)
+so `ResumeTailorPort` (F) consumes it with no interface change. `raw_text` is the
+corpus every run evaluates against; the rest is storage provenance the API/UI may
+surface (never the content). `skill_count` / `role_count` are best-effort heuristics.
+Full structured sections (experience / education entries) are deferred to F.
 
 ```python
 class Resume(BaseModel):
     raw_text: str
     parsed_at: datetime
+    version: int = 1
+    filename: str = ""
+    size_bytes: int = 0
+    content_hash: str = ""
+    skill_count: int = 0
+    role_count: int = 0
+    is_active: bool = False
+    uploaded_at: datetime | None = None
 ```
 
 ### `MatchResult`
@@ -752,6 +778,46 @@ only the tables it needs; a `schema_migrations` table records what has run.
 `changed_at`) — the append-only audit trail behind the lifecycle (ADR-025). The
 migration backfills one creation history row per existing job
 (`NULL → its status` at `first_seen_at`) so the trail is complete.
+
+**Schema (migration 3 — E1).** Adds `resumes` (`id`, `version`, `filename`,
+`content_hash`, `size_bytes`, `raw_text`, `skill_count`, `role_count`, `is_active`,
+`uploaded_at`, `parsed_at`) — the master-resume cache with version history
+(ADR-028). A **partial UNIQUE index** `WHERE is_active = 1` guarantees exactly one
+active version. No backfill: the store starts empty and a first run auto-seeds v1
+from `RESUME_PATH`.
+
+### `ResumeParserPort` / `ResumeRepositoryPort`
+
+The two contracts behind the cached master resume (ADR-028). `ResumeParserPort`
+keeps the PDF library (PyPDF2) out of the core — it extracts text from raw bytes,
+so it serves both a filesystem path (CLI, auto-seed) and an uploaded byte stream
+(W5). `ResumeRepositoryPort` persists versions and trades in `Resume` entities,
+never rows; exactly one version is active at a time.
+
+```python
+class ResumeParserPort(ABC):
+    @abstractmethod
+    def extract_text(self, data: bytes) -> str: ...
+    # Raises ValueError when no text can be extracted
+
+class ResumeRepositoryPort(ABC):
+    @abstractmethod
+    def get_active(self) -> Resume | None: ...       # what every run reads
+    @abstractmethod
+    def save_version(self, resume: Resume) -> Resume: ...  # new version, now active
+    @abstractmethod
+    def list_versions(self) -> list[Resume]: ...     # newest first
+    @abstractmethod
+    def activate(self, version: int) -> bool: ...    # restore; False if absent
+    @abstractmethod
+    def find_by_hash(self, content_hash: str) -> Resume | None: ...  # identical bytes
+```
+
+`ResumeService` (`src/core/services/resume_service.py`) coordinates the two: it
+hashes the bytes, short-circuits an identical re-upload to a reactivation, enforces
+`RESUME_MAX_SIZE_BYTES`, estimates skill/role counts, and stores a new version. The
+pipeline reads the active version via this service and auto-seeds it on a first run;
+the `resume` CLI and the future `POST /resume` (W5) route through the same service.
 
 ### `OutputPort`
 

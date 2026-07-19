@@ -56,6 +56,20 @@ seen job is not re-scored, and its cross-provider sightings are remembered.
 
 ---
 
+## Master Resume Settings
+
+The resume is parsed once and cached in the same SQLite database with version
+history, so runs stop re-parsing the PDF every time (ADR-028). Manage it with the
+`resume` CLI (`upload` / `list` / `activate`); a first run auto-seeds the cache
+from `RESUME_PATH`.
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| RESUME_PATH | Path to the master resume PDF used to **auto-seed** the cache on a first run (when no version has been uploaded yet). Once cached, runs read the stored version and never re-open this file. Persists via the `./docs/resume` volume mount. | `docs/resume/resume.pdf` |
+| RESUME_MAX_SIZE_BYTES | Upper size limit (in bytes) for an ingested resume. An upload over this is rejected with a clear error before parsing. Reused by the future browser upload (W5). | `5000000` |
+
+---
+
 ## Web API Settings
 
 The FastAPI driving adapter that serves the JSON API and the React SPA (ADR-021/026).
@@ -219,6 +233,12 @@ ENRICHMENT_DELAY_SECONDS=1.0
 DB_PATH=data/agent.db
 DB_BUSY_TIMEOUT_MS=5000
 NEAR_MISS_BAND=15
+
+# ── Master resume (parsed once, cached with version history) ──────────────────
+# A first run auto-seeds the cache from RESUME_PATH; thereafter runs read the
+# stored version. Manage versions with the `resume` CLI (ADR-028).
+RESUME_PATH=docs/resume/resume.pdf
+RESUME_MAX_SIZE_BYTES=5000000
 
 # ── Web API (FastAPI serves the API + React SPA) ──────────────────────────────
 # CORS is needed only in dev (Vite :5173 → API :8000). Prod is same-origin.

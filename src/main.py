@@ -39,6 +39,10 @@ async def main() -> None:
         _dispatch_mark(args)
         return
 
+    if args.command == "resume":
+        _dispatch_resume(args)
+        return
+
     profiles = load_profiles()
     apply_cli_overrides(profiles, args)
     apply_evaluator_override(args)
@@ -77,6 +81,36 @@ def _dispatch_mark(args) -> None:
         note=args.note,
         saved=saved,
     )
+    print(message)
+    sys.exit(exit_code)
+
+
+def _dispatch_resume(args) -> None:
+    """Run the ``resume`` subcommand: manage the cached master resume, then exit.
+
+    Args:
+        args: The parsed ``resume`` namespace (resume_action plus its arguments).
+    """
+    from src.resume_runner import (
+        run_resume_activate,
+        run_resume_list,
+        run_resume_upload,
+    )
+    from src.service_factory import build_resume_service
+
+    action = getattr(args, "resume_action", None)
+    if action is None:
+        print("Specify a resume action: upload <path> | list | activate <version>")
+        sys.exit(2)
+
+    service = build_resume_service()
+    if action == "upload":
+        message, exit_code = run_resume_upload(service, args.path)
+    elif action == "list":
+        message, exit_code = run_resume_list(service)
+    else:  # activate
+        message, exit_code = run_resume_activate(service, args.version)
+
     print(message)
     sys.exit(exit_code)
 

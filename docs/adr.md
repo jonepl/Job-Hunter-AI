@@ -381,7 +381,12 @@ code is marked inferred.
 
 ## ADR-028: Resume stored once, provenance-only, with version history
 
-- **Status:** Accepted (resolves the `docs/prd.md` §12 divergence C1)
+- **Status:** Accepted — **implemented by E1** (resolves the `docs/prd.md` §12
+  divergence C1). E1 ships the parse-once cache, `resumes` version-history table
+  (migration 3), `ResumeService`, the `resume` CLI, and the corpus-aware evaluator
+  line (gap 8b). Deferred to F: full structured-section extraction (experience /
+  education entries) — E1 caches the raw-text corpus plus provenance and
+  best-effort skill/role counts only.
 - **Context:** The resume PDF was re-opened and re-parsed on every `run()` — once per
   profile and again on every scheduled trigger — despite the PRD promising a cache.
   Document tailoring additionally needs a richer representation than a raw text blob.

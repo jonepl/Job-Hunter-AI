@@ -328,7 +328,7 @@ stale PRD section to refresh.
 
 | # | PRD requirement | Actual behavior | Location |
 |---|---|---|---|
-| C1 | "Cache extracted resume text — do not re-parse on every run" (§7, §8) | Resume PDF is re-opened and re-parsed on **every** `run()` call — once per profile and again on every scheduled trigger. No cache layer exists. | `JobSearchService._parse_resume` |
+| C1 | "Cache extracted resume text — do not re-parse on every run" (§7, §8) | **Resolved (E1, ADR-028).** The resume is parsed once on upload and cached in SQLite with version history; runs read the active stored version (auto-seeding it from `RESUME_PATH` on a first run) instead of re-parsing the PDF. Manage versions with the `resume` CLI. The legacy per-run parse survives only as a fallback when no resume store is wired. | `ResumeService`, `SQLiteResumeRepository`, `JobSearchService._load_resume` |
 | C2 | "Cap results at 50 listings per platform per run" / "No more than 50 results scraped per platform" (§7, §9) | Both scrapers default to `limit=25` and the service never overrides it, so the effective cap is **25/platform**. JSearch additionally fetches up to `JSEARCH_MAX_PAGES` (clamped 1–10 → up to 100 raw results) then discards down to 25, paying for pages it throws away. The number 50 appears nowhere in code. | `LinkedInScraper`, `JSearchScraper`, `JobSearchService` |
 | C3 | Default score threshold is `70` (§3, §7) | Real user-facing default is `75` (`SearchProfile.score_threshold` default and env default). The `run()` signature default of 70 is always overridden by profiles. | `SearchProfile` |
 

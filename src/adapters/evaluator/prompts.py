@@ -56,6 +56,14 @@ IMPORTANT:
 * Penalize candidates who fall BELOW expected level
 * Reward candidates who exceed expectations for their level
 * The sum of all category scores must equal the overall score
+
+CORPUS NOTE:
+* The resume is a comprehensive career corpus covering everything the
+  candidate has done, not a resume tailored to this one role. Score the
+  candidate's RELEVANT experience for this role. Do NOT read breadth or
+  variety across domains as a scattered trajectory or weak resume signal —
+  judge Career Trajectory and Resume Signal Quality on the relevant thread,
+  not on the presence of unrelated experience.
 """
 
 USER_PROMPT = """Evaluate the match between the following resume

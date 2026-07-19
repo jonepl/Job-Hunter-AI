@@ -3,7 +3,8 @@
 The default (no-subcommand) invocation runs a search and takes all --query,
 --location, --work-type, --date-posted, and --scrapers arguments; all are
 optional and fall back to .env configuration via SearchProfile. The ``mark``
-subcommand moves a stored job through its lifecycle (ADR-025).
+subcommand moves a stored job through its lifecycle (ADR-025); the ``resume``
+subcommand manages the cached master resume (ADR-028).
 """
 
 import argparse
@@ -28,15 +29,17 @@ def parse_args() -> argparse.Namespace:
     subcommand marks a stored job (``args.command == "mark"``).
 
     Returns:
-        Namespace whose ``command`` is None (search) or "mark". Search runs carry
-        query/location/work_type/date_posted/scrapers/evaluator_model; mark runs
-        carry job_id/status/note/save/unsave.
+        Namespace whose ``command`` is None (search), "mark", or "resume". Search
+        runs carry query/location/work_type/date_posted/scrapers/evaluator_model;
+        mark runs carry job_id/status/note/save/unsave; resume runs carry a
+        ``resume_action`` (upload/list/activate) with its own arguments.
     """
     parser = argparse.ArgumentParser(
         description="Job Hunter AI Agent — scrapes, evaluates, and ranks job listings."
     )
     subparsers = parser.add_subparsers(dest="command")
     _add_mark_subparser(subparsers)
+    _add_resume_subparser(subparsers)
     parser.add_argument(
         "--query",
         type=str,
@@ -144,4 +147,51 @@ def _add_mark_subparser(subparsers: argparse._SubParsersAction) -> None:
         "--unsave",
         action="store_true",
         help="Remove the job's bookmark.",
+    )
+
+
+def _add_resume_subparser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the ``resume`` subcommand for master-resume management (ADR-028).
+
+    ``resume upload <path>`` parses and caches a resume as a new active version;
+    ``resume list`` shows stored versions; ``resume activate <version>`` restores
+    an earlier version. The pipeline reads the active version instead of
+    re-parsing the PDF every run.
+
+    Args:
+        subparsers: The subparsers action to attach the ``resume`` parser to.
+    """
+    resume = subparsers.add_parser(
+        "resume",
+        help="Manage the cached master resume (upload / list / activate).",
+        description=(
+            "Parse the master resume once and cache it so runs stop re-parsing "
+            "the PDF (ADR-028). Keeps a version history with restore."
+        ),
+    )
+    actions = resume.add_subparsers(dest="resume_action")
+
+    upload = actions.add_parser(
+        "upload",
+        help="Parse a resume file and store it as the active version.",
+    )
+    upload.add_argument(
+        "path",
+        type=str,
+        help="Path to the resume PDF to parse and cache.",
+    )
+
+    actions.add_parser(
+        "list",
+        help="List stored resume versions (the active one is marked).",
+    )
+
+    activate = actions.add_parser(
+        "activate",
+        help="Restore an earlier stored version by number.",
+    )
+    activate.add_argument(
+        "version",
+        type=int,
+        help="The version number to activate.",
     )

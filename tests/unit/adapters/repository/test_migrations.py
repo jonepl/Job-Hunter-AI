@@ -1,0 +1,125 @@
+"""Unit tests for the forward-only migration runner, focused on migration 3 (E1).
+
+Migration 3 adds the ``resumes`` table for the master-resume cache. These tests
+prove it applies cleanly on a fresh database and upgrades an existing job store in
+place without touching any ``jobs`` row.
+"""
+
+import sqlite3
+from datetime import datetime
+
+from src.adapters.repository.migrations import MIGRATIONS, apply_migrations
+from src.adapters.repository.sqlite_repository import SQLiteJobRepository
+from src.core.domain.fingerprint import compute_fingerprint
+from src.core.domain.job import Job
+from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
+
+_NOW = datetime(2026, 7, 18, 9, 0, 0)
+
+
+def _table_names(conn: sqlite3.Connection) -> set[str]:
+    """Return the set of user table names in the database."""
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _match_result() -> MatchResult:
+    """Return a minimal valid MatchResult for seeding a job row."""
+    categories = {
+        "role_alignment": ScoreCategory(max=20, earned=18, reasoning="ok"),
+        "technical_stack_match": ScoreCategory(max=15, earned=13, reasoning="ok"),
+        "system_design_architecture": ScoreCategory(max=15, earned=12, reasoning="ok"),
+        "impact_and_metrics": ScoreCategory(max=15, earned=12, reasoning="ok"),
+        "domain_industry_experience": ScoreCategory(max=10, earned=8, reasoning="ok"),
+        "problem_space_relevance": ScoreCategory(max=10, earned=8, reasoning="ok"),
+        "ownership_and_leadership": ScoreCategory(max=10, earned=8, reasoning="ok"),
+        "resume_signal_quality": ScoreCategory(max=3, earned=2, reasoning="ok"),
+        "career_trajectory": ScoreCategory(max=2, earned=1, reasoning="ok"),
+    }
+    return MatchResult(
+        job=Job(
+            title="Senior Software Engineer",
+            company="Acme Corp",
+            location="Remote",
+            url="https://example.com/1",
+            description="A job.",
+            platform="linkedin",
+            scraped_at=_NOW,
+        ),
+        score=82,
+        matched_skills=["Python"],
+        missing_skills=[],
+        summary="Strong fit.",
+        seniority_level="Senior",
+        years_experience_detected=8,
+        hire_recommendation="Yes",
+        score_breakdown=ScoreBreakdown(**categories),
+    )
+
+
+def test_migration_3_creates_resumes_table_on_fresh_db():
+    """A fresh database gains the resumes table and records all migrations."""
+    conn = sqlite3.connect(":memory:")
+    apply_migrations(conn)
+
+    assert "resumes" in _table_names(conn)
+    versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations")]
+    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3]
+    conn.close()
+
+
+def test_migration_3_upgrades_existing_job_store_without_touching_jobs(tmp_path):
+    """Opening a v1/v2 job store applies migration 3 and preserves every job row."""
+    db_path = str(tmp_path / "agent.db")
+
+    # Build a database at migrations 1+2 only, with a real job row.
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    for version, sql in MIGRATIONS:
+        if version == 3:
+            continue
+        conn.executescript(sql)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (version, _NOW.isoformat()),
+        )
+    conn.commit()
+    conn.close()
+
+    repo = SQLiteJobRepository(db_path=db_path)  # opening applies migration 3
+    job = Job(
+        title="Senior Software Engineer",
+        company="Acme Corp",
+        location="Remote",
+        url="https://example.com/1",
+        description="A job.",
+        platform="linkedin",
+        scraped_at=_NOW,
+    )
+    fp = compute_fingerprint(job.company, job.title, job.location)
+    repo.save_job(
+        job=job,
+        fingerprint=fp,
+        match_result=_match_result(),
+        threshold=70,
+        near_miss_floor=55,
+        seen_at=_NOW,
+    )
+    jobs_before = repo.list_jobs()
+    repo.close()
+
+    # Reopen — migration 3 already applied; jobs intact, resumes table present + empty.
+    repo2 = SQLiteJobRepository(db_path=db_path)
+    assert "resumes" in _table_names(repo2._conn)
+    assert len(repo2.list_jobs()) == len(jobs_before) == 1
+    resume_count = repo2._conn.execute("SELECT COUNT(*) FROM resumes").fetchone()[0]
+    assert resume_count == 0
+    versions = [
+        row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
+    ]
+    assert versions == [1, 2, 3]
+    repo2.close()
