@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.api.routers import generations, jobs, profiles, resume, settings
+from src.api.routers import generations, jobs, profiles, resume, runs, settings
 from src.scheduler import SchedulerManager, set_scheduler_manager
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(generations.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     app.include_router(profiles.router, prefix="/api")
+    app.include_router(runs.router, prefix="/api")
 
     # Serve the built SPA at / when present; skip in dev (Vite serves it) so the
     # app still boots without a frontend build.

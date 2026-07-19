@@ -1,4 +1,4 @@
-"""Factories for the SQLite repositories (job + resume + generation + settings)."""
+"""Factories for the SQLite repositories (job + resume + generation + settings + run)."""
 
 import logging
 import os
@@ -9,11 +9,13 @@ from src.adapters.repository.sqlite_generation_repository import (
 from src.adapters.repository.sqlite_profile_repository import SQLiteProfileRepository
 from src.adapters.repository.sqlite_repository import SQLiteJobRepository
 from src.adapters.repository.sqlite_resume_repository import SQLiteResumeRepository
+from src.adapters.repository.sqlite_run_repository import SQLiteRunRepository
 from src.adapters.repository.sqlite_settings_repository import SQLiteSettingsRepository
 from src.core.ports.generation_repository_port import GenerationRepositoryPort
 from src.core.ports.job_repository_port import JobRepositoryPort
 from src.core.ports.profile_repository_port import ProfileRepositoryPort
 from src.core.ports.resume_repository_port import ResumeRepositoryPort
+from src.core.ports.run_repository_port import RunRepositoryPort
 from src.core.ports.settings_repository_port import SettingsRepositoryPort
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,7 @@ _RESUME_REPOSITORIES: dict[str, ResumeRepositoryPort] = {}
 _GENERATION_REPOSITORIES: dict[str, GenerationRepositoryPort] = {}
 _SETTINGS_REPOSITORIES: dict[str, SettingsRepositoryPort] = {}
 _PROFILE_REPOSITORIES: dict[str, ProfileRepositoryPort] = {}
+_RUN_REPOSITORIES: dict[str, RunRepositoryPort] = {}
 
 
 def build_repository() -> JobRepositoryPort:
@@ -122,3 +125,23 @@ def build_profile_repository() -> ProfileRepositoryPort:
             db_path=db_path, busy_timeout_ms=busy_timeout_ms
         )
     return _PROFILE_REPOSITORIES[db_path]
+
+
+def build_run_repository() -> RunRepositoryPort:
+    """Build (or return the cached) SQLite run repository (W8).
+
+    Reads the same ``DB_PATH`` / ``DB_BUSY_TIMEOUT_MS`` as the job repository — the
+    run records live in the same database file. Repeated calls for the same path
+    return the same instance so the ``POST /runs`` background task and the client
+    poll operate over one connection (ADR-034 §1).
+
+    Returns:
+        A ready SQLiteRunRepository with its schema migrated.
+    """
+    db_path = os.getenv("DB_PATH", "data/agent.db")
+    if db_path not in _RUN_REPOSITORIES:
+        busy_timeout_ms = int(os.getenv("DB_BUSY_TIMEOUT_MS", "5000"))
+        _RUN_REPOSITORIES[db_path] = SQLiteRunRepository(
+            db_path=db_path, busy_timeout_ms=busy_timeout_ms
+        )
+    return _RUN_REPOSITORIES[db_path]

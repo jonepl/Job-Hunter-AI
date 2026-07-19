@@ -338,6 +338,10 @@ export interface paths {
         /**
          * Update Settings
          * @description Persist the editable global settings (provider allowlist enforced by the schema).
+         *
+         *     When the in-process scheduler is running, a saved cron/timezone reschedules it live
+         *     by a direct method call (ADR-032) — no restart. An invalid cron never fails the save
+         *     (the preview endpoint is where cron is validated); it is logged and left unscheduled.
          */
         put: operations["update_settings_api_settings_put"];
         post?: never;
@@ -453,6 +457,82 @@ export interface paths {
          *             remaining profile (a run must always have something to do).
          */
         delete: operations["delete_profile_api_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Runs
+         * @description List recent runs, newest first (healing any run lost to a restart).
+         *
+         *     Args:
+         *         limit: Maximum number of runs to return (1–100).
+         *         service: The shared RunService (injected).
+         *
+         *     Returns:
+         *         Up to ``limit`` runs as response models.
+         */
+        get: operations["list_runs_api_runs_get"];
+        put?: never;
+        /**
+         * Start Run
+         * @description Start a background pipeline run and return its ``running`` record.
+         *
+         *     Preconditions (no run already in progress, at least one profile) are checked
+         *     synchronously so a user-fixable problem is a clear 4xx rather than a silently
+         *     failed background run.
+         *
+         *     Args:
+         *         background_tasks: FastAPI's post-response task runner.
+         *         service: The shared RunService (injected).
+         *
+         *     Returns:
+         *         The ``running`` RunOut (poll it via ``GET /runs/{id}``).
+         *
+         *     Raises:
+         *         HTTPException: 409 when a run is already in progress; 400 when no search
+         *             profiles are configured.
+         */
+        post: operations["start_run_api_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll Run
+         * @description Return one run's current state, flipping a timed-out ``running`` row to failed.
+         *
+         *     Args:
+         *         run_id: The id returned by the start call.
+         *         service: The shared RunService (injected).
+         *
+         *     Returns:
+         *         The run's current RunOut.
+         *
+         *     Raises:
+         *         HTTPException: 404 when no run has that id.
+         */
+        get: operations["poll_run_api_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -724,6 +804,47 @@ export interface components {
             active: components["schemas"]["ResumeOut"] | null;
             /** Versions */
             versions: components["schemas"]["ResumeOut"][];
+        };
+        /**
+         * RunOut
+         * @description One run's lifecycle + summary for the "Run search now" control (W8).
+         *
+         *     Carries the async ``status`` and the summary counts (only meaningful once
+         *     ``status == "succeeded"``), the trigger, and timing. ``error`` is a bare
+         *     exception *type name* on a failed run — never a raw message (CLAUDE.md #2).
+         *     It carries no job content: the evaluated jobs land in the job list, which the
+         *     client refetches when a run succeeds.
+         */
+        RunOut: {
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "succeeded" | "failed";
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "web" | "scheduled" | "cli";
+            /** Profilesrun */
+            profilesRun: number;
+            /** Jobsfound */
+            jobsFound: number;
+            /** Newjobs */
+            newJobs: number;
+            /** Qualifying */
+            qualifying: number;
+            /** Error */
+            error: string;
+            /**
+             * Startedat
+             * Format: date-time
+             */
+            startedAt: string;
+            /** Finishedat */
+            finishedAt: string | null;
         };
         /**
          * SavedUpdate
@@ -1522,6 +1643,88 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_runs_api_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_run_api_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
+            };
+        };
+    };
+    poll_run_api_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -9,6 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from src.core.domain.run_report import RunReport
 from src.core.domain.search_profile import SearchProfile
 from src.core.exceptions import ModelNotFoundError
 from src.infra.cost_estimator import estimate_run_cost
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 async def run_all_profiles(
     profiles: list[SearchProfile],
     service_factory: callable,
-) -> None:
+) -> list[RunReport]:
     """Run all search profiles sequentially.
 
     Each profile gets its own JobSearchService instance and delivers
@@ -30,8 +31,17 @@ async def run_all_profiles(
         profiles: List of SearchProfile instances to run.
         service_factory: Callable that accepts a SearchProfile and returns
                          a configured JobSearchService.
+
+    Returns:
+        The RunReport for each profile that completed. A profile skipped by a
+        transient failure contributes no report; a fatal ``ModelNotFoundError``
+        aborts the remaining profiles (see below). Callers that only deliver
+        reports per profile (the scheduler) may ignore this; W8 aggregates it
+        into a run summary.
     """
     logger.info("Scheduler — starting run for %d profile(s)", len(profiles))
+
+    reports: list[RunReport] = []
 
     # Load cost tracking config once per scheduled run
     show_cost = os.getenv("SHOW_COST_ESTIMATE", "false").lower() == "true"
@@ -94,6 +104,7 @@ async def run_all_profiles(
 
             # Attach pre-run estimate to report
             report.cost_estimate = estimate
+            reports.append(report)
 
             if show_cost and report.run_cost:
                 logger.info("=" * 60)
@@ -119,6 +130,7 @@ async def run_all_profiles(
             continue
 
     logger.info("Scheduler — all profiles complete")
+    return reports
 
 
 async def run_scheduled_cycle(service_factory: callable = None) -> None:

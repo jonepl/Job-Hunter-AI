@@ -23,3 +23,20 @@ class GenerationError(Exception):
     controls — no master resume stored, or an unknown job id (F). The CLI reports
     the message and exits non-zero without writing a generation record.
     """
+
+
+class RunInProgressError(Exception):
+    """Raised when a web run is requested while another run is still in progress (W8).
+
+    Only one pipeline run may execute at a time — one SQLite writer, run sequentially
+    (ADR-034 §1). The API maps this to a 409 so the UI can point the user at the
+    already-running run instead of starting a competing one.
+    """
+
+
+class NoProfilesError(Exception):
+    """Raised when a web run is requested but no search profiles are configured (W8).
+
+    A run with nothing to run would immediately "succeed" with an empty summary,
+    which reads as a bug. The API maps this to a 400 pointing the user at Settings.
+    """

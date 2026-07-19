@@ -97,6 +97,7 @@ the CLI voice flags override these `.env` seeds, and W7 later moves voice into t
 | TAILOR_MODEL | LLM model name for generation. Overrides the provider default. Must be valid for the active `TAILOR_PROVIDER`. | provider default (`gpt-4o` / `claude-sonnet-4-5`) |
 | GENERATIONS_DIR | Directory the generated `.docx` files are written to (opaque `{id}.docx` names). Under the DB volume so files and their `generations` rows share a lifecycle (ADR-034 §3). | `data/generations` |
 | GENERATION_TIMEOUT_SECONDS | How long a browser-triggered async generation (W6) may stay `pending` before a poll flips it to `failed`. Guards against a background task lost to a restart leaving the row `pending` forever — the chip then offers Retry. | `120` |
+| RUN_TIMEOUT_SECONDS | How long a browser-triggered run (W8, `POST /api/runs`) may stay `running` before a poll flips it to `failed`. Guards against a background run lost to a restart leaving the row `running` forever (which would also block the single-flight guard). | `1800` |
 | VOICE_TONE | Default cover-letter tone preset: `direct`, `warm`, `formal`, or `bold`. | `direct` |
 | VOICE_PERSON | Default point of view: `first_person` or `implied`. | `first_person` |
 | VOICE_STYLE_NOTES | Free-text style instructions the model follows (e.g. "Keep sentences short. Lead with outcomes."). | *(empty)* |
@@ -281,6 +282,7 @@ TAILOR_PROVIDER=openai
 # TAILOR_MODEL=gpt-4o
 GENERATIONS_DIR=data/generations
 GENERATION_TIMEOUT_SECONDS=120
+RUN_TIMEOUT_SECONDS=1800
 VOICE_TONE=direct
 VOICE_PERSON=first_person
 VOICE_STYLE_NOTES=

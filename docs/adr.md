@@ -649,3 +649,35 @@ code is marked inferred.
   run start**; per-run re-reads inside a long-lived scheduler process arrive with the
   in-process scheduler (ADR-032). If a future entrypoint (an API-triggered run, W8)
   needs current settings, it calls `apply_to_environment()` itself.
+
+## ADR-036: Web-triggered runs as an async, single-flight, summary-only record
+
+- **Status:** Accepted — implemented (W8)
+- **Context:** Until now a run started only from cron (the in-process scheduler,
+  ADR-032) or the CLI. The browser needed a "Run search now" button, but a full run
+  (scrape → optional pre-filter → evaluate → deliver) takes minutes — far too long to
+  block an HTTP request — and it writes to the same single SQLite file every other
+  path writes to (ADR-034 §1). Two runs at once would contend for that one writer and
+  double the API spend for no benefit.
+- **Decision:** Reuse the W6 async generation shape (ADR-029) rather than invent a new
+  one. `POST /api/runs` validates preconditions synchronously, creates a `running`
+  `RunRecord` (migration 7), and returns it immediately (202); a FastAPI
+  `BackgroundTask` runs `RunService.execute_run`, which calls
+  `apply_to_environment()` (ADR-035) + re-reads profiles from the DB (ADR-031) and runs
+  exactly what a scheduled fire runs (`run_all_profiles`). The client polls
+  `GET /api/runs/{id}` until a terminal status, then refetches the job list.
+  **Single-flight:** at most one row is ever `running`; a second `POST` is a **409**,
+  enforced by `RunService` (not a DB constraint) so the message can name the active
+  run. A run with no profiles is a **400**. **Self-healing:** a `running` row older than
+  `RUN_TIMEOUT_SECONDS` flips to `failed` on read, so a task lost to a restart recovers
+  and frees the guard. The record is **summary-only** — profiles run, jobs found, newly
+  evaluated, qualifying — plus a bare exception *type name* on failure; no job content
+  or raw error message is ever stored or returned (CLAUDE.md #2). Evaluated jobs land in
+  the `jobs` table as always; the run row is just the lifecycle handle.
+- **Consequences:** The button is a thin, honest wrapper over the exact scheduled
+  pipeline — no divergent "web run" code path to keep in sync. The `trigger` column is
+  future-proofed so the scheduled and CLI paths could record their runs in the same
+  table later. Single-flight is a policy in the service, so relaxing it (e.g. a queue)
+  is a local change. The cost: a run cannot be cancelled mid-flight today — it runs to
+  completion or times out; and because the summary is intentionally lean, the run row is
+  not a substitute for the emailed/CSV `RunReport`, which remains the full delivery.

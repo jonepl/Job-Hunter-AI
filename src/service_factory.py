@@ -16,6 +16,7 @@ from src.adapters.repository.factory import (
     build_profile_repository,
     build_repository,
     build_resume_repository,
+    build_run_repository,
     build_settings_repository,
 )
 from src.adapters.resume.factory import build_resume_parser
@@ -24,6 +25,7 @@ from src.core.domain.search_profile import SearchProfile
 from src.core.services.generation_service import GenerationService
 from src.core.services.job_search_service import JobSearchService
 from src.core.services.resume_service import ResumeService
+from src.core.services.run_service import RunService
 from src.core.services.settings_service import SettingsService
 
 
@@ -72,6 +74,30 @@ def build_generation_service() -> GenerationService:
         generation_timeout_seconds=float(
             os.getenv("GENERATION_TIMEOUT_SECONDS", "120")
         ),
+    )
+
+
+def build_run_service() -> RunService:
+    """Build the RunService for the web "Run search now" flow (W8).
+
+    Wires the run repository, the DB-backed settings service (env bridge + profile
+    reload), the per-profile service factory, and the sequential multi-profile runner
+    so a web run executes exactly what a scheduled fire does. Reads
+    ``RUN_TIMEOUT_SECONDS`` for the lost-task timeout.
+
+    Returns:
+        A ready RunService.
+    """
+    # Imported here (not at module top) to avoid a src.scheduler ↔ src.service_factory
+    # import cycle: run_scheduled_cycle imports build_service from this module lazily.
+    from src.scheduler import run_all_profiles
+
+    return RunService(
+        run_repo=build_run_repository(),
+        settings_service=build_settings_service(),
+        service_factory=build_service,
+        run_all_profiles=run_all_profiles,
+        run_timeout_seconds=float(os.getenv("RUN_TIMEOUT_SECONDS", "1800")),
     )
 
 

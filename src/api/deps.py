@@ -11,10 +11,12 @@ from src.adapters.repository.factory import build_repository
 from src.core.ports.job_repository_port import JobRepositoryPort
 from src.core.services.generation_service import GenerationService
 from src.core.services.resume_service import ResumeService
+from src.core.services.run_service import RunService
 from src.core.services.settings_service import SettingsService
 from src.service_factory import (
     build_generation_service,
     build_resume_service,
+    build_run_service,
     build_settings_service,
 )
 
@@ -23,6 +25,7 @@ from src.service_factory import (
 # instance (and its repository connection, ADR-034 §1).
 _GENERATION_SERVICE: GenerationService | None = None
 _SETTINGS_SERVICE: SettingsService | None = None
+_RUN_SERVICE: RunService | None = None
 
 
 def get_repository() -> JobRepositoryPort:
@@ -72,3 +75,18 @@ def get_settings_service() -> SettingsService:
     if _SETTINGS_SERVICE is None:
         _SETTINGS_SERVICE = build_settings_service()
     return _SETTINGS_SERVICE
+
+
+def get_run_service() -> RunService:
+    """Return the shared RunService (the web "Run search now" flow, W8).
+
+    Cached at module scope so the ``POST /runs`` background task and the client poll
+    operate on one instance over one repository connection (ADR-034 §1).
+
+    Returns:
+        The process-wide RunService instance.
+    """
+    global _RUN_SERVICE
+    if _RUN_SERVICE is None:
+        _RUN_SERVICE = build_run_service()
+    return _RUN_SERVICE
