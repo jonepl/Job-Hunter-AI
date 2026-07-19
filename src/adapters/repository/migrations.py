@@ -81,11 +81,39 @@ INSERT INTO status_history (job_id, from_status, to_status, note, changed_at)
     SELECT id, NULL, status, NULL, first_seen_at FROM jobs;
 """
 
+# Migration 3 (E1) — the master resume, stored once with version history (ADR-028).
+#
+# The resume is parsed once and cached here so runs stop re-parsing the PDF every
+# time. Each upload is a new ``version``; the partial UNIQUE index on ``is_active``
+# guarantees exactly one active version (the one runs read). No backfill — the store
+# starts empty and a first run auto-seeds v1 from the mounted resume path.
+_MIGRATION_3 = """
+CREATE TABLE IF NOT EXISTS resumes (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    version       INTEGER NOT NULL,
+    filename      TEXT NOT NULL,
+    content_hash  TEXT NOT NULL,
+    size_bytes    INTEGER NOT NULL,
+    raw_text      TEXT NOT NULL,
+    skill_count   INTEGER NOT NULL DEFAULT 0,
+    role_count    INTEGER NOT NULL DEFAULT 0,
+    is_active     INTEGER NOT NULL DEFAULT 0,
+    uploaded_at   TEXT NOT NULL,
+    parsed_at     TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_resumes_active
+    ON resumes (is_active) WHERE is_active = 1;
+
+CREATE INDEX IF NOT EXISTS idx_resumes_hash ON resumes (content_hash);
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
+    (3, _MIGRATION_3),
 ]
 
 

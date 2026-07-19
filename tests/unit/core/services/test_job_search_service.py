@@ -1060,3 +1060,84 @@ async def test_machine_status_job_is_still_reused_normally():
     assert evaluator2.evaluate.call_count == 0
     assert report2.reused_count == 1
     assert report2.qualifying_results[0].score == 88
+
+
+# ---------------------------------------------------------------------------
+# Master resume cache + auto-seed (E1, ADR-028)
+# ---------------------------------------------------------------------------
+
+
+class _FakeResumeService:
+    """Stand-in for ResumeService recording get_active / ingest_path calls."""
+
+    def __init__(self, active):
+        self._active = active
+        self.get_active_calls = 0
+        self.ingest_calls = 0
+
+    def get_active(self):
+        self.get_active_calls += 1
+        return self._active
+
+    def ingest_path(self, path):
+        self.ingest_calls += 1
+        self._active = Resume(
+            raw_text="seeded corpus",
+            parsed_at=datetime(2026, 7, 18, 9, 0, 0),
+            version=1,
+            is_active=True,
+        )
+        return self._active
+
+
+def _service_with_resume(resume_service) -> tuple[JobSearchService, MagicMock]:
+    """Build a service wired with a ResumeService and a stubbed evaluator."""
+    scraper = MagicMock()
+    scraper.fetch_jobs = AsyncMock(return_value=[make_job("A")])
+    evaluator = MagicMock()
+    evaluator.evaluate = AsyncMock(return_value=(make_match_result(make_job("A"), 80), 100, 50))
+    output = MagicMock()
+    output.deliver = AsyncMock()
+    service = JobSearchService(
+        scrapers=[scraper],
+        evaluator=evaluator,
+        outputs=[output],
+        resume_service=resume_service,
+    )
+    # A wired resume_service must be used — never the legacy PDF parse.
+    service._parse_resume = MagicMock(side_effect=AssertionError("must not re-parse"))
+    return service, evaluator
+
+
+@pytest.mark.asyncio
+async def test_run_reads_active_resume_from_cache_without_reparsing():
+    """With a cached active resume, the run reads it and never parses the PDF."""
+    cached = Resume(
+        raw_text="cached corpus",
+        parsed_at=datetime(2026, 7, 18, 9, 0, 0),
+        version=2,
+        is_active=True,
+    )
+    fake = _FakeResumeService(active=cached)
+    service, evaluator = _service_with_resume(fake)
+
+    await service.run(query="Q", location="Remote", threshold=70)
+
+    assert fake.get_active_calls == 1
+    assert fake.ingest_calls == 0  # nothing to seed — cache hit
+    # The evaluator received the cached corpus.
+    passed_resume = evaluator.evaluate.call_args.args[0]
+    assert passed_resume.raw_text == "cached corpus"
+
+
+@pytest.mark.asyncio
+async def test_run_auto_seeds_when_resume_store_is_empty():
+    """An empty store is seeded once from resume_path, then evaluated against."""
+    fake = _FakeResumeService(active=None)
+    service, evaluator = _service_with_resume(fake)
+
+    await service.run(query="Q", location="Remote", threshold=70)
+
+    assert fake.ingest_calls == 1  # seeded from the mounted path
+    passed_resume = evaluator.evaluate.call_args.args[0]
+    assert passed_resume.raw_text == "seeded corpus"

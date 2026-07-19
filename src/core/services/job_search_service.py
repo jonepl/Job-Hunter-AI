@@ -28,6 +28,7 @@ from src.core.ports.output_port import OutputPort
 from src.core.ports.scraper_port import ScraperPort
 
 if TYPE_CHECKING:
+    from src.core.services.resume_service import ResumeService
     from src.infra.cost_tracker import CostTracker
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ class JobSearchService:
         enrichment: JobEnrichmentPort | None = None,
         enrichment_mode: str = "shadow",
         repository: JobRepositoryPort | None = None,
+        resume_service: "ResumeService | None" = None,
     ) -> None:
         """Initialise the service with injected port adapters.
 
@@ -72,7 +74,9 @@ class JobSearchService:
             scrapers: List of platform scraper adapters implementing ScraperPort.
             evaluator: Resume evaluation adapter implementing EvaluatorPort.
             outputs: List of result delivery adapters implementing OutputPort.
-            resume_path: Path to the candidate resume PDF file.
+            resume_path: Path to the candidate resume PDF. When ``resume_service``
+                is provided this is only the **auto-seed source** for a first run;
+                otherwise it is parsed directly every run (legacy fallback).
             enrichment: Optional pre-filter adapter implementing JobEnrichmentPort.
                         When None the pre-filter stage is skipped entirely.
             enrichment_mode: 'shadow' (evaluate everything, only measure what would
@@ -83,6 +87,11 @@ class JobSearchService:
                         re-evaluation (their stored score is reused) and new
                         evaluations are persisted. When None, dedup and
                         persistence are skipped entirely.
+            resume_service: Optional ResumeService providing the cached master
+                        resume (ADR-028). When provided, the run reads the stored
+                        corpus (auto-seeding it from ``resume_path`` on a first
+                        run) instead of re-parsing the PDF every run. When None,
+                        the legacy per-run parse of ``resume_path`` is used.
         """
         self._scrapers = scrapers
         self._evaluator = evaluator
@@ -91,6 +100,7 @@ class JobSearchService:
         self._enrichment = enrichment
         self._enrichment_mode = enrichment_mode
         self._repository = repository
+        self._resume_service = resume_service
 
     async def run(
         self,
@@ -141,9 +151,8 @@ class JobSearchService:
         else:
             logger.info("Date posted filter: not set (all dates returned)")
 
-        # Step 1 — parse resume
-        resume = self._parse_resume(self._resume_path)
-        logger.info("Resume parsed from %s", self._resume_path)
+        # Step 1 — load the resume (cached master resume, or legacy per-run parse)
+        resume = self._load_resume()
 
         # Step 2 — scrape all platforms concurrently
         work_types_list = list(work_types) if work_types else None
@@ -610,6 +619,34 @@ class JobSearchService:
         ]
         pending_groups.extend((fp, [job]) for fp, job in no_key_groups)
         return reused_results, pending_groups, len(suppressed_ids)
+
+    def _load_resume(self) -> Resume:
+        """Return the resume to evaluate against — from cache, or the legacy parse.
+
+        With a ``ResumeService`` wired (ADR-028), the stored active version is read
+        so the PDF is parsed once and reused across every run and profile. When the
+        store is empty (a first run), it is auto-seeded from ``resume_path`` once.
+        Without a service, the legacy per-run PDF parse is used unchanged.
+
+        Returns:
+            The Resume corpus to evaluate against.
+        """
+        if self._resume_service is None:
+            resume = self._parse_resume(self._resume_path)
+            logger.info("Resume parsed from %s", self._resume_path)
+            return resume
+
+        resume = self._resume_service.get_active()
+        if resume is None:
+            resume = self._resume_service.ingest_path(self._resume_path)
+            logger.info(
+                "Seeded master resume v%d from %s (first run)",
+                resume.version,
+                self._resume_path,
+            )
+        else:
+            logger.info("Loaded master resume v%d from cache", resume.version)
+        return resume
 
     def _parse_resume(self, path: str) -> Resume:
         """Extract text from a PDF resume using PyPDF2.
