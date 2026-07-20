@@ -1,7 +1,19 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { Settings } from "../../src/screens/Settings";
+import { api } from "../../src/api/client";
+import { makeProfile, makeResumeState, makeSettings, renderWithClient } from "../helpers";
+
+// The rail fetches its own live values (SettingsNav has its own test); stub the
+// endpoints so this stays a shell test about which panel the rail opens.
+jest.mock("../../src/api/client", () => ({
+  api: {
+    getSettings: jest.fn(),
+    listProfiles: jest.fn(),
+    getResume: jest.fn(),
+  },
+}));
 
 // The panels are exercised in their own tests; stub them here so the Settings shell
 // test focuses on the rail + navigation (W7 makes every section live).
@@ -24,9 +36,16 @@ jest.mock("../../src/components/MasterResumePanel", () => ({
   MasterResumePanel: () => <div data-testid="master-resume-panel" />,
 }));
 
+beforeEach(() => {
+  jest.clearAllMocks();
+  (api.getSettings as jest.Mock).mockResolvedValue(makeSettings());
+  (api.listProfiles as jest.Mock).mockResolvedValue([makeProfile()]);
+  (api.getResume as jest.Mock).mockResolvedValue(makeResumeState());
+});
+
 describe("<Settings>", () => {
   it("renders every CONFIGURATION section as an active rail item", () => {
-    render(<Settings onBack={jest.fn()} />);
+    renderWithClient(<Settings />);
     for (const label of [
       "Voice & tone",
       "Match threshold",
@@ -40,7 +59,7 @@ describe("<Settings>", () => {
   });
 
   it("opens on the voice panel and switches panels via the rail", async () => {
-    render(<Settings onBack={jest.fn()} />);
+    renderWithClient(<Settings />);
     expect(screen.getByTestId("panel-voice")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Search profiles" }));
@@ -53,11 +72,6 @@ describe("<Settings>", () => {
     await userEvent.click(screen.getByRole("button", { name: "Master resume" }));
     expect(screen.getByTestId("master-resume-panel")).toBeInTheDocument();
   });
-
-  it("invokes onBack from the back control", async () => {
-    const onBack = jest.fn();
-    render(<Settings onBack={onBack} />);
-    await userEvent.click(screen.getByRole("button", { name: /Back to search/ }));
-    expect(onBack).toHaveBeenCalled();
-  });
 });
+// "← Back to search" now lives in the shared TopBar (App owns the view state);
+// it is covered by TopBar.test.tsx.
