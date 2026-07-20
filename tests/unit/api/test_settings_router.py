@@ -50,6 +50,39 @@ def test_get_settings_returns_globals_and_masked_secrets(monkeypatch):
     assert openai["masked"] == "1234" and openai["overridden"] is False
 
 
+def test_get_settings_exposes_configured_pricing(monkeypatch):
+    """GET surfaces read-only pricing: both providers' rates + SHOW_COST_ESTIMATE."""
+    monkeypatch.setenv("SHOW_COST_ESTIMATE", "true")
+    monkeypatch.setenv("OPENAI_INPUT_COST_PER_1M", "2.50")
+    monkeypatch.setenv("OPENAI_OUTPUT_COST_PER_1M", "10.00")
+    body = _client(monkeypatch).get("/api/settings").json()
+    pricing = body["pricing"]
+    assert pricing["showCostEstimate"] is True
+    assert pricing["openai"] == {"inputPer1M": 2.5, "outputPer1M": 10.0}
+    assert pricing["anthropic"] == {"inputPer1M": 3.0, "outputPer1M": 15.0}
+
+
+def test_put_settings_ignores_pricing(monkeypatch):
+    """Pricing is read-only — a client-sent pricing block is not writable."""
+    resp = _client(monkeypatch).put(
+        "/api/settings",
+        json={
+            "evaluatorProvider": "openai",
+            "scheduleCron": "0 8 * * 1-5",
+            "scheduleTimezone": "UTC",
+            "voice": {},
+            "pricing": {
+                "showCostEstimate": True,
+                "openai": {"inputPer1M": 999.0, "outputPer1M": 999.0},
+                "anthropic": {"inputPer1M": 999.0, "outputPer1M": 999.0},
+            },
+        },
+    )
+    assert resp.status_code == 200
+    # The sent pricing is ignored; the response reflects the configured .env rates.
+    assert resp.json()["pricing"]["openai"]["inputPer1M"] != 999.0
+
+
 def test_put_settings_persists(monkeypatch):
     """PUT persists the editable globals and echoes them back."""
     client = _client(monkeypatch)

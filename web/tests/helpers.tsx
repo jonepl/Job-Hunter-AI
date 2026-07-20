@@ -169,6 +169,11 @@ export function makeSettings(overrides: Partial<SettingsOut> = {}): SettingsOut 
       makeSecretStatus({ name: "anthropic_api_key", configured: false, masked: "" }),
       makeSecretStatus({ name: "gemini_api_key" }),
     ],
+    pricing: {
+      showCostEstimate: false,
+      openai: { inputPer1M: 2.5, outputPer1M: 10 },
+      anthropic: { inputPer1M: 3, outputPer1M: 15 },
+    },
     ...overrides,
   };
 }

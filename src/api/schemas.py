@@ -29,6 +29,7 @@ from src.core.domain.status_history_entry import StatusHistoryEntry
 from src.core.domain.stored_job import StoredJob
 from src.core.domain.voice_descriptor import Person, Tone, VoiceDescriptor
 from src.core.domain.work_type import WorkType
+from src.infra.pricing import rates_for, show_cost_estimate
 
 # The six human-set statuses — the only values the API accepts for a status write
 # (machine states are never user-selectable, ui-spec §4). A bad value 422s.
@@ -356,11 +357,37 @@ class GenerateRequest(BaseModel):
 # --- W7: settings, secrets, and search profiles ---------------------------
 
 
+class ProviderRates(BaseModel):
+    """One provider's configured per-1M-token rates (read-only, ``.env``-owned)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    input_per_1m: float
+    output_per_1m: float
+
+
+class PricingOut(BaseModel):
+    """The configured token pricing, surfaced read-only on the provider cards.
+
+    Rates live in ``.env`` (``docs/env.md`` is the source of truth) and always display;
+    ``show_cost_estimate`` reflects ``SHOW_COST_ESTIMATE`` so the UI can note that the
+    rates only *apply* to tracking when it is enabled. Never writable (no differs-from-.env
+    semantics) — absent from ``SettingsUpdate`` and ``SettingsDefaults``.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    show_cost_estimate: bool
+    openai: ProviderRates
+    anthropic: ProviderRates
+
+
 class SettingsOut(BaseModel):
     """The global settings screen state — effective values + the ``.env`` defaults.
 
     ``envDefaults`` lets the UI show a "differs from .env" indicator per field
     (ADR-031). ``secrets`` carries **masked** status only — never a key value.
+    ``pricing`` is read-only configured token rates (never in ``SettingsUpdate``).
     """
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -373,6 +400,7 @@ class SettingsOut(BaseModel):
     voice: VoiceIn
     env_defaults: "SettingsDefaults"
     secrets: list["SecretStatus"]
+    pricing: "PricingOut"
 
     @classmethod
     def build(
@@ -382,6 +410,8 @@ class SettingsOut(BaseModel):
         secrets: list[dict],
     ) -> "SettingsOut":
         """Assemble the response from the effective settings, the .env seed, secrets."""
+        openai_in, openai_out = rates_for("openai")
+        anthropic_in, anthropic_out = rates_for("anthropic")
         return cls(
             evaluator_provider=settings.evaluator_provider,
             evaluator_model=settings.evaluator_model,
@@ -395,6 +425,13 @@ class SettingsOut(BaseModel):
             ),
             env_defaults=SettingsDefaults.from_settings(env_defaults),
             secrets=[SecretStatus(**s) for s in secrets],
+            pricing=PricingOut(
+                show_cost_estimate=show_cost_estimate(),
+                openai=ProviderRates(input_per_1m=openai_in, output_per_1m=openai_out),
+                anthropic=ProviderRates(
+                    input_per_1m=anthropic_in, output_per_1m=anthropic_out
+                ),
+            ),
         )
 
 
