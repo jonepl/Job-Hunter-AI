@@ -39,3 +39,8 @@ notes/
 
 # SQLite database (B1)
 data/*.db*
+
+
+docs/prompts/Claude_AI_Instruction.md
+docs/bugfixes/
+docs/design/claude-design/

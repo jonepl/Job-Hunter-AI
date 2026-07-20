@@ -79,10 +79,11 @@ Adapters → Ports ← Core Domain     (all dependencies point inward)
   a zero-result run (with top-5 near-misses and a suggested lower threshold).
 - **Token/price rates and rate limits live in `.env`** — never hardcode pricing,
   concurrency, or delays. See `docs/env.md`.
-- **`src/api/`, `src/evaluator/`, `src/scraper/`, `src/tools/` are empty stubs.**
-  `src/api/` is a reserved future FastAPI entrypoint; the others are leftover
-  scaffolding — real code lives under `src/adapters/`. Don't add code to them
-  without reason.
+- **`src/api/` is the real FastAPI backend** serving the `web/` UI — `main.py`,
+  `deps.py`, `schemas.py`, and `routers/` (jobs, resume, generations, settings,
+  profiles, runs). It is no longer a stub. **`src/evaluator/`, `src/scraper/`,
+  `src/tools/` *are* empty leftover scaffolding** — real pipeline code lives under
+  `src/adapters/`. Don't add code to those three without reason.
 - **The resume is re-parsed on every run** (no cache layer today), despite what
   the PRD's goals section says — see `docs/prd.md` §12 for the full list of
   known code/spec divergences.

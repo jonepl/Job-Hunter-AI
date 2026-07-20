@@ -41,10 +41,11 @@ diagram and `docs/adr.md` for the reasoning behind these choices.
 - Logging config → `src/infra/logging.py`.
 - Profile loading → `src/bootstrap.py`. Immediate run → `src/runner.py`.
 - `bootstrap.py` and `runner.py` have **no CLI/argparse dependency** — they
-  accept plain Python objects so a future API entrypoint can reuse them.
-- `src/api/` is reserved for a future FastAPI entrypoint. `src/evaluator/`,
-  `src/scraper/`, `src/tools/` are empty leftover stubs — real code is under
-  `src/adapters/`.
+  accept plain Python objects so the API entrypoint can reuse them.
+- `src/api/` is the **FastAPI entrypoint** (`main.py`, `deps.py`, `schemas.py`,
+  `routers/`) serving the `web/` UI. It drives the pipeline through the services
+  rather than duplicating run logic. `src/evaluator/`, `src/scraper/`,
+  `src/tools/` are empty leftover stubs — real code is under `src/adapters/`.
 
 ## Project structure
 
