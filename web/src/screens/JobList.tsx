@@ -29,7 +29,18 @@ function StateShell({ title, body }: { title: string; body: string }) {
   );
 }
 
+// The shell is now full-width (each screen owns its own layout), so the job list
+// keeps its centered measure here rather than inheriting it from <main>. The full
+// Search layout redesign is a separate plan.
 export function JobList() {
+  return (
+    <div className="mx-auto max-w-6xl px-6 py-8">
+      <JobListBody />
+    </div>
+  );
+}
+
+function JobListBody() {
   const { data, isLoading, isError, refetch } = useJobs();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [filter, setFilter] = useState<JobFilterId>(DEFAULT_FILTER);
