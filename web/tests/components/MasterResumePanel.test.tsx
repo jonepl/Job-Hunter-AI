@@ -112,4 +112,57 @@ describe("<MasterResumePanel>", () => {
     await userEvent.click(restoreButtons[0]);
     expect(activateMutate).toHaveBeenCalledWith(1);
   });
+
+  // The accent (primary) button is state-dependent: exactly one on screen either way
+  // (design.md — one btn-primary per view). primaryClass alone carries the `bg-accent` token.
+  function accentButtons(): HTMLElement[] {
+    return screen
+      .getAllByRole("button")
+      .filter((b) => b.className.split(" ").includes("bg-accent"));
+  }
+
+  it("renders exactly one accent button — Replace — when a resume is active", () => {
+    mockResumeState({ data: makeResumeState({ versions: [makeResume()] }) });
+    render(<MasterResumePanel />);
+
+    const accent = accentButtons();
+    expect(accent).toHaveLength(1);
+    expect(accent[0]).toHaveTextContent("Replace");
+  });
+
+  it("renders exactly one accent button — Choose a file — in the empty state", () => {
+    mockResumeState({ data: makeResumeState({ active: null, versions: [] }) });
+    render(<MasterResumePanel />);
+
+    const accent = accentButtons();
+    expect(accent).toHaveLength(1);
+    expect(accent[0]).toHaveTextContent("Choose a file");
+  });
+
+  it("shows the filename and date in a version row but not size or parsed counts", () => {
+    mockResumeState({
+      data: makeResumeState({
+        active: makeResume({ version: 2 }),
+        versions: [
+          makeResume({ version: 2, isActive: true }),
+          makeResume({ version: 1, isActive: false, filename: "old.pdf" }),
+        ],
+      }),
+    });
+    render(<MasterResumePanel />);
+
+    const list = within(screen.getByTestId("resume-versions"));
+    expect(list.getByText("old.pdf")).toBeInTheDocument();
+    expect(list.getAllByText(/Jun 28, 2026/).length).toBeGreaterThan(0);
+    // The row is provenance-free now: size and parsed counts live only on the active card.
+    expect(list.queryByText(/214 KB/)).not.toBeInTheDocument();
+    expect(list.queryByText(/parsed 41 skills/)).not.toBeInTheDocument();
+  });
+
+  it("renders no Download control (original bytes aren't stored — ADR-028)", () => {
+    mockResumeState({ data: makeResumeState({ versions: [makeResume()] }) });
+    render(<MasterResumePanel />);
+
+    expect(screen.queryByRole("button", { name: /Download/i })).toBeNull();
+  });
 });

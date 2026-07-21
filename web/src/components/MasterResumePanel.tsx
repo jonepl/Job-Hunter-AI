@@ -2,6 +2,7 @@ import { useRef, useState, type DragEvent } from "react";
 
 import type { ResumeOut } from "../api/client";
 import { useActivateResumeVersion, useResume, useUploadResume } from "../hooks/useResume";
+import { ghostClass, primaryClass, secondaryClass } from "./settings/shared";
 
 // The "Master resume" settings section (ui-spec §14.2): the source of truth for
 // scoring and tailoring. Shows the active file's provenance (never its content,
@@ -97,26 +98,22 @@ export function MasterResumePanel() {
       {active ? (
         <div
           data-testid="resume-current-file"
-          className="rounded-card border border-border bg-surface p-5"
+          className="flex max-w-[640px] items-center gap-4 rounded-card border border-border bg-surface p-[18px]"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="rounded-control bg-surface-2 px-2 py-0.5 font-mono text-label uppercase tracking-[0.05em] text-text-2">
-                  {formatBadge(active.filename)}
-                </span>
-                <span className="truncate font-body text-body text-text">{active.filename}</span>
-              </div>
-              <p className="mt-2 font-mono text-small text-text-2">{provenanceLine(active)}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="shrink-0 rounded-control border border-border-strong px-3 py-1.5 text-control text-text transition-colors duration-fast hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-            >
-              Replace
-            </button>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-card bg-accent-soft font-mono text-label font-semibold text-accent">
+            {formatBadge(active.filename)}
           </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-body text-text">{active.filename}</div>
+            <p className="mt-0.5 font-mono text-caption text-text-3">{provenanceLine(active)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className={primaryClass + " shrink-0"}
+          >
+            Replace
+          </button>
         </div>
       ) : (
         <p className="text-small text-text-2">
@@ -132,8 +129,8 @@ export function MasterResumePanel() {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         data-testid="resume-dropzone"
-        className={`rounded-card border border-dashed p-8 text-center transition-colors duration-fast ${
-          dragging ? "border-accent bg-accent-soft" : "border-border bg-surface"
+        className={`max-w-[640px] rounded-card border-[1.5px] border-dashed p-7 text-center transition-colors duration-fast ${
+          dragging ? "border-accent bg-accent-soft" : "border-border-strong bg-surface"
         }`}
       >
         <input
@@ -151,12 +148,12 @@ export function MasterResumePanel() {
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={upload.isPending}
-          className="rounded-control bg-accent px-4 py-2 text-control text-accent-on transition-colors duration-fast hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-60"
+          className={active ? secondaryClass : primaryClass}
         >
-          {active ? "Choose a replacement" : "Choose a file"}
+          {active ? "Browse files" : "Choose a file"}
         </button>
         <p className="mt-3 text-small text-text-3">
-          Drop a new .pdf or .docx here to replace — previous versions are kept.
+          Drop a new .docx or .pdf here to replace — previous versions are kept.
         </p>
 
         {upload.isPending && (
@@ -172,25 +169,22 @@ export function MasterResumePanel() {
       </div>
 
       {data.versions.length > 0 && (
-        <div>
+        <div className="max-w-[640px]">
           <h3 className="font-mono text-label uppercase tracking-[0.05em] text-text-3">
             Version history
           </h3>
           <ul data-testid="resume-versions" className="mt-3 divide-y divide-border">
             {data.versions.map((version) => (
-              <li
-                key={version.version}
-                className="flex items-center justify-between gap-4 py-3"
-              >
-                <div className="min-w-0">
-                  <span className="font-mono text-small text-text">v{version.version}</span>
-                  <span className="ml-2 truncate text-small text-text-2">
-                    {version.filename}
-                  </span>
-                  <p className="mt-0.5 font-mono text-caption text-text-3">
-                    {provenanceLine(version)}
-                  </p>
-                </div>
+              <li key={version.version} className="flex items-center gap-3 py-2.5">
+                <span className="w-[26px] shrink-0 font-mono text-small font-semibold text-text-2">
+                  v{version.version}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-small text-text-2">
+                  {version.filename}
+                </span>
+                <span className="shrink-0 font-mono text-label text-text-3">
+                  {formatDate(version.uploadedAt)}
+                </span>
                 {version.isActive ? (
                   <span className="shrink-0 font-mono text-label uppercase tracking-[0.05em] text-accent">
                     Active
@@ -200,7 +194,7 @@ export function MasterResumePanel() {
                     type="button"
                     onClick={() => activate.mutate(version.version)}
                     disabled={activate.isPending}
-                    className="shrink-0 rounded-control border border-border-strong px-3 py-1 text-small text-text transition-colors duration-fast hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-60"
+                    className={ghostClass + " shrink-0 px-2 py-1 text-small"}
                   >
                     Restore
                   </button>
