@@ -42,6 +42,7 @@ def test_get_settings_returns_globals_and_masked_secrets(monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     assert body["evaluatorProvider"] == "openai"
+    assert body["nearMissBand"] == 15
     assert "envDefaults" in body
     names = {s["name"] for s in body["secrets"]}
     assert names == {"openai_api_key", "anthropic_api_key", "gemini_api_key"}

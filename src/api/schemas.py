@@ -6,6 +6,7 @@ generated TypeScript matches the component contracts (e.g. ``nearMissFloor`` per
 ADR-033); Python code may still populate them by their snake_case names.
 """
 
+import os
 from datetime import datetime
 from typing import Literal
 
@@ -398,6 +399,7 @@ class SettingsOut(BaseModel):
     schedule_timezone: str
     enrichment_mode: str
     voice: VoiceIn
+    near_miss_band: int
     env_defaults: "SettingsDefaults"
     secrets: list["SecretStatus"]
     pricing: "PricingOut"
@@ -423,6 +425,8 @@ class SettingsOut(BaseModel):
                 person=settings.voice.person,
                 style_notes=settings.voice.style_notes,
             ),
+            # Read-only display value; same env read as job_search_service so they agree.
+            near_miss_band=int(os.getenv("NEAR_MISS_BAND", "15")),
             env_defaults=SettingsDefaults.from_settings(env_defaults),
             secrets=[SecretStatus(**s) for s in secrets],
             pricing=PricingOut(

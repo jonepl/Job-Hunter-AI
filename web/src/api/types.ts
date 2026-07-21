@@ -975,6 +975,8 @@ export interface components {
             /** Enrichmentmode */
             enrichmentMode: string;
             voice: components["schemas"]["VoiceIn"];
+            /** Nearmissband */
+            nearMissBand: number;
             envDefaults: components["schemas"]["SettingsDefaults"];
             /** Secrets */
             secrets: components["schemas"]["SecretStatus"][];
