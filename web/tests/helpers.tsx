@@ -156,6 +156,7 @@ export function makeSettings(overrides: Partial<SettingsOut> = {}): SettingsOut 
     scheduleTimezone: "UTC",
     enrichmentMode: "shadow",
     voice: { ...voice },
+    nearMissBand: 15,
     envDefaults: {
       evaluatorProvider: "openai",
       evaluatorModel: null,
