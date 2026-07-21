@@ -707,6 +707,21 @@ export interface components {
             lastSeenAt: string;
         };
         /**
+         * PricingOut
+         * @description The configured token pricing, surfaced read-only on the provider cards.
+         *
+         *     Rates live in ``.env`` (``docs/env.md`` is the source of truth) and always display;
+         *     ``show_cost_estimate`` reflects ``SHOW_COST_ESTIMATE`` so the UI can note that the
+         *     rates only *apply* to tracking when it is enabled. Never writable (no differs-from-.env
+         *     semantics) — absent from ``SettingsUpdate`` and ``SettingsDefaults``.
+         */
+        PricingOut: {
+            /** Showcostestimate */
+            showCostEstimate: boolean;
+            openai: components["schemas"]["ProviderRates"];
+            anthropic: components["schemas"]["ProviderRates"];
+        };
+        /**
          * ProfileIn
          * @description Request body for creating/updating a search profile.
          */
@@ -768,6 +783,16 @@ export interface components {
             scoreThreshold: number;
             /** Topresults */
             topResults: number | null;
+        };
+        /**
+         * ProviderRates
+         * @description One provider's configured per-1M-token rates (read-only, ``.env``-owned).
+         */
+        ProviderRates: {
+            /** Inputper1M */
+            inputPer1M: number;
+            /** Outputper1M */
+            outputPer1M: number;
         };
         /**
          * ResumeOut
@@ -925,6 +950,7 @@ export interface components {
          *
          *     ``envDefaults`` lets the UI show a "differs from .env" indicator per field
          *     (ADR-031). ``secrets`` carries **masked** status only — never a key value.
+         *     ``pricing`` is read-only configured token rates (never in ``SettingsUpdate``).
          */
         SettingsOut: {
             /** Evaluatorprovider */
@@ -941,6 +967,7 @@ export interface components {
             envDefaults: components["schemas"]["SettingsDefaults"];
             /** Secrets */
             secrets: components["schemas"]["SecretStatus"][];
+            pricing: components["schemas"]["PricingOut"];
         };
         /**
          * SettingsUpdate

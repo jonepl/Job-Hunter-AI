@@ -17,6 +17,7 @@ from src.core.exceptions import ModelNotFoundError
 from src.core.services.job_search_service import JobSearchService
 from src.infra.cost_estimator import estimate_run_cost
 from src.infra.cost_tracker import CostTracker
+from src.infra.pricing import rates_for, show_cost_estimate
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +41,9 @@ async def run_immediate(
     logger.info("Profiles : %d", len(profiles))
 
     # Load cost tracking config once
-    show_cost = os.getenv("SHOW_COST_ESTIMATE", "false").lower() == "true"
+    show_cost = show_cost_estimate()
     provider = os.getenv("EVALUATOR_PROVIDER", "").lower()
-
-    if provider == "openai":
-        input_rate = float(os.getenv("OPENAI_INPUT_COST_PER_1M", "2.50"))
-        output_rate = float(os.getenv("OPENAI_OUTPUT_COST_PER_1M", "10.00"))
-    else:
-        input_rate = float(os.getenv("ANTHROPIC_INPUT_COST_PER_1M", "3.00"))
-        output_rate = float(os.getenv("ANTHROPIC_OUTPUT_COST_PER_1M", "15.00"))
+    input_rate, output_rate = rates_for(provider)
 
     for profile in profiles:
         logger.info(
