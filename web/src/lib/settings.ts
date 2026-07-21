@@ -37,5 +37,7 @@ export function profileToInput(p: ProfileOut): ProfileIn {
     activeScrapers: p.activeScrapers,
     scoreThreshold: p.scoreThreshold,
     topResults: p.topResults,
+    // Carry `enabled` through so an edit never silently resumes a paused profile.
+    enabled: p.enabled,
   };
 }

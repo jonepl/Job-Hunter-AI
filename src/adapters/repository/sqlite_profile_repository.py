@@ -81,8 +81,8 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
         cursor = self._conn.execute(
             "INSERT INTO search_profiles ("
             "name, query, location, work_types, date_posted, active_scrapers, "
-            "score_threshold, top_results, position, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "score_threshold, top_results, enabled, position, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 profile.name,
                 profile.query,
@@ -92,6 +92,7 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
                 _dump_scrapers(profile.active_scrapers),
                 profile.score_threshold,
                 profile.top_results,
+                int(profile.enabled),
                 next_position,
                 datetime.now().isoformat(),
             ),
@@ -100,11 +101,16 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
         return profile.model_copy(update={"profile_id": cursor.lastrowid})
 
     def update_profile(self, profile: SearchProfile) -> SearchProfile:
-        """Persist changes to the profile identified by ``profile.profile_id``."""
+        """Persist changes to the profile identified by ``profile.profile_id``.
+
+        ``last_run_at`` / ``last_run_status`` are deliberately **not** written here —
+        they are pipeline-owned (see :meth:`set_last_run`), so a user edit in Settings
+        can never clobber run history.
+        """
         self._conn.execute(
             "UPDATE search_profiles SET "
             "name = ?, query = ?, location = ?, work_types = ?, date_posted = ?, "
-            "active_scrapers = ?, score_threshold = ?, top_results = ? "
+            "active_scrapers = ?, score_threshold = ?, top_results = ?, enabled = ? "
             "WHERE id = ?",
             (
                 profile.name,
@@ -115,11 +121,30 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
                 _dump_scrapers(profile.active_scrapers),
                 profile.score_threshold,
                 profile.top_results,
+                int(profile.enabled),
                 profile.profile_id,
             ),
         )
         self._conn.commit()
         return profile
+
+    def set_last_run(self, profile_id: int, status: str, at: str) -> None:
+        """Record this profile's most recent run outcome (pipeline-owned).
+
+        A narrow, dedicated write — not a full ``update_profile`` round-trip — so a
+        concurrent user edit in Settings can't race with the pipeline's write.
+
+        Args:
+            profile_id: The profile whose run metadata to update.
+            status: ``running`` | ``succeeded`` | ``failed``.
+            at: ISO-8601 timestamp of the run start.
+        """
+        self._conn.execute(
+            "UPDATE search_profiles SET last_run_at = ?, last_run_status = ? "
+            "WHERE id = ?",
+            (at, status, profile_id),
+        )
+        self._conn.commit()
 
     def delete_profile(self, profile_id: int) -> None:
         """Remove the profile with ``profile_id`` (a no-op when absent)."""
@@ -159,6 +184,9 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
             ],
             score_threshold=row["score_threshold"],
             top_results=row["top_results"],
+            enabled=bool(row["enabled"]),
+            last_run_at=row["last_run_at"],
+            last_run_status=row["last_run_status"],
         )
 
 

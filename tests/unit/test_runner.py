@@ -14,7 +14,9 @@ from src.runner import _log_report_results, run_immediate
 # ---------------------------------------------------------------------------
 
 
-def _make_profile(profile_id: int = 1, score_threshold: int = 70) -> MagicMock:
+def _make_profile(
+    profile_id: int = 1, score_threshold: int = 70, enabled: bool = True
+) -> MagicMock:
     """Return a minimal SearchProfile-like mock."""
     p = MagicMock()
     p.profile_id = profile_id
@@ -25,6 +27,7 @@ def _make_profile(profile_id: int = 1, score_threshold: int = 70) -> MagicMock:
     p.work_types = []
     p.date_posted = None
     p.active_scrapers = []
+    p.enabled = enabled
     return p
 
 
@@ -118,6 +121,59 @@ async def test_run_immediate_exits_on_model_not_found():
     assert exc_info.value.code == 1
     # Fail-fast: does not fall through to the second profile.
     mock_svc.run.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_immediate_skips_disabled_profiles(caplog):
+    """A paused profile is never built or run, and the skip count is logged."""
+    profiles = [_make_profile(1, enabled=False), _make_profile(2, enabled=True)]
+    mock_svc = MagicMock()
+    mock_svc.run = AsyncMock(return_value=_make_report())
+    factory = MagicMock(return_value=mock_svc)
+
+    with caplog.at_level(logging.INFO, logger="src.runner"):
+        await run_immediate(profiles=profiles, service_factory=factory)
+
+    # The factory is built only for the enabled profile.
+    assert factory.call_count == 1
+    assert factory.call_args.args[0].profile_id == 2
+    assert "Skipping 1 paused profile(s)" in " ".join(caplog.messages)
+
+
+@pytest.mark.asyncio
+async def test_run_immediate_stamps_last_run_running_then_succeeded():
+    """A successful profile is stamped running → succeeded on the settings service."""
+    profiles = [_make_profile(1)]
+    mock_svc = MagicMock()
+    mock_svc.run = AsyncMock(return_value=_make_report())
+    settings_service = MagicMock()
+
+    await run_immediate(
+        profiles=profiles,
+        service_factory=MagicMock(return_value=mock_svc),
+        settings_service=settings_service,
+    )
+
+    statuses = [c.args[1] for c in settings_service.set_profile_last_run.call_args_list]
+    assert statuses == ["running", "succeeded"]
+
+
+@pytest.mark.asyncio
+async def test_run_immediate_stamps_last_run_failed_on_error():
+    """A profile that raises a generic error is stamped running → failed."""
+    profiles = [_make_profile(1)]
+    mock_svc = MagicMock()
+    mock_svc.run = AsyncMock(side_effect=Exception("pipeline exploded"))
+    settings_service = MagicMock()
+
+    await run_immediate(
+        profiles=profiles,
+        service_factory=MagicMock(return_value=mock_svc),
+        settings_service=settings_service,
+    )
+
+    statuses = [c.args[1] for c in settings_service.set_profile_last_run.call_args_list]
+    assert statuses == ["running", "failed"]
 
 
 # ---------------------------------------------------------------------------

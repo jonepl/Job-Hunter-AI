@@ -190,6 +190,9 @@ export function makeProfile(overrides: Partial<ProfileOut> = {}): ProfileOut {
     activeScrapers: ["linkedin", "indeed"],
     scoreThreshold: 75,
     topResults: null,
+    enabled: true,
+    lastRunAt: null,
+    lastRunStatus: null,
     ...overrides,
   };
 }

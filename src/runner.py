@@ -9,12 +9,14 @@ Contains no CLI or argparse dependency. Accepts plain Python objects only.
 import logging
 import os
 import sys
+from datetime import datetime
 from typing import Callable
 
 from src.core.domain.run_report import RunReport
 from src.core.domain.search_profile import SearchProfile
 from src.core.exceptions import ModelNotFoundError
 from src.core.services.job_search_service import JobSearchService
+from src.core.services.settings_service import SettingsService
 from src.infra.cost_estimator import estimate_run_cost
 from src.infra.cost_tracker import CostTracker
 from src.infra.pricing import rates_for, show_cost_estimate
@@ -22,30 +24,48 @@ from src.infra.pricing import rates_for, show_cost_estimate
 logger = logging.getLogger(__name__)
 
 
+def _record_last_run(
+    settings_service: SettingsService | None, profile_id: int, status: str
+) -> None:
+    """Stamp a profile's last-run status when a settings service is available (Part B)."""
+    if settings_service is not None:
+        settings_service.set_profile_last_run(
+            profile_id, status, datetime.now().isoformat()
+        )
+
+
 async def run_immediate(
     profiles: list[SearchProfile],
     service_factory: Callable[[SearchProfile], JobSearchService],
+    settings_service: SettingsService | None = None,
 ) -> None:
-    """Run all profiles immediately and exit.
+    """Run all enabled profiles immediately and exit.
 
-    Iterates all profiles sequentially. Builds a fresh service instance per
-    profile. Logs results after each run. Exits with code 1 on unrecoverable
-    errors.
+    Iterates profiles sequentially, skipping any that are paused (``enabled`` is
+    False). Builds a fresh service instance per profile. Logs results after each
+    run. Exits with code 1 on unrecoverable errors.
 
     Args:
         profiles: List of SearchProfile instances to run.
         service_factory: Callable that accepts a SearchProfile and returns a
             configured JobSearchService.
+        settings_service: Optional DB-backed settings service; when provided, each
+            profile's last-run status is stamped ``running`` → ``succeeded``/``failed``.
     """
     logger.info("Immediate run mode")
-    logger.info("Profiles : %d", len(profiles))
+
+    enabled = [p for p in profiles if p.enabled]
+    skipped = len(profiles) - len(enabled)
+    if skipped:
+        logger.info("Skipping %d paused profile(s)", skipped)
+    logger.info("Profiles : %d", len(enabled))
 
     # Load cost tracking config once
     show_cost = show_cost_estimate()
     provider = os.getenv("EVALUATOR_PROVIDER", "").lower()
     input_rate, output_rate = rates_for(provider)
 
-    for profile in profiles:
+    for profile in enabled:
         logger.info(
             "Profile %d: %s | %s",
             profile.profile_id,
@@ -80,6 +100,8 @@ async def run_immediate(
                 enabled=False,
             )
 
+        _record_last_run(settings_service, profile.profile_id, "running")
+
         try:
             service = service_factory(profile)
             report = await service.run(
@@ -112,14 +134,19 @@ async def run_immediate(
             _log_report_results(profile, report, logger)
             logger.info("=" * 60)
 
+            _record_last_run(settings_service, profile.profile_id, "succeeded")
+
         except FileNotFoundError as exc:
+            _record_last_run(settings_service, profile.profile_id, "failed")
             logger.critical("Resume file not found: %s", exc)
             logger.critical("Mount your resume PDF to docs/resume/resume.pdf and try again.")
             sys.exit(1)
         except ModelNotFoundError as exc:
+            _record_last_run(settings_service, profile.profile_id, "failed")
             logger.critical("%s", exc)
             sys.exit(1)
         except Exception as exc:
+            _record_last_run(settings_service, profile.profile_id, "failed")
             logger.critical(
                 "Unexpected error during profile %d pipeline: %s",
                 profile.profile_id,

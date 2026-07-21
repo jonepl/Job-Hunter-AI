@@ -79,7 +79,7 @@ def test_migrations_create_all_tables_on_fresh_db():
     assert "search_profiles" in tables  # migration 6 (W7)
     assert "runs" in tables  # migration 7 (W8)
     versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations")]
-    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5, 6, 7]
+    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5, 6, 7, 8]
 
     # Migration 5 (W6): the async status column exists and defaults to 'ready'.
     columns = _generations_columns(conn)
@@ -140,8 +140,65 @@ def test_migration_3_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     versions = [
         row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4, 5, 6, 7]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8]
     repo2.close()
+
+
+def _search_profiles_columns(conn: sqlite3.Connection) -> dict[str, str]:
+    """Return the ``search_profiles`` table's column name → default expression."""
+    rows = conn.execute("PRAGMA table_info(search_profiles)").fetchall()
+    return {row[1]: row[4] for row in rows}
+
+
+def test_migration_8_upgrades_existing_profiles_to_enabled(tmp_path):
+    """A store at v7 upgrades to v8; existing profile rows come back enabled, unrun."""
+    from src.adapters.repository.sqlite_profile_repository import (
+        SQLiteProfileRepository,
+    )
+    from src.core.domain.scraper_name import ScraperName
+    from src.core.domain.search_profile import SearchProfile
+
+    db_path = str(tmp_path / "agent.db")
+
+    # Build a database at migrations 1..7 only, then insert a pre-migration-8 profile
+    # row directly (without the new columns) to mimic an existing store.
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    for version, sql in MIGRATIONS:
+        if version >= 8:
+            continue
+        conn.executescript(sql)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (version, _NOW.isoformat()),
+        )
+    conn.execute(
+        "INSERT INTO search_profiles ("
+        "name, query, location, work_types, date_posted, active_scrapers, "
+        "score_threshold, top_results, position, created_at"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("Legacy", "Engineer", "Remote", None, "3days", '["linkedin"]', 75, None, 0, _NOW.isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+    repo = SQLiteProfileRepository(db_path=db_path)  # opening applies migration 8
+    columns = _search_profiles_columns(repo._conn)
+    assert "enabled" in columns
+    assert columns["enabled"] == "1"
+    assert "last_run_at" in columns
+    assert "last_run_status" in columns
+
+    profiles = repo.list_profiles()
+    assert len(profiles) == 1
+    assert profiles[0].enabled is True
+    assert profiles[0].last_run_at is None
+    assert profiles[0].last_run_status is None
+    assert isinstance(profiles[0], SearchProfile)
+    assert profiles[0].active_scrapers == [ScraperName.LINKEDIN]
+    repo.close()
 
 
 def test_migrations_4_and_5_upgrade_existing_store_without_touching_jobs(tmp_path):
@@ -193,5 +250,5 @@ def test_migrations_4_and_5_upgrade_existing_store_without_touching_jobs(tmp_pat
     versions = [
         row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4, 5, 6, 7]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8]
     repo.close()

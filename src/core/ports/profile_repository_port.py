@@ -40,6 +40,20 @@ class ProfileRepositoryPort(ABC):
         ...
 
     @abstractmethod
+    def set_last_run(self, profile_id: int, status: str, at: str) -> None:
+        """Record this profile's most recent run outcome (pipeline-owned).
+
+        A narrow write, separate from :meth:`update_profile`, so the run pipeline's
+        last-run metadata can never be clobbered by a concurrent user edit.
+
+        Args:
+            profile_id: The profile whose run metadata to update.
+            status: ``running`` | ``succeeded`` | ``failed``.
+            at: ISO-8601 timestamp of the run start.
+        """
+        ...
+
+    @abstractmethod
     def count(self) -> int:
         """Return the number of stored profiles."""
         ...

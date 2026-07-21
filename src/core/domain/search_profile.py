@@ -44,6 +44,15 @@ class SearchProfile(BaseModel):
     top_results: int | None = None
     """Cap on qualifying results delivered. None means all qualifying results."""
 
+    enabled: bool = True
+    """Whether the run pipeline executes this profile. Paused profiles are skipped."""
+
+    last_run_at: str | None = None
+    """ISO timestamp of this profile's most recent run start (pipeline-owned)."""
+
+    last_run_status: str | None = None
+    """Most recent run outcome: ``running`` | ``succeeded`` | ``failed`` (pipeline-owned)."""
+
     @classmethod
     def from_env(cls, n: int) -> "SearchProfile":
         """Load profile N from environment variables using PROFILE_N_ prefix.

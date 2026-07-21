@@ -46,10 +46,7 @@ class RunService:
         run_repo: RunRepositoryPort,
         settings_service: SettingsService,
         service_factory: Callable[[SearchProfile], JobSearchService],
-        run_all_profiles: Callable[
-            [list[SearchProfile], Callable[[SearchProfile], JobSearchService]],
-            "object",
-        ],
+        run_all_profiles: Callable[..., "object"],
         run_timeout_seconds: float = _DEFAULT_RUN_TIMEOUT_SECONDS,
     ) -> None:
         """Wire the storage, config, and pipeline the run coordinates.
@@ -87,9 +84,16 @@ class RunService:
             raise RunInProgressError(
                 f"A run ({active.id}) is already in progress."
             )
-        if not self._settings_service.list_profiles():
+        profiles = self._settings_service.list_profiles()
+        if not profiles:
             raise NoProfilesError(
                 "No search profiles configured — add one in Settings first."
+            )
+        # ``getattr`` keeps this robust for test doubles that model profiles as bare
+        # strings; real SearchProfiles always carry ``enabled``.
+        if not any(getattr(p, "enabled", True) for p in profiles):
+            raise NoProfilesError(
+                "All search profiles are paused — resume one in Settings first."
             )
         run = RunRecord(
             id=uuid4().hex,
@@ -120,7 +124,9 @@ class RunService:
         try:
             self._settings_service.apply_to_environment()
             profiles = self._settings_service.list_profiles()
-            reports = await self._run_all_profiles(profiles, self._service_factory)
+            reports = await self._run_all_profiles(
+                profiles, self._service_factory, self._settings_service
+            )
         except Exception as exc:  # noqa: BLE001 — record failure, never crash the task
             logger.error("Run %s failed (%s)", run_id, type(exc).__name__)
             self._run_repo.update(

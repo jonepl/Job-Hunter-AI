@@ -95,3 +95,36 @@ def test_delete_unknown_profile_returns_404(monkeypatch):
     """Deleting a missing id is a 404."""
     resp = _client(monkeypatch).delete("/api/profiles/999")
     assert resp.status_code == 404
+
+
+def test_created_profile_exposes_enabled_and_last_run_fields(monkeypatch):
+    """A newly created profile is enabled, with null last-run metadata."""
+    client = _client(monkeypatch)
+    body = client.post("/api/profiles", json=_REMOTE_PROFILE).json()
+    assert body["enabled"] is True
+    assert body["lastRunAt"] is None
+    assert body["lastRunStatus"] is None
+
+
+def test_put_can_pause_and_resume_a_profile(monkeypatch):
+    """PUT with enabled:false pauses; enabled:true resumes — it round-trips."""
+    client = _client(monkeypatch)
+    pid = client.post("/api/profiles", json=_REMOTE_PROFILE).json()["id"]
+
+    paused = client.put(f"/api/profiles/{pid}", json={**_REMOTE_PROFILE, "enabled": False})
+    assert paused.status_code == 200
+    assert paused.json()["enabled"] is False
+
+    resumed = client.put(f"/api/profiles/{pid}", json={**_REMOTE_PROFILE, "enabled": True})
+    assert resumed.json()["enabled"] is True
+
+
+def test_profile_in_ignores_read_only_last_run_fields(monkeypatch):
+    """last-run fields are read-only — a client can't set them through ProfileIn."""
+    client = _client(monkeypatch)
+    body = client.post(
+        "/api/profiles",
+        json={**_REMOTE_PROFILE, "lastRunStatus": "succeeded", "lastRunAt": "2026-01-01T00:00:00"},
+    ).json()
+    assert body["lastRunStatus"] is None
+    assert body["lastRunAt"] is None

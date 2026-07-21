@@ -173,6 +173,20 @@ class SettingsService:
         """Delete a search profile by id."""
         self._profiles.delete_profile(profile_id)
 
+    def set_profile_last_run(self, profile_id: int, status: str, at: str) -> None:
+        """Record a profile's most recent run outcome (pipeline-owned, Part B).
+
+        Delegates to the repository's narrow ``set_last_run`` write so the run loops
+        can stamp ``running`` → ``succeeded``/``failed`` without a full profile
+        round-trip that could race a concurrent Settings edit.
+
+        Args:
+            profile_id: The profile whose run metadata to update.
+            status: ``running`` | ``succeeded`` | ``failed``.
+            at: ISO-8601 timestamp of the run start.
+        """
+        self._profiles.set_last_run(profile_id, status, at)
+
     def profile_count(self) -> int:
         """Return the number of stored profiles."""
         return self._profiles.count()

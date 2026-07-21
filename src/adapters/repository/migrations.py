@@ -205,6 +205,19 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS idx_runs_started ON runs (started_at);
 """
 
+# Migration 8 — the profiles panel: pause/resume + per-profile last run.
+#
+# ``enabled`` drives the Settings status dot and Pause/Resume toggle; the run
+# pipeline skips a disabled profile (default 1 → every existing row stays active,
+# no behavior change on upgrade). ``last_run_at`` / ``last_run_status`` are the
+# pipeline-owned run metadata behind the row's "running now" / timestamp text —
+# written only by the run loops, never by a user edit.
+_MIGRATION_8 = """
+ALTER TABLE search_profiles ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE search_profiles ADD COLUMN last_run_at TEXT;
+ALTER TABLE search_profiles ADD COLUMN last_run_status TEXT;
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -215,6 +228,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (5, _MIGRATION_5),
     (6, _MIGRATION_6),
     (7, _MIGRATION_7),
+    (8, _MIGRATION_8),
 ]
 
 
