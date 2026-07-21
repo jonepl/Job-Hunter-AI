@@ -25,12 +25,30 @@ describe("<VoiceSettings>", () => {
     expect(preview).toHaveTextContent(/direct, first person/i);
   });
 
-  it("updates the preview as the tone changes", async () => {
+  it("updates the preview when a different tone card is picked", async () => {
     renderWithClient(<VoiceSettings />);
     await screen.findByTestId("voice-settings");
 
-    await userEvent.selectOptions(screen.getByLabelText("Tone"), "warm");
+    await userEvent.click(screen.getByRole("radio", { name: /Warm/ }));
     expect(screen.getByTestId("voice-preview")).toHaveTextContent(/warm/i);
+  });
+
+  it("updates the preview when the first-person pill is toggled", async () => {
+    renderWithClient(<VoiceSettings />);
+    await screen.findByTestId("voice-settings");
+
+    await userEvent.click(screen.getByRole("radio", { name: /Implied/ }));
+    expect(screen.getByTestId("voice-preview")).toHaveTextContent(/implied voice/i);
+  });
+
+  it("marks the active tone card and leaves the others unchecked", async () => {
+    renderWithClient(<VoiceSettings />);
+    await screen.findByTestId("voice-settings");
+
+    expect(screen.getByRole("radio", { name: /Direct/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: /Warm/ })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("radio", { name: /Formal/ })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("radio", { name: /Bold/ })).toHaveAttribute("aria-checked", "false");
   });
 
   it("saves the voice", async () => {
