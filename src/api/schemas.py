@@ -527,6 +527,9 @@ class ProfileOut(BaseModel):
     active_scrapers: list[str]
     score_threshold: int
     top_results: int | None
+    enabled: bool
+    last_run_at: str | None
+    last_run_status: str | None
 
     @classmethod
     def from_profile(cls, profile: SearchProfile) -> "ProfileOut":
@@ -543,6 +546,9 @@ class ProfileOut(BaseModel):
             active_scrapers=[s.value for s in profile.active_scrapers],
             score_threshold=profile.score_threshold,
             top_results=profile.top_results,
+            enabled=profile.enabled,
+            last_run_at=profile.last_run_at,
+            last_run_status=profile.last_run_status,
         )
 
 
@@ -559,6 +565,7 @@ class ProfileIn(BaseModel):
     active_scrapers: list[str] = ["linkedin", "indeed", "glassdoor", "ziprecruiter"]
     score_threshold: int = 75
     top_results: int | None = None
+    enabled: bool = True
 
     def to_profile(self, profile_id: int = 0) -> SearchProfile:
         """Map the request to a SearchProfile, applying the location-resolution rule.
@@ -588,6 +595,7 @@ class ProfileIn(BaseModel):
             active_scrapers=[ScraperName(s) for s in self.active_scrapers],
             score_threshold=self.score_threshold,
             top_results=self.top_results,
+            enabled=self.enabled,
         )
 
 

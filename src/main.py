@@ -54,7 +54,8 @@ async def main() -> None:
     # CLI overrides so precedence stays .env → DB → CLI (CLI wins, for testing).
     from src.service_factory import build_settings_service
 
-    build_settings_service().apply_to_environment()
+    settings_service = build_settings_service()
+    settings_service.apply_to_environment()
 
     apply_cli_overrides(profiles, args)
     apply_evaluator_override(args)
@@ -70,6 +71,7 @@ async def main() -> None:
         await run_immediate(
             profiles=profiles,
             service_factory=build_service,
+            settings_service=settings_service,
         )
 
 

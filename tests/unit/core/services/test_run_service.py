@@ -94,7 +94,7 @@ def _service(
     """Build a RunService over an in-memory repo + fakes; return both."""
     repo = SQLiteRunRepository(db_path=":memory:")
 
-    async def fake_run_all(profs, factory):
+    async def fake_run_all(profs, factory, settings_service=None):
         if fail:
             raise RuntimeError("SECRET scraped payload exploded")
         return reports or []
@@ -122,6 +122,20 @@ def test_start_run_raises_when_no_profiles():
     service, _ = _service(profiles=[])
     with pytest.raises(NoProfilesError):
         service.start_run()
+
+
+class _PausedProfile:
+    """A minimal profile double that is disabled (enabled=False)."""
+
+    enabled = False
+
+
+def test_start_run_raises_paused_message_when_all_profiles_paused():
+    """When profiles exist but every one is paused, start_run fails with the paused message."""
+    service, _ = _service(profiles=[_PausedProfile(), _PausedProfile()])
+    with pytest.raises(NoProfilesError) as exc_info:
+        service.start_run()
+    assert "paused" in str(exc_info.value).lower()
 
 
 def test_start_run_raises_when_a_run_is_already_active():

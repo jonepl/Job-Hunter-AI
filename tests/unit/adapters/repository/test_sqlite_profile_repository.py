@@ -82,3 +82,47 @@ def test_delete_and_count():
     repo.delete_profile(a.profile_id)
     assert repo.count() == 1
     assert repo.get_profile(a.profile_id) is None
+
+
+def test_enabled_defaults_true_and_round_trips():
+    """A new profile is enabled by default; a paused one round-trips as disabled."""
+    repo = _repo()
+    created = repo.create_profile(_profile())
+    assert repo.get_profile(created.profile_id).enabled is True
+
+    repo.update_profile(created.model_copy(update={"enabled": False}))
+    assert repo.get_profile(created.profile_id).enabled is False
+
+
+def test_set_last_run_writes_status_and_timestamp():
+    """set_last_run records the status + timestamp without disturbing other columns."""
+    repo = _repo()
+    created = repo.create_profile(_profile(name="Backend", score_threshold=75))
+
+    repo.set_last_run(created.profile_id, "running", "2026-07-20T09:00:00")
+    fetched = repo.get_profile(created.profile_id)
+    assert fetched.last_run_status == "running"
+    assert fetched.last_run_at == "2026-07-20T09:00:00"
+    # Other columns are untouched.
+    assert fetched.name == "Backend"
+    assert fetched.score_threshold == 75
+    assert fetched.enabled is True
+
+
+def test_update_profile_does_not_clear_last_run():
+    """A user edit via update_profile leaves pipeline-owned last-run columns intact."""
+    repo = _repo()
+    created = repo.create_profile(_profile())
+    repo.set_last_run(created.profile_id, "succeeded", "2026-07-20T10:00:00")
+
+    # A normal edit carries no last-run fields (the read model just fetched them,
+    # but update_profile must not persist them back / clear them).
+    edited = repo.get_profile(created.profile_id).model_copy(
+        update={"query": "Staff Engineer", "last_run_at": None, "last_run_status": None}
+    )
+    repo.update_profile(edited)
+
+    fetched = repo.get_profile(created.profile_id)
+    assert fetched.query == "Staff Engineer"
+    assert fetched.last_run_status == "succeeded"
+    assert fetched.last_run_at == "2026-07-20T10:00:00"

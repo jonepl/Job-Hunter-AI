@@ -34,6 +34,37 @@ const DATES = [
   { value: "month", label: "Past month" },
 ];
 
+// Scraper key → the display name the mock shows in the per-row platforms line.
+const PLATFORM_NAMES: Record<string, string> = {
+  linkedin: "LinkedIn",
+  indeed: "Indeed",
+  glassdoor: "Glassdoor",
+  ziprecruiter: "ZipRecruiter",
+};
+
+/** The platforms a profile searches, derived from its scrapers (e.g. "LinkedIn · Indeed"). */
+function platformLine(scrapers: string[]): string {
+  return scrapers.map((s) => PLATFORM_NAMES[s] ?? s).join(" · ");
+}
+
+/** Format an ISO timestamp as a short "Jul 20, 09:00" run stamp. */
+function formatRunTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** The mock's last-run text: paused, running now, a timestamp, or "never run". */
+function lastRunText(p: ProfileOut): string {
+  if (!p.enabled) return "Paused";
+  if (p.lastRunStatus === "running") return "running now";
+  if (p.lastRunAt) return formatRunTime(p.lastRunAt);
+  return "never run";
+}
+
 function blankDraft(): ProfileIn {
   return {
     name: "",
@@ -44,6 +75,7 @@ function blankDraft(): ProfileIn {
     activeScrapers: [...SCRAPERS],
     scoreThreshold: 75,
     topResults: null,
+    enabled: true,
   };
 }
 
@@ -100,43 +132,86 @@ export function ProfileSettings() {
     );
   }
 
+  function togglePause(p: ProfileOut) {
+    update.mutate({ id: p.id, body: { ...profileToInput(p), enabled: !p.enabled } });
+  }
+
   return (
     <section data-testid="profile-settings" className="space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <PanelHeader title="Search profiles" subtitle="The searches your runs execute." />
+        <PanelHeader
+          title="Search profiles"
+          subtitle="Each profile is a saved query the agent runs on your schedule."
+        />
         <button type="button" onClick={startAdd} className={primaryClass}>
-          Add profile
+          + New profile
         </button>
       </div>
 
       <ul className="space-y-3" data-testid="profile-list">
-        {profiles.map((p) => (
-          <li
-            key={p.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-surface p-4"
-          >
-            <div className="min-w-0">
-              <p className="text-control text-text">{p.name || p.query}</p>
-              <p className="mt-0.5 font-mono text-caption text-text-3">
-                {p.query} · {p.location} · threshold {p.scoreThreshold}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => startEdit(p)} className={secondaryClass}>
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => remove.mutate(p.id)}
-                disabled={profiles.length <= 1 || remove.isPending}
-                className={dangerClass + " disabled:opacity-40"}
-                aria-label={`Delete ${p.name || p.query}`}
-              >
-                Delete
-              </button>
-            </div>
-          </li>
-        ))}
+        {profiles.map((p) => {
+          const name = p.name || p.query;
+          return (
+            <li
+              key={p.id}
+              className="flex items-center gap-4 rounded-card border border-border bg-surface p-4"
+            >
+              {/* Status dot — carries meaning, so it gets an accessible label. */}
+              <span
+                role="img"
+                aria-label={p.enabled ? "Active" : "Paused"}
+                className={
+                  "h-[9px] w-[9px] shrink-0 rounded-full " +
+                  (p.enabled ? "bg-qualify" : "bg-border-strong")
+                }
+              />
+
+              {/* Identity — dimmed when paused so it reads as inactive at a glance. */}
+              <div className={"min-w-0 flex-1 " + (p.enabled ? "" : "text-text-3")}>
+                <p className="text-control font-semibold text-text">{name}</p>
+                <p className="mt-0.5 truncate font-mono text-caption text-text-3">{p.query}</p>
+              </div>
+
+              {/* Meta — platforms + last run. */}
+              <div className="flex flex-col items-end gap-[3px] text-right">
+                <span className="text-small text-text-2">
+                  {platformLine(p.activeScrapers)}
+                </span>
+                <span className="font-mono text-label text-text-3">{lastRunText(p)}</span>
+              </div>
+
+              {/* Actions — edit, pause/resume, delete. */}
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => startEdit(p)} className={secondaryClass}>
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => togglePause(p)}
+                  disabled={update.isPending}
+                  aria-label={`${p.enabled ? "Pause" : "Resume"} ${name}`}
+                  className={
+                    "rounded-control px-[11px] py-1.5 text-small font-semibold transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 border " +
+                    (p.enabled
+                      ? "border-border-strong bg-surface text-text-2"
+                      : "border-accent bg-accent-soft text-accent")
+                  }
+                >
+                  {p.enabled ? "Pause" : "Resume"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove.mutate(p.id)}
+                  disabled={profiles.length <= 1 || remove.isPending}
+                  className={dangerClass + " disabled:opacity-40"}
+                  aria-label={`Delete ${name}`}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

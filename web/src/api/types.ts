@@ -759,6 +759,11 @@ export interface components {
             scoreThreshold: number;
             /** Topresults */
             topResults?: number | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
         };
         /**
          * ProfileOut
@@ -783,6 +788,12 @@ export interface components {
             scoreThreshold: number;
             /** Topresults */
             topResults: number | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Lastrunat */
+            lastRunAt: string | null;
+            /** Lastrunstatus */
+            lastRunStatus: string | null;
         };
         /**
          * ProviderRates

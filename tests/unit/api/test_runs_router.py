@@ -39,7 +39,7 @@ def _service(
     """Build a RunService over an in-memory repo + fakes; return both."""
     repo = SQLiteRunRepository(db_path=":memory:")
 
-    async def fake_run_all(profs, factory):
+    async def fake_run_all(profs, factory, settings_service=None):
         if fail:
             raise RuntimeError("scraper exploded")
         return []

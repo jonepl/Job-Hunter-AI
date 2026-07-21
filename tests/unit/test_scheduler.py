@@ -18,7 +18,12 @@ from src.scheduler import (
 )
 
 
-def _make_profile(profile_id: int, query: str = "Engineer", location: str = "Remote") -> SearchProfile:
+def _make_profile(
+    profile_id: int,
+    query: str = "Engineer",
+    location: str = "Remote",
+    enabled: bool = True,
+) -> SearchProfile:
     """Build a minimal SearchProfile for testing."""
     return SearchProfile(
         profile_id=profile_id,
@@ -27,6 +32,7 @@ def _make_profile(profile_id: int, query: str = "Engineer", location: str = "Rem
         active_scrapers=[ScraperName.LINKEDIN],
         score_threshold=75,
         date_posted=DatePosted.DAYS3,
+        enabled=enabled,
     )
 
 
@@ -95,6 +101,51 @@ class TestRunAllProfiles:
         second_service.run.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_run_all_profiles_skips_disabled_profiles(self, caplog):
+        """A paused profile is never built or run, and the skip count is logged."""
+        import logging
+
+        profiles = [_make_profile(1, enabled=False), _make_profile(2, enabled=True)]
+
+        mock_service = MagicMock()
+        mock_service.run = AsyncMock(return_value=MagicMock())
+        factory = MagicMock(return_value=mock_service)
+
+        with caplog.at_level(logging.INFO, logger="src.scheduler"):
+            await run_all_profiles(profiles, factory)
+
+        # The factory is built only for the enabled profile.
+        assert factory.call_count == 1
+        assert factory.call_args.args[0].profile_id == 2
+        assert "Skipping 1 paused profile(s)" in " ".join(caplog.messages)
+
+    @pytest.mark.asyncio
+    async def test_run_all_profiles_stamps_last_run_running_then_succeeded(self):
+        """Each run stamps the profile last-run running → succeeded via the settings service."""
+        profiles = [_make_profile(1)]
+        mock_service = MagicMock()
+        mock_service.run = AsyncMock(return_value=MagicMock())
+        settings_service = MagicMock()
+
+        await run_all_profiles(profiles, MagicMock(return_value=mock_service), settings_service)
+
+        statuses = [c.args[1] for c in settings_service.set_profile_last_run.call_args_list]
+        assert statuses == ["running", "succeeded"]
+
+    @pytest.mark.asyncio
+    async def test_run_all_profiles_stamps_last_run_failed_on_error(self):
+        """A profile that raises is stamped running → failed."""
+        profiles = [_make_profile(1)]
+        failing = MagicMock()
+        failing.run = AsyncMock(side_effect=Exception("boom"))
+        settings_service = MagicMock()
+
+        await run_all_profiles(profiles, MagicMock(return_value=failing), settings_service)
+
+        statuses = [c.args[1] for c in settings_service.set_profile_last_run.call_args_list]
+        assert statuses == ["running", "failed"]
+
+    @pytest.mark.asyncio
     async def test_run_all_profiles_logs_profile_details(self, caplog):
         """run_all_profiles() logs INFO messages with profile query and location."""
         import logging
@@ -130,7 +181,7 @@ class TestRunScheduledCycle:
             await run_scheduled_cycle(factory)
 
         settings_service.apply_to_environment.assert_called_once()
-        mock_run.assert_awaited_once_with(profiles, factory)
+        mock_run.assert_awaited_once_with(profiles, factory, settings_service)
 
     @pytest.mark.asyncio
     async def test_skips_when_no_profiles(self):
