@@ -58,5 +58,23 @@ class StoredJob(BaseModel):
     saved: bool = False
     """A bookmark, independent of status — a job can be saved *and* applied."""
 
+    salary_min: int | None = None
+    """Lower bound of the reported salary range, or None when not reported."""
+
+    salary_max: int | None = None
+    """Upper bound of the reported salary range, or None when not reported."""
+
+    salary_currency: str | None = None
+    """ISO currency of the reported salary (e.g. "USD"), or None."""
+
+    salary_period: str | None = None
+    """Salary period as reported — "YEAR" | "MONTH" | "HOUR" — or None."""
+
+    employment_type: str | None = None
+    """Employment type as reported — "FULLTIME" | "PARTTIME" | ... — or None."""
+
+    posted_at: datetime | None = None
+    """When the employer posted the listing (distinct from ``first_seen_at``)."""
+
     seen_on: list[str] = []
     """Distinct platforms this job has been sighted on (the "seen on" model)."""

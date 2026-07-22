@@ -652,6 +652,21 @@ export interface components {
             status: string;
             /** Saved */
             saved: boolean;
+            /** Salarymin */
+            salaryMin: number | null;
+            /** Salarymax */
+            salaryMax: number | null;
+            /** Salarycurrency */
+            salaryCurrency: string | null;
+            /** Salaryperiod */
+            salaryPeriod: string | null;
+            /** Employmenttype */
+            employmentType: string | null;
+            /**
+             * Postedat
+             * Format: date-time
+             */
+            postedAt: string | null;
             /** Statushistory */
             statusHistory: components["schemas"]["StatusHistoryEntryOut"][];
             /**
@@ -700,6 +715,19 @@ export interface components {
             status: string;
             /** Saved */
             saved: boolean;
+            /** Salarymin */
+            salaryMin: number | null;
+            /** Salarymax */
+            salaryMax: number | null;
+            /** Salarycurrency */
+            salaryCurrency: string | null;
+            /** Salaryperiod */
+            salaryPeriod: string | null;
+            /**
+             * Postedat
+             * Format: date-time
+             */
+            postedAt: string | null;
             /**
              * Lastseenat
              * Format: date-time

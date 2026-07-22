@@ -52,6 +52,93 @@ async def test_fetch_jobs_returns_list_of_job_models():
     assert "Python Developer" in results[0].description
 
 
+_JSEARCH_RESPONSE_FULL = {
+    "data": [
+        {
+            "job_title": "Python Developer",
+            "employer_name": "Acme Corp",
+            "job_city": "New York",
+            "job_state": "NY",
+            "job_apply_link": "https://example.com/jobs/123",
+            "job_description": "We need a Python Developer.",
+            "job_posted_at_datetime_utc": "2026-03-18T00:00:00.000Z",
+            "job_min_salary": 140000,
+            "job_max_salary": 175000.0,
+            "job_salary_currency": "USD",
+            "job_salary_period": "YEAR",
+            "job_employment_type": "FULLTIME",
+        }
+    ]
+}
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_maps_salary_and_employment_fields():
+    """The six new fields map from their JSearch keys onto the Job."""
+    scraper = JSearchScraper(platform="indeed")
+
+    with patch("src.adapters.scrapers.jsearch.requests.get",
+               return_value=make_mock_response(_JSEARCH_RESPONSE_FULL)):
+        results = await scraper.fetch_jobs("Python Developer", "Remote")
+
+    job = results[0]
+    assert job.salary_min == 140000
+    assert job.salary_max == 175000  # float coerced to int
+    assert job.salary_currency == "USD"
+    assert job.salary_period == "YEAR"
+    assert job.employment_type == "FULLTIME"
+    assert job.posted_at is not None
+    assert job.posted_at.year == 2026 and job.posted_at.month == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_absent_salary_keys_yield_none():
+    """Absent salary/employment keys yield None rather than raising."""
+    scraper = JSearchScraper(platform="indeed")
+
+    # _JSEARCH_RESPONSE carries no salary/employment keys.
+    with patch("src.adapters.scrapers.jsearch.requests.get",
+               return_value=make_mock_response(_JSEARCH_RESPONSE)):
+        results = await scraper.fetch_jobs("Python Developer", "Remote")
+
+    job = results[0]
+    assert job.salary_min is None
+    assert job.salary_max is None
+    assert job.salary_currency is None
+    assert job.salary_period is None
+    assert job.employment_type is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_posted_at_distinct_from_scraped_at():
+    """posted_at carries the reported posting time; scraped_at is 'now' (A.0)."""
+    scraper = JSearchScraper(platform="indeed")
+
+    with patch("src.adapters.scrapers.jsearch.requests.get",
+               return_value=make_mock_response(_JSEARCH_RESPONSE)):
+        results = await scraper.fetch_jobs("Python Developer", "Remote")
+
+    job = results[0]
+    # The posting datetime is 2026-03-18; scraped_at (now) is a different fact.
+    assert job.posted_at is not None
+    assert job.posted_at.replace(tzinfo=None) != job.scraped_at.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_unparseable_posted_at_yields_none():
+    """A malformed posted-at string degrades to None, not a dropped record."""
+    scraper = JSearchScraper(platform="indeed")
+    payload = {"data": [{**_JSEARCH_RESPONSE["data"][0],
+                         "job_posted_at_datetime_utc": "not-a-date"}]}
+
+    with patch("src.adapters.scrapers.jsearch.requests.get",
+               return_value=make_mock_response(payload)):
+        results = await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert len(results) == 1
+    assert results[0].posted_at is None
+
+
 @pytest.mark.asyncio
 async def test_fetch_jobs_stamps_correct_platform_label():
     """Platform label — each instance stamps Job.platform with its platform value."""

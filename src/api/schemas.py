@@ -62,6 +62,11 @@ class JobSummary(BaseModel):
     seniority_level: str | None
     status: str
     saved: bool
+    salary_min: int | None
+    salary_max: int | None
+    salary_currency: str | None
+    salary_period: str | None
+    posted_at: datetime | None
     last_seen_at: datetime
 
     @classmethod
@@ -89,6 +94,11 @@ class JobSummary(BaseModel):
             seniority_level=result.seniority_level if result is not None else None,
             status=job.status.value,
             saved=job.saved,
+            salary_min=job.salary_min,
+            salary_max=job.salary_max,
+            salary_currency=job.salary_currency,
+            salary_period=job.salary_period,
+            posted_at=job.posted_at,
             last_seen_at=job.last_seen_at,
         )
 
@@ -160,6 +170,12 @@ class JobDetail(BaseModel):
     score_breakdown: list[ScoreCategoryRow] | None
     status: str
     saved: bool
+    salary_min: int | None
+    salary_max: int | None
+    salary_currency: str | None
+    salary_period: str | None
+    employment_type: str | None
+    posted_at: datetime | None
     status_history: list[StatusHistoryEntryOut]
     generations: list = []  # unused stub; the chip reads GET /jobs/{id}/generations (W6)
     last_seen_at: datetime
@@ -202,6 +218,12 @@ class JobDetail(BaseModel):
             ),
             status=job.status.value,
             saved=job.saved,
+            salary_min=job.salary_min,
+            salary_max=job.salary_max,
+            salary_currency=job.salary_currency,
+            salary_period=job.salary_period,
+            employment_type=job.employment_type,
+            posted_at=job.posted_at,
             status_history=[StatusHistoryEntryOut.from_entry(e) for e in history],
             last_seen_at=job.last_seen_at,
         )

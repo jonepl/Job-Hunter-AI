@@ -25,6 +25,26 @@ _JSEARCH_URL = "https://jsearch.p.rapidapi.com/search"
 _REQUEST_TIMEOUT = 30
 
 
+def _as_int(value: object) -> int | None:
+    """Coerce a JSearch salary value to int, or None when absent/unparseable.
+
+    JSearch reports salaries as ints or floats (e.g. ``140000.0``); a fractional
+    or non-numeric value must degrade to None rather than drop the whole record.
+
+    Args:
+        value: The raw ``.get()`` result from the JSearch item.
+
+    Returns:
+        The rounded integer, or None when the value is missing or not numeric.
+    """
+    if value is None:
+        return None
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
 class JSearchScraper(ScraperPort):
     """Fetches job listings via the JSearch API for a given platform."""
 
@@ -134,12 +154,18 @@ class JSearchScraper(ScraperPort):
                     state = item.get("job_state", "")
                     location_text = ", ".join(filter(None, [city, state])) or location
 
-                    try:
-                        scraped_at = datetime.fromisoformat(
-                            item["job_posted_at_datetime_utc"].replace("Z", "+00:00")
-                        )
-                    except Exception:
-                        scraped_at = datetime.now()
+                    # When the employer posted (distinct from when we fetched).
+                    # ``scraped_at`` is always "now"; ``posted_at`` is the reported
+                    # posting time, or None when absent/unparseable.
+                    posted_at = None
+                    raw_posted = item.get("job_posted_at_datetime_utc")
+                    if raw_posted:
+                        try:
+                            posted_at = datetime.fromisoformat(
+                                raw_posted.replace("Z", "+00:00")
+                            )
+                        except Exception:
+                            posted_at = None
 
                     jobs.append(Job(
                         title=item.get("job_title", ""),
@@ -148,7 +174,13 @@ class JSearchScraper(ScraperPort):
                         url=item.get("job_apply_link", ""),
                         description=item.get("job_description", ""),
                         platform=self.platform,
-                        scraped_at=scraped_at,
+                        scraped_at=datetime.now(),
+                        salary_min=_as_int(item.get("job_min_salary")),
+                        salary_max=_as_int(item.get("job_max_salary")),
+                        salary_currency=item.get("job_salary_currency"),
+                        salary_period=item.get("job_salary_period"),
+                        employment_type=item.get("job_employment_type"),
+                        posted_at=posted_at,
                     ))
                 except Exception as exc:
                     logger.warning("%s — failed to parse job item: %s", self.platform, exc)

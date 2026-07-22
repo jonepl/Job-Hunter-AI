@@ -176,8 +176,9 @@ class SQLiteJobRepository(JobRepositoryPort):
             "fingerprint, fingerprint_version, canon_company, canon_title, "
             "canon_location, company, title, location, url, description, "
             "overall_score, threshold, near_miss_floor, match_result_json, "
-            "status, first_seen_at, last_seen_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "status, salary_min, salary_max, salary_currency, salary_period, "
+            "employment_type, posted_at, first_seen_at, last_seen_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 fingerprint.key,
                 fingerprint.version,
@@ -194,6 +195,12 @@ class SQLiteJobRepository(JobRepositoryPort):
                 near_miss_floor,
                 match_json,
                 status.value,
+                job.salary_min,
+                job.salary_max,
+                job.salary_currency,
+                job.salary_period,
+                job.employment_type,
+                job.posted_at.isoformat() if job.posted_at is not None else None,
                 now_iso,
                 now_iso,
             ),
@@ -298,6 +305,14 @@ class SQLiteJobRepository(JobRepositoryPort):
             near_miss_floor=row["near_miss_floor"],
             status=JobStatus(row["status"]),
             saved=bool(row["saved"]),
+            salary_min=row["salary_min"],
+            salary_max=row["salary_max"],
+            salary_currency=row["salary_currency"],
+            salary_period=row["salary_period"],
+            employment_type=row["employment_type"],
+            posted_at=(
+                datetime.fromisoformat(row["posted_at"]) if row["posted_at"] else None
+            ),
             first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
             last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
             seen_on=seen_on,

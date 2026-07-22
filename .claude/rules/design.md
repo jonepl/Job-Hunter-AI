@@ -121,7 +121,9 @@ export default {
       },
       fontSize: {
         display: "var(--fs-display)",
+        h1:      "var(--fs-h1)",
         h2:      "var(--fs-h2)",
+        h3:      "var(--fs-h3)",
         body:    "var(--fs-body)",
         control: "var(--fs-control)",
         small:   "var(--fs-small)",
