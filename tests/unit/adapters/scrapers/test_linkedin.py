@@ -12,8 +12,12 @@ from src.core.domain.job import Job
 from src.core.domain.work_type import WorkType
 
 
-def make_mock_card(title: str, company: str, location: str, href: str):
-    """Build a mock Playwright element simulating a LinkedIn job card."""
+def make_mock_card(title: str, company: str, location: str, href: str, posted: str | None = None):
+    """Build a mock Playwright element simulating a LinkedIn job card.
+
+    ``posted`` is the ISO ``datetime`` attribute on the card's ``<time>`` element;
+    when None the ``<time>`` selector resolves to nothing (posting age unknown).
+    """
     title_el = AsyncMock()
     title_el.inner_text = AsyncMock(return_value=f"  {title}  ")
 
@@ -26,6 +30,11 @@ def make_mock_card(title: str, company: str, location: str, href: str):
     link_el = AsyncMock()
     link_el.get_attribute = AsyncMock(return_value=href)
 
+    time_el = None
+    if posted is not None:
+        time_el = AsyncMock()
+        time_el.get_attribute = AsyncMock(return_value=posted)
+
     card = AsyncMock()
 
     async def query_selector(selector):
@@ -34,6 +43,7 @@ def make_mock_card(title: str, company: str, location: str, href: str):
             ".base-search-card__subtitle": company_el,
             ".base-search-card__metadata": location_el,
             "a.base-card__full-link": link_el,
+            ".base-search-card__metadata time": time_el,
         }
         return mapping.get(selector)
 
@@ -90,6 +100,53 @@ async def test_fetch_jobs_returns_list_of_job_models(mock_playwright_context):
     assert results[0].title == "Senior Python Developer"
     assert results[0].company == "Acme Corp"
     assert results[0].platform == "linkedin"
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_parses_posted_at_from_time_element(mock_playwright_context):
+    """posted_at is read from the card's <time datetime="…"> attribute (A.4)."""
+    playwright_instance = await mock_playwright_context.__aenter__()
+    browser = await playwright_instance.chromium.launch()
+    page = await browser.new_page()
+    page.query_selector_all = AsyncMock(return_value=[
+        make_mock_card("SE", "Acme", "Remote", "https://linkedin.com/1",
+                       posted="2026-07-15"),
+    ])
+
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            results = await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert results[0].posted_at == datetime(2026, 7, 15)
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_leaves_salary_and_employment_none(mock_playwright_context):
+    """LinkedIn never exposes salary/employment type — they stay None."""
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            results = await scraper.fetch_jobs("Python Developer", "Remote")
+
+    job = results[0]
+    assert job.salary_min is None
+    assert job.salary_max is None
+    assert job.salary_currency is None
+    assert job.salary_period is None
+    assert job.employment_type is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_jobs_missing_time_element_yields_none_posted_at(mock_playwright_context):
+    """A card without a <time> element degrades posted_at to None, not an error."""
+    # The default mock card carries no <time> (posted=None).
+    scraper = LinkedInScraper()
+    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
+            results = await scraper.fetch_jobs("Python Developer", "Remote")
+
+    assert results[0].posted_at is None
 
 
 @pytest.mark.asyncio

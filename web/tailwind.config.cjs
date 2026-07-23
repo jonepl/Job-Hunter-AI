@@ -23,6 +23,7 @@ module.exports = {
         nearmiss: { DEFAULT: "var(--nearmiss)", soft: "var(--nearmiss-soft)" },
         below: { DEFAULT: "var(--below)", soft: "var(--below-soft)" },
         danger: { DEFAULT: "var(--danger)", soft: "var(--danger-soft)" },
+        "menu-divider": "var(--menu-divider)",
       },
       fontFamily: {
         display: "var(--font-display)",
@@ -31,7 +32,9 @@ module.exports = {
       },
       fontSize: {
         display: "var(--fs-display)",
+        h1: "var(--fs-h1)",
         h2: "var(--fs-h2)",
+        h3: "var(--fs-h3)",
         body: "var(--fs-body)",
         control: "var(--fs-control)",
         small: "var(--fs-small)",

@@ -77,6 +77,7 @@ export function RunButton() {
         type="button"
         onClick={onClick}
         disabled={busy}
+        title="Runs every enabled profile, not just the one you're viewing"
         className="rounded-control bg-accent px-3 py-1.5 text-control text-accent-on transition-colors duration-fast hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-60"
       >
         {busy ? "Running…" : "Run search now"}

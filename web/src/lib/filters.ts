@@ -1,62 +1,79 @@
-// The status-view filters (W3). The job list is one cached ['jobs'] array; these
-// predicates split it into the triage queue, the in-flight pipeline, and the full
-// list — client-side, so switching is instant and every count shares one source of
-// truth. Reuses statusGroup() from status.ts so the "active" definition lives once.
+// The Search filter model (redesign Part D.2). It replaces the old single-select
+// "view" with multi-select label chips OR-ed together, plus two independent AND-ed
+// toggles: a "Saved" bookmark filter and a "Qualifying only" score filter. All
+// selection is React state in the parent, never browser storage (design.md).
 
-import type { JobSummary } from "../api/client";
-import { statusGroup } from "./status";
+import type { HumanStatus, JobSummary } from "../api/client";
+import { scoreState } from "./score";
 
-export type JobFilterId = "triage" | "pipeline" | "all" | "saved";
-
-/** The view a freshly opened list lands on — the undecided triage queue. */
-export const DEFAULT_FILTER: JobFilterId = "triage";
-
-export interface JobFilter {
-  id: JobFilterId;
-  label: string;
-  predicate: (job: JobSummary) => boolean;
+export interface FilterState {
+  /** Human-set statuses OR-ed together; empty = no label constraint. */
+  labels: HumanStatus[];
+  /** AND-ed: only jobs whose own score qualifies (per-job threshold). */
+  qualifyingOnly: boolean;
+  /** AND-ed: only bookmarked jobs (conflict #10 — Saved kept as a filter). */
+  saved: boolean;
 }
 
-/** The filter chips, in display order. Terminal/offer jobs live under "All". */
-export const JOB_FILTERS: JobFilter[] = [
-  {
-    id: "triage",
-    label: "Triage",
-    // Undecided machine states awaiting a human decision.
-    predicate: (job) => job.status === "new" || job.status === "evaluated",
-  },
-  {
-    id: "pipeline",
-    label: "Pipeline",
-    // In-flight applications: applied, started, interviewing.
-    predicate: (job) => statusGroup(job.status) === "active",
-  },
-  {
-    id: "all",
-    label: "All",
-    predicate: () => true,
-  },
-  {
-    id: "saved",
-    label: "Saved",
-    predicate: (job) => job.saved === true,
-  },
+/** A freshly opened list applies no constraint — every job shows. */
+export const EMPTY_FILTER: FilterState = {
+  labels: [],
+  qualifyingOnly: false,
+  saved: false,
+};
+
+/** The four status chips, in display order (Saved + Qualifying are separate). */
+export const LABEL_CHIPS: { status: HumanStatus; label: string }[] = [
+  { status: "applied", label: "Applied" },
+  { status: "started", label: "Started" },
+  { status: "interviewing", label: "Interviewing" },
+  { status: "not_interested", label: "Not interested" },
 ];
 
-function filterFor(id: JobFilterId): JobFilter {
-  const filter = JOB_FILTERS.find((entry) => entry.id === id);
-  if (!filter) {
-    throw new Error(`Unknown job filter: ${id}`);
-  }
-  return filter;
+/** Whether a job qualifies against its own threshold (never a global one). */
+function qualifies(job: JobSummary): boolean {
+  return scoreState(job.score, job.threshold, job.nearMissFloor) === "qualify";
 }
 
-/** Apply a filter, preserving the API's strongest-first order. */
-export function filterJobs(jobs: JobSummary[], id: JobFilterId): JobSummary[] {
-  return jobs.filter(filterFor(id).predicate);
+/** Apply the full filter: labels OR-ed, Saved and Qualifying AND-ed on top. */
+export function applyFilters(jobs: JobSummary[], filter: FilterState): JobSummary[] {
+  return jobs.filter((job) => {
+    if (filter.labels.length > 0 && !filter.labels.includes(job.status as HumanStatus)) {
+      return false;
+    }
+    if (filter.saved && !job.saved) return false;
+    if (filter.qualifyingOnly && !qualifies(job)) return false;
+    return true;
+  });
 }
 
-/** Count the jobs matching a filter — for the per-chip and active/total counts. */
-export function countFor(jobs: JobSummary[], id: JobFilterId): number {
-  return jobs.reduce((total, job) => total + (filterFor(id).predicate(job) ? 1 : 0), 0);
+/** True when any constraint is active — drives the Clear affordance's visibility. */
+export function isFilterActive(filter: FilterState): boolean {
+  return filter.labels.length > 0 || filter.qualifyingOnly || filter.saved;
+}
+
+/** Toggle one status label in/out of the set (immutably). */
+export function toggleLabel(filter: FilterState, status: HumanStatus): FilterState {
+  const labels = filter.labels.includes(status)
+    ? filter.labels.filter((s) => s !== status)
+    : [...filter.labels, status];
+  return { ...filter, labels };
+}
+
+// --- Counts, always drawn from the UNFILTERED base list so a chip never reads 0
+//     while its rows are on screen (design lines 118–128). ---
+
+/** Count jobs carrying a given status in the base (unfiltered) list. */
+export function labelCount(jobs: JobSummary[], status: HumanStatus): number {
+  return jobs.reduce((n, job) => n + (job.status === status ? 1 : 0), 0);
+}
+
+/** Count bookmarked jobs in the base list. */
+export function savedCount(jobs: JobSummary[]): number {
+  return jobs.reduce((n, job) => n + (job.saved ? 1 : 0), 0);
+}
+
+/** Count qualifying jobs in the base list. */
+export function qualifyingCount(jobs: JobSummary[]): number {
+  return jobs.reduce((n, job) => n + (qualifies(job) ? 1 : 0), 0);
 }

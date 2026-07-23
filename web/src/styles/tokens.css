@@ -44,6 +44,10 @@
   --danger-soft:     #F9E6E3;
   --focus:           #0F6B66;
 
+  /* ── Color · misc ──────────────────────────────────────
+     Divider between the two halves of the split-button (I.1). */
+  --menu-divider:    rgba(255, 255, 255, 0.25);
+
   /* ── Typography ────────────────────────────────────── */
   --font-display:    "Bricolage Grotesque", sans-serif;  /* headings */
   --font-body:       "Inter", sans-serif;                /* all UI text */
@@ -51,7 +55,9 @@
 
   /* Type scale (px). Body is 15. */
   --fs-display:      32px;   /* Bricolage 700, -0.02em */
+  --fs-h1:           26px;   /* Bricolage 700, -0.02em — detail-pane title */
   --fs-h2:           22px;   /* Bricolage 600, -0.01em */
+  --fs-h3:           17px;   /* Bricolage 600 — section headings */
   --fs-body:         15px;   /* Inter 400 */
   --fs-control:      14px;   /* buttons, inputs */
   --fs-small:        13px;   /* secondary text, table cells */
@@ -115,6 +121,8 @@
   --danger:          #E0665A;
   --danger-soft:     #33201D;
   --focus:           #35C4B5;
+
+  --menu-divider:    rgba(10, 21, 18, 0.3);
 }
 
 /* ── Accessibility baselines (non-negotiable) ─────────── */

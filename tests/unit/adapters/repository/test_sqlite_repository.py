@@ -114,6 +114,45 @@ def test_save_records_initial_sighting():
     assert stored.seen_on == ["linkedin"]
 
 
+def test_salary_and_posted_at_round_trip():
+    """The six migration-9 columns persist and read back on the StoredJob."""
+    repo = _repo()
+    posted = datetime(2026, 7, 15, 8, 0, 0)
+    job = _job()
+    job.salary_min = 140000
+    job.salary_max = 175000
+    job.salary_currency = "USD"
+    job.salary_period = "YEAR"
+    job.employment_type = "FULLTIME"
+    job.posted_at = posted
+
+    _, stored = _save(repo, job)
+    found = repo.get_job(stored.id)
+
+    assert found is not None
+    assert found.salary_min == 140000
+    assert found.salary_max == 175000
+    assert found.salary_currency == "USD"
+    assert found.salary_period == "YEAR"
+    assert found.employment_type == "FULLTIME"
+    assert found.posted_at == posted
+
+
+def test_absent_salary_and_posted_at_are_none():
+    """A job with no compensation data round-trips as all-None (a normal case)."""
+    repo = _repo()
+    _, stored = _save(repo, _job())
+    found = repo.get_job(stored.id)
+
+    assert found is not None
+    assert found.salary_min is None
+    assert found.salary_max is None
+    assert found.salary_currency is None
+    assert found.salary_period is None
+    assert found.employment_type is None
+    assert found.posted_at is None
+
+
 # ---------------------------------------------------------------------------
 # list_jobs
 # ---------------------------------------------------------------------------
@@ -290,7 +329,7 @@ def test_migrations_are_idempotent_across_reopen(tmp_path):
     versions = [
         row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     repo2.close()
 
 

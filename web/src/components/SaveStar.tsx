@@ -17,13 +17,13 @@ export function SaveStar({ saved, onToggle, disabled = false }: Props) {
       aria-pressed={saved}
       aria-label={saved ? "Saved — click to unsave" : "Save this job"}
       data-testid="save-star"
-      className={`rounded-control border px-3 py-2 text-control transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-60 ${
+      className={`flex h-10 w-10 items-center justify-center rounded-control border text-control transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-60 ${
         saved
-          ? "border-accent text-accent"
-          : "border-border-strong text-text-2 hover:border-accent"
+          ? "border-nearmiss bg-nearmiss-soft text-nearmiss"
+          : "border-border-strong text-text-3 hover:border-accent"
       }`}
     >
-      {saved ? "★" : "☆"} Save
+      {saved ? "★" : "☆"}
     </button>
   );
 }

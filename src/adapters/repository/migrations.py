@@ -218,6 +218,22 @@ ALTER TABLE search_profiles ADD COLUMN last_run_at TEXT;
 ALTER TABLE search_profiles ADD COLUMN last_run_status TEXT;
 """
 
+# Migration 9 — salary, employment type, and posting age on ``jobs``.
+#
+# The Search redesign's card meta line ($140k–$175k · 2 days ago) and three of the
+# four detail meta-grid cells need fields the domain never had. JSearch supplies all
+# six; LinkedIn supplies only ``posted_at``, so every column is nullable and every
+# consumer degrades to "—". No backfill — existing rows correctly have nothing to say
+# about salary. ``posted_at`` is stored as an ISO TEXT string like the other datetimes.
+_MIGRATION_9 = """
+ALTER TABLE jobs ADD COLUMN salary_min       INTEGER;
+ALTER TABLE jobs ADD COLUMN salary_max       INTEGER;
+ALTER TABLE jobs ADD COLUMN salary_currency  TEXT;
+ALTER TABLE jobs ADD COLUMN salary_period    TEXT;
+ALTER TABLE jobs ADD COLUMN employment_type  TEXT;
+ALTER TABLE jobs ADD COLUMN posted_at        TEXT;
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -229,6 +245,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (6, _MIGRATION_6),
     (7, _MIGRATION_7),
     (8, _MIGRATION_8),
+    (9, _MIGRATION_9),
 ]
 
 

@@ -12,6 +12,33 @@ import { jobsQueryKey } from "./useJobs";
 /** Query key for one run's live poll. */
 export const runQueryKey = (id: string) => ["run", id] as const;
 
+/** Query key for the recent-runs list (rail + run-state panels). */
+export const runsQueryKey = ["runs"] as const;
+
+/**
+ * The recent runs, newest first. Polls while the latest run is running so the rail
+ * and the run-state panels stay live; when the latest transitions out of running it
+ * invalidates the job list once so newly evaluated jobs appear.
+ */
+export function useRuns() {
+  const qc = useQueryClient();
+  return useQuery<RunOut[]>({
+    queryKey: runsQueryKey,
+    queryFn: async () => {
+      const prev = qc.getQueryData<RunOut[]>(runsQueryKey);
+      const runs = await api.listRuns();
+      const wasRunning = prev?.[0]?.status === "running";
+      const nowTerminal = runs[0] !== undefined && runs[0].status !== "running";
+      if (wasRunning && nowTerminal) {
+        qc.invalidateQueries({ queryKey: jobsQueryKey });
+      }
+      return runs;
+    },
+    refetchInterval: (query) =>
+      query.state.data?.[0]?.status === "running" ? 2000 : false,
+  });
+}
+
 /** True once a run has reached a terminal state (nothing left to poll). */
 export function isRunDone(run: RunOut | undefined): boolean {
   return run?.status === "succeeded" || run?.status === "failed";
@@ -21,6 +48,19 @@ export function isRunDone(run: RunOut | undefined): boolean {
 export function useStartRun() {
   return useMutation<RunOut, Error, void>({
     mutationFn: () => api.startRun(),
+  });
+}
+
+/**
+ * Start a background run and refresh the recent-runs list. Used by the run-state
+ * panels' "Retry run" — unlike <RunButton> it doesn't own a single-run poll; the
+ * shared `useRuns()` list picks the new run up on its next tick.
+ */
+export function useTriggerRun() {
+  const qc = useQueryClient();
+  return useMutation<RunOut, Error, void>({
+    mutationFn: () => api.startRun(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: runsQueryKey }),
   });
 }
 

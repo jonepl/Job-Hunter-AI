@@ -1,53 +1,67 @@
 import {
-  DEFAULT_FILTER,
-  JOB_FILTERS,
-  countFor,
-  filterJobs,
+  EMPTY_FILTER,
+  applyFilters,
+  isFilterActive,
+  labelCount,
+  qualifyingCount,
+  savedCount,
+  toggleLabel,
 } from "../../src/lib/filters";
 import { makeJob } from "../helpers";
 
 const jobs = [
-  makeJob({ id: 1, status: "new" }),
-  makeJob({ id: 2, status: "evaluated" }),
-  makeJob({ id: 3, status: "applied" }),
-  makeJob({ id: 4, status: "interviewing" }),
-  makeJob({ id: 5, status: "rejected" }),
-  makeJob({ id: 6, status: "offer", saved: true }),
-  makeJob({ id: 7, status: "evaluated", saved: true }),
+  makeJob({ id: 1, status: "applied", score: 90, threshold: 70, nearMissFloor: 55 }), // qualify
+  makeJob({ id: 2, status: "applied", score: 60, threshold: 70, nearMissFloor: 55 }), // near-miss
+  makeJob({ id: 3, status: "interviewing", score: 80, threshold: 70, nearMissFloor: 55 }), // qualify
+  makeJob({ id: 4, status: "not_interested", score: 40, threshold: 70, nearMissFloor: 55, saved: true }),
+  makeJob({ id: 5, status: "evaluated", score: 95, threshold: 70, nearMissFloor: 55, saved: true }), // qualify
 ];
 
-describe("job filters", () => {
-  it("defaults to triage", () => {
-    expect(DEFAULT_FILTER).toBe("triage");
+describe("filter model", () => {
+  it("the empty filter matches every job", () => {
+    expect(applyFilters(jobs, EMPTY_FILTER)).toHaveLength(jobs.length);
+    expect(isFilterActive(EMPTY_FILTER)).toBe(false);
   });
 
-  it("triage keeps only new + evaluated", () => {
-    const ids = filterJobs(jobs, "triage").map((job) => job.id);
-    expect(ids).toEqual([1, 2, 7]);
+  it("OR-s label chips together", () => {
+    const ids = applyFilters(jobs, { ...EMPTY_FILTER, labels: ["applied", "interviewing"] }).map(
+      (job) => job.id,
+    );
+    expect(ids).toEqual([1, 2, 3]);
   });
 
-  it("pipeline keeps only active statuses", () => {
-    const ids = filterJobs(jobs, "pipeline").map((job) => job.id);
-    expect(ids).toEqual([3, 4]);
+  it("AND-s qualifying-only with the labels", () => {
+    const ids = applyFilters(jobs, { labels: ["applied"], qualifyingOnly: true, saved: false }).map(
+      (job) => job.id,
+    );
+    // Only #1 is both applied AND qualifying (#2 is applied but a near-miss).
+    expect(ids).toEqual([1]);
   });
 
-  it("all keeps every job", () => {
-    expect(filterJobs(jobs, "all")).toHaveLength(jobs.length);
+  it("AND-s the saved toggle", () => {
+    const ids = applyFilters(jobs, { ...EMPTY_FILTER, saved: true }).map((job) => job.id);
+    expect(ids).toEqual([4, 5]);
   });
 
-  it("saved keeps only saved jobs", () => {
-    const ids = filterJobs(jobs, "saved").map((job) => job.id);
-    expect(ids).toEqual([6, 7]);
+  it("draws counts from the unfiltered base list", () => {
+    expect(labelCount(jobs, "applied")).toBe(2);
+    expect(labelCount(jobs, "interviewing")).toBe(1);
+    expect(savedCount(jobs)).toBe(2);
+    expect(qualifyingCount(jobs)).toBe(3); // #1, #3, #5
   });
 
-  it("preserves the source order", () => {
-    const ids = filterJobs(jobs, "all").map((job) => job.id);
-    expect(ids).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  it("counts are independent of any active filter", () => {
+    // Applying a filter never changes what the base-list counts report.
+    applyFilters(jobs, { ...EMPTY_FILTER, saved: true });
+    expect(labelCount(jobs, "applied")).toBe(2);
+    expect(qualifyingCount(jobs)).toBe(3);
   });
 
-  it("countFor matches filterJobs length for every filter", () => {
-    for (const filter of JOB_FILTERS) {
-      expect(countFor(jobs, filter.id)).toBe(filterJobs(jobs, filter.id).length);
-    }
+  it("toggleLabel adds then removes a status immutably", () => {
+    const once = toggleLabel(EMPTY_FILTER, "applied");
+    expect(once.labels).toEqual(["applied"]);
+    const twice = toggleLabel(once, "applied");
+    expect(twice.labels).toEqual([]);
+    expect(EMPTY_FILTER.labels).toEqual([]); // original untouched
   });
 });

@@ -79,7 +79,7 @@ def test_migrations_create_all_tables_on_fresh_db():
     assert "search_profiles" in tables  # migration 6 (W7)
     assert "runs" in tables  # migration 7 (W8)
     versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations")]
-    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     # Migration 5 (W6): the async status column exists and defaults to 'ready'.
     columns = _generations_columns(conn)
@@ -140,7 +140,7 @@ def test_migration_3_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     versions = [
         row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     repo2.close()
 
 
@@ -201,6 +201,66 @@ def test_migration_8_upgrades_existing_profiles_to_enabled(tmp_path):
     repo.close()
 
 
+def _jobs_columns(conn: sqlite3.Connection) -> set[str]:
+    """Return the ``jobs`` table's column names."""
+    return {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+
+
+def test_migration_9_upgrades_existing_job_store_without_touching_jobs(tmp_path):
+    """A store at v8 upgrades to v9; existing job rows survive, new columns are None."""
+    db_path = str(tmp_path / "agent.db")
+
+    # Build a database at migrations 1..8 only, with a real job row (no salary cols).
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    for version, sql in MIGRATIONS:
+        if version >= 9:
+            continue
+        conn.executescript(sql)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (version, _NOW.isoformat()),
+        )
+    conn.commit()
+    conn.close()
+
+    # Seed a job row at v8 (before the salary columns exist).
+    repo = SQLiteJobRepository(db_path=db_path)  # opening applies migration 9
+    columns = _jobs_columns(repo._conn)
+    for col in ("salary_min", "salary_max", "salary_currency", "salary_period",
+                "employment_type", "posted_at"):
+        assert col in columns
+
+    job = Job(
+        title="Senior Software Engineer",
+        company="Acme Corp",
+        location="Remote",
+        url="https://example.com/1",
+        description="A job.",
+        platform="linkedin",
+        scraped_at=_NOW,
+    )
+    fp = compute_fingerprint(job.company, job.title, job.location)
+    stored = repo.save_job(
+        job=job,
+        fingerprint=fp,
+        match_result=_match_result(),
+        threshold=70,
+        near_miss_floor=55,
+        seen_at=_NOW,
+    )
+    found = repo.get_job(stored.id)
+    assert found is not None
+    assert found.salary_min is None and found.posted_at is None
+    versions = [
+        row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")
+    ]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    repo.close()
+
+
 def test_migrations_4_and_5_upgrade_existing_store_without_touching_jobs(tmp_path):
     """Opening a v1/v2/v3 store applies migrations 4 + 5 and preserves every job row."""
     db_path = str(tmp_path / "agent.db")
@@ -250,5 +310,5 @@ def test_migrations_4_and_5_upgrade_existing_store_without_touching_jobs(tmp_pat
     versions = [
         row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")
     ]
-    assert versions == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     repo.close()

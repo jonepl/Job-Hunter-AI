@@ -106,11 +106,21 @@ class LinkedInScraper(ScraperPort):
                         company_el = await card.query_selector(".base-search-card__subtitle")
                         location_el = await card.query_selector(".base-search-card__metadata")
                         link_el = await card.query_selector("a.base-card__full-link")
+                        # Posting age lives in the metadata's <time datetime="…">.
+                        # Salary and employment type are only on the detail page,
+                        # which we deliberately do not fetch (rate-limit rule) — they
+                        # stay None for LinkedIn jobs.
+                        time_el = await card.query_selector(
+                            ".base-search-card__metadata time"
+                        )
 
                         title = (await title_el.inner_text()).strip() if title_el else ""
                         company = (await company_el.inner_text()).strip() if company_el else ""
                         location_text = (await location_el.inner_text()).strip() if location_el else ""
                         url_href = await link_el.get_attribute("href") if link_el else ""
+                        posted_attr = (
+                            await time_el.get_attribute("datetime") if time_el else None
+                        )
 
                         if not title or not url_href:
                             continue
@@ -120,6 +130,7 @@ class LinkedInScraper(ScraperPort):
                             "company": company,
                             "location": location_text,
                             "url": url_href,
+                            "posted_at": posted_attr,
                         })
                     except Exception as exc:
                         logger.warning("LinkedIn — failed to parse card: %s", exc)
@@ -131,6 +142,13 @@ class LinkedInScraper(ScraperPort):
                     description = await self._fetch_description(page, data["url"])
                     await asyncio.sleep(_RATE_LIMIT_SECONDS)
 
+                    posted_at = None
+                    if data["posted_at"]:
+                        try:
+                            posted_at = datetime.fromisoformat(data["posted_at"])
+                        except Exception:
+                            posted_at = None
+
                     jobs.append(Job(
                         title=data["title"],
                         company=data["company"],
@@ -139,6 +157,7 @@ class LinkedInScraper(ScraperPort):
                         description=description,
                         platform="linkedin",
                         scraped_at=datetime.now(),
+                        posted_at=posted_at,
                     ))
 
                 await browser.close()
