@@ -3,6 +3,8 @@
 // known — never "—" or "Unknown". The *caller* decides how absence renders: the
 // card omits the segment, the meta grid shows "—".
 
+import { relativeTime } from "./time";
+
 /** Currency-code → symbol; unknown codes fall back to the code, null to "$". */
 const CURRENCY_SYMBOL: Record<string, string> = {
   USD: "$",
@@ -69,31 +71,5 @@ export function formatSalary(job: SalaryFields): string | null {
  * "1 week ago". Returns null when postedAt is null or unparseable.
  */
 export function formatPostedAge(postedAt: string | null): string | null {
-  if (!postedAt) return null;
-  const then = new Date(postedAt).getTime();
-  if (Number.isNaN(then)) return null;
-
-  const diffMs = Date.now() - then;
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return plural(minutes, "minute");
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return plural(hours, "hour");
-
-  const days = Math.floor(hours / 24);
-  if (days < 7) return plural(days, "day");
-
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return plural(weeks, "week");
-
-  const months = Math.floor(days / 30);
-  if (months < 12) return plural(months, "month");
-
-  return plural(Math.floor(days / 365), "year");
-}
-
-/** "1 day ago" / "3 days ago" — pluralize the unit and append " ago". */
-function plural(n: number, unit: string): string {
-  return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  return relativeTime(postedAt);
 }

@@ -2,9 +2,10 @@ import { useState } from "react";
 
 import { JobList } from "./screens/JobList";
 import { Settings } from "./screens/Settings";
-import { RunButton } from "./components/RunButton";
+import { SearchThresholdIndicator, SearchTopBarCenter } from "./components/SearchTopBar";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { TopBar } from "./components/TopBar";
+import { SearchViewProvider } from "./lib/searchView";
 
 // A lightweight view switch held in local state — the app has two top-level
 // screens (search + settings) and no router yet. W7 can introduce real routing
@@ -41,11 +42,10 @@ export function App() {
   const [view, setView] = useState<View>("search");
   const isSearch = view === "search";
 
-  // The Search top bar's center is the run control for now; the full design
-  // center (active-profile box + threshold indicator) belongs to the Search
-  // component plan. Settings shows the mono context pill.
+  // The Search top bar's center is the "Viewing" profile box with the run control
+  // inside (Part B.3); Settings shows the mono context pill.
   const center = isSearch ? (
-    <RunButton />
+    <SearchTopBarCenter />
   ) : (
     <span className="rounded-pill border border-border px-2.5 py-[3px] font-mono text-label uppercase tracking-[0.08em] text-text-3">
       Settings
@@ -54,6 +54,7 @@ export function App() {
 
   const right = isSearch ? (
     <>
+      <SearchThresholdIndicator />
       <ThemeToggle />
       <SettingsButton onClick={() => setView("settings")} />
     </>
@@ -71,9 +72,11 @@ export function App() {
   );
 
   return (
-    <div className="min-h-screen bg-bg">
-      <TopBar center={center} right={right} />
-      <main>{isSearch ? <JobList /> : <Settings />}</main>
-    </div>
+    <SearchViewProvider>
+      <div className="min-h-screen bg-bg">
+        <TopBar center={center} right={right} />
+        <main>{isSearch ? <JobList /> : <Settings />}</main>
+      </div>
+    </SearchViewProvider>
   );
 }

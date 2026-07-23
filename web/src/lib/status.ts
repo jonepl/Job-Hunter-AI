@@ -41,3 +41,9 @@ export function statusGroup(status: string): StatusGroup {
   if (isTerminalStatus(status)) return "terminal";
   return "machine";
 }
+
+/** Whether a job belongs in the Tracked view — in-flight or an offer (Part C.1). */
+export function isTracked(status: string): boolean {
+  const group = statusGroup(status);
+  return group === "active" || group === "offer";
+}
