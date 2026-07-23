@@ -40,6 +40,12 @@ export function JobList() {
   const visible = applyFilters(base, filter);
   const latestRun = runs?.[0];
 
+  // The detail pane defaults to the first result when nothing has been explicitly
+  // picked, so the pane is never an empty placeholder while jobs exist. `selectedId`
+  // stays the *explicit* choice (it drives the <lg overlay, which must only open on a
+  // real tap); `displayedId` is what the lg+ column actually renders.
+  const displayedId = selectedId ?? visible[0]?.id ?? null;
+
   return (
     <div className="flex h-[calc(100vh-66px)]">
       <aside className="hidden w-[284px] shrink-0 overflow-y-auto border-r border-border bg-surface p-5 px-[14px] as-scroll xl:block">
@@ -79,7 +85,7 @@ export function JobList() {
               visible={visible}
               allJobs={allJobs}
               onClearFilter={() => setFilter(EMPTY_FILTER)}
-              selectedId={selectedId}
+              selectedId={displayedId}
               onSelect={setSelectedId}
             />
           </div>
@@ -95,12 +101,12 @@ export function JobList() {
             : "max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:p-6"
         }`}
       >
-        {selectedId === null ? (
+        {displayedId === null ? (
           <div className="rounded-card border border-dashed border-border bg-surface p-8 text-center text-small text-text-2">
-            Select a job to see its details.
+            No job to show yet.
           </div>
         ) : (
-          <JobDetail jobId={selectedId} onClose={() => setSelectedId(null)} />
+          <JobDetail jobId={displayedId} onClose={() => setSelectedId(null)} />
         )}
       </section>
 

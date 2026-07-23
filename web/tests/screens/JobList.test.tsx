@@ -89,16 +89,24 @@ describe("<JobList>", () => {
     expect(screen.getByRole("button", { name: /Try again/ })).toBeInTheDocument();
   });
 
-  it("renders a card per job with a detail placeholder until one is selected", () => {
+  it("renders a card per job and shows the first result's detail by default", () => {
     mockState({ data: [makeJob({ id: 1, title: "Alpha" }), makeJob({ id: 2, title: "Beta" })] });
     renderList();
     expect(screen.getByText("Alpha")).toBeInTheDocument();
     expect(screen.getByText("Beta")).toBeInTheDocument();
-    expect(screen.getByText(/Select a job to see its details/)).toBeInTheDocument();
+    // No explicit selection yet, but the pane falls back to the first result.
+    expect(screen.getByTestId("job-detail")).toBeInTheDocument();
+    expect(screen.queryByText(/No job to show yet/)).not.toBeInTheDocument();
+  });
+
+  it("shows the empty placeholder only when there are no results", () => {
+    mockState({ data: [] });
+    renderList();
+    expect(screen.getByText(/No job to show yet/)).toBeInTheDocument();
     expect(screen.queryByTestId("job-detail")).not.toBeInTheDocument();
   });
 
-  it("opens the detail pane when a card is clicked", async () => {
+  it("keeps the detail pane open when a card is clicked", async () => {
     mockState({ data: [makeJob({ id: 1, title: "Alpha" })] });
     renderList();
 
