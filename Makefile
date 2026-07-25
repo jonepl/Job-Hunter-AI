@@ -147,6 +147,25 @@ test-path: ## Run a specific test file/dir. P=tests/unit/adapters/scrapers/test_
 	$(PYTEST) $(P) -v
 
 # =============================================================================
+# Quality (Ruff — lint + format)
+# =============================================================================
+.PHONY: lint
+lint: ## Lint src/ and tests/ (report only, no changes)
+	uv run ruff check src tests
+
+.PHONY: lint-fix
+lint-fix: ## Lint and apply safe auto-fixes
+	uv run ruff check --fix src tests
+
+.PHONY: format
+format: ## Reformat src/ and tests/ (Black-compatible)
+	uv run ruff format src tests
+
+.PHONY: format-check
+format-check: ## Check formatting without writing (CI-friendly)
+	uv run ruff format --check src tests
+
+# =============================================================================
 # Docker
 # =============================================================================
 .PHONY: docker-build
