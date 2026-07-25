@@ -5,7 +5,6 @@ import { SettingsNav, type SectionId } from "../components/SettingsNav";
 import { ProfileSettings } from "../components/settings/ProfileSettings";
 import { ProviderSettings } from "../components/settings/ProviderSettings";
 import { ScheduleSettings } from "../components/settings/ScheduleSettings";
-import { ThresholdSettings } from "../components/settings/ThresholdSettings";
 import { VoiceSettings } from "../components/settings/VoiceSettings";
 
 // The Settings screen (ui-spec §14.2). W7 makes every CONFIGURATION section live: the
@@ -17,8 +16,6 @@ function panelFor(id: SectionId) {
   switch (id) {
     case "voice":
       return <VoiceSettings />;
-    case "threshold":
-      return <ThresholdSettings />;
     case "schedule":
       return <ScheduleSettings />;
     case "profiles":
