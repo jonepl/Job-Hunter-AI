@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { JobList } from "../../src/screens/JobList";
@@ -11,8 +11,7 @@ import {
   useGeneration,
   useJobGenerations,
 } from "../../src/hooks/useGeneration";
-import { SearchViewProvider } from "../../src/lib/searchView";
-import { makeJob, makeJobDetail, makeProfile } from "../helpers";
+import { makeJob, makeJobDetail, makeProfile, renderWithRouter } from "../helpers";
 
 jest.mock("../../src/hooks/useJobs");
 jest.mock("../../src/hooks/useJob");
@@ -38,11 +37,7 @@ function mockState(state: Partial<ReturnType<typeof useJobs>>) {
 }
 
 function renderList() {
-  return render(
-    <SearchViewProvider>
-      <JobList />
-    </SearchViewProvider>,
-  );
+  return renderWithRouter(<JobList />);
 }
 
 beforeEach(() => {
@@ -70,28 +65,28 @@ beforeEach(() => {
 });
 
 describe("<JobList>", () => {
-  it("shows a loading state while fetching", () => {
+  it("shows a loading state while fetching", async () => {
     mockState({ isLoading: true });
-    renderList();
+    await renderList();
     expect(screen.getByText(/Loading jobs/)).toBeInTheDocument();
   });
 
-  it("shows a first-class empty state when there are no jobs", () => {
+  it("shows a first-class empty state when there are no jobs", async () => {
     mockState({ data: [] });
-    renderList();
+    await renderList();
     expect(screen.getByText("No jobs yet")).toBeInTheDocument();
   });
 
-  it("shows an error state with a retry when the fetch fails", () => {
+  it("shows an error state with a retry when the fetch fails", async () => {
     mockState({ isError: true });
-    renderList();
+    await renderList();
     expect(screen.getByText(/Couldn’t load your jobs/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Try again/ })).toBeInTheDocument();
   });
 
-  it("renders a card per job and shows the first result's detail by default", () => {
+  it("renders a card per job and shows the first result's detail by default", async () => {
     mockState({ data: [makeJob({ id: 1, title: "Alpha" }), makeJob({ id: 2, title: "Beta" })] });
-    renderList();
+    await renderList();
     expect(screen.getByText("Alpha")).toBeInTheDocument();
     expect(screen.getByText("Beta")).toBeInTheDocument();
     // No explicit selection yet, but the pane falls back to the first result.
@@ -99,29 +94,29 @@ describe("<JobList>", () => {
     expect(screen.queryByText(/No job to show yet/)).not.toBeInTheDocument();
   });
 
-  it("shows the empty placeholder only when there are no results", () => {
+  it("shows the empty placeholder only when there are no results", async () => {
     mockState({ data: [] });
-    renderList();
+    await renderList();
     expect(screen.getByText(/No job to show yet/)).toBeInTheDocument();
     expect(screen.queryByTestId("job-detail")).not.toBeInTheDocument();
   });
 
   it("keeps the detail pane open when a card is clicked", async () => {
     mockState({ data: [makeJob({ id: 1, title: "Alpha" })] });
-    renderList();
+    await renderList();
 
     await userEvent.click(screen.getByTestId("job-card"));
     expect(screen.getByTestId("job-detail")).toBeInTheDocument();
   });
 
-  it("shows every job in the profile view before any filter is applied", () => {
+  it("shows every job in the profile view before any filter is applied", async () => {
     mockState({
       data: [
         makeJob({ id: 1, title: "Evaluated One", status: "evaluated" }),
         makeJob({ id: 2, title: "In Pipeline", status: "applied" }),
       ],
     });
-    renderList();
+    await renderList();
     expect(screen.getByText("Evaluated One")).toBeInTheDocument();
     expect(screen.getByText("In Pipeline")).toBeInTheDocument();
   });
@@ -133,7 +128,7 @@ describe("<JobList>", () => {
         makeJob({ id: 2, title: "In Pipeline", status: "applied" }),
       ],
     });
-    renderList();
+    await renderList();
 
     const bar = screen.getByTestId("job-filter-bar");
     await userEvent.click(within(bar).getByRole("button", { name: /Applied/ }));
@@ -143,7 +138,7 @@ describe("<JobList>", () => {
 
   it("shows the filtered-empty state when a filter matches nothing", async () => {
     mockState({ data: [makeJob({ id: 1, title: "In Pipeline", status: "applied" })] });
-    renderList();
+    await renderList();
 
     // No interviewing jobs exist, so filtering to it empties the view.
     const bar = screen.getByTestId("job-filter-bar");

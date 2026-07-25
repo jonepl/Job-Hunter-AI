@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 
 import { Settings } from "../../src/screens/Settings";
 import { api } from "../../src/api/client";
-import { makeProfile, makeResumeState, makeSettings, renderWithClient } from "../helpers";
+import { makeProfile, makeResumeState, makeSettings, renderWithRouter } from "../helpers";
 
 // The rail fetches its own live values (SettingsNav has its own test); stub the
 // endpoints so this stays a shell test about which panel the rail opens.
@@ -41,8 +41,8 @@ beforeEach(() => {
 });
 
 describe("<Settings>", () => {
-  it("renders every CONFIGURATION section as an active rail item", () => {
-    renderWithClient(<Settings />);
+  it("renders every CONFIGURATION section as an active rail item", async () => {
+    await renderWithRouter(<Settings />, { initialEntries: ["/settings/voice"] });
     for (const label of [
       "Voice & tone",
       "Run schedule",
@@ -55,7 +55,7 @@ describe("<Settings>", () => {
   });
 
   it("opens on the voice panel and switches panels via the rail", async () => {
-    renderWithClient(<Settings />);
+    await renderWithRouter(<Settings />, { initialEntries: ["/settings/voice"] });
     expect(screen.getByTestId("panel-voice")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Search profiles" }));

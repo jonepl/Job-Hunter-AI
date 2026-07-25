@@ -681,3 +681,36 @@ code is marked inferred.
   is a local change. The cost: a run cannot be cancelled mid-flight today — it runs to
   completion or times out; and because the summary is intentionally lean, the run row is
   not a substitute for the emailed/CSV `RunReport`, which remains the full delivery.
+
+## ADR-037: Persist theme in localStorage; put navigation state in the URL
+
+- **Status:** Accepted (added post-W7)
+- **Context:** Reloading the browser reset two things a user expects to survive: the
+  active theme (light/dark) and the page they were on (Search vs Settings, the active
+  Settings section, the Search rail selection). Both were React `useState` only — the
+  theme reset by explicit design (the "no browser storage" rule in `design.md`), and
+  the screen reset because there was no router (`App.tsx` held a `view` `useState`).
+  The two problems have different correct homes, and conflating them (e.g. persisting
+  the page in `localStorage`) would be an anti-pattern.
+- **Decision:**
+  1. **Theme → `localStorage`** (key `theme`), the single, narrow carve-out to the
+     no-browser-storage rule. A synchronous guard in `index.html` resolves and stamps
+     `<html data-theme>` *before first paint* (stored choice → `prefers-color-scheme`
+     → light), eliminating the flash of wrong theme; `theme.tsx` then keeps React
+     state in sync. An explicit toggle **pins** the choice; with no stored choice the
+     app follows the OS live.
+  2. **Navigation → the URL**, via TanStack Router (chosen to pair with the existing
+     `@tanstack/react-query`). `/` is Search (`?view=tracked` / `?profile=<id>` encode
+     the rail selection as validated search params); `/settings/<section>` is Settings.
+     `searchView.tsx` keeps its public API (`useSearchView` / `useResolvedSelection` /
+     `useViewedProfile`) but reads/writes the URL instead of context state, so the rail,
+     top bar, and results column were untouched. A stale `profile` id or unknown
+     `section` in the URL falls back to the default rather than erroring.
+- **Consequences:** Refresh, back/forward, deep links, and multi-tab all behave
+  correctly for the page — properties `localStorage`-for-page would have broken. The
+  former `App.tsx` shell became the router's `RootLayout` (`router.tsx`). Selected job
+  id and job filters remain ephemeral local state by choice (not deep-linked today).
+  `@tanstack/react-router` was pinned to `1.170.18` — explicitly past the `1.169.5–8`
+  malicious builds of the 2026-05-11 supply-chain incident (CVE-2026-45321). Tests gained
+  a `renderWithRouter` helper (memory history) and a `TextEncoder`/`scrollTo` polyfill in
+  the jsdom setup, both required by the router core.
