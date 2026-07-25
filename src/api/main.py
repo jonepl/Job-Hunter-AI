@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.api.routers import generations, jobs, profiles, resume, runs, settings
-from src.scheduler import SchedulerManager, set_scheduler_manager
+from src.orchestration.scheduler import SchedulerManager, set_scheduler_manager
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def _maybe_start_scheduler() -> SchedulerManager | None:
         logger.info("SCHEDULE_ENABLED is not true — no in-process scheduler")
         return None
 
-    from src.service_factory import build_settings_service
+    from src.orchestration.service_factory import build_settings_service
 
     service = build_settings_service()
     service.apply_to_environment()

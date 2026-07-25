@@ -165,7 +165,7 @@ async def run_scheduled_cycle(service_factory: callable = None) -> None:
         service_factory: Callable that builds a JobSearchService per profile. Defaults
             to ``service_factory.build_service`` (imported lazily to avoid a cycle).
     """
-    from src.service_factory import build_service, build_settings_service
+    from src.orchestration.service_factory import build_service, build_settings_service
 
     settings_service = build_settings_service()
     settings_service.apply_to_environment()

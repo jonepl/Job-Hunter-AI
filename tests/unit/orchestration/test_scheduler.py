@@ -9,7 +9,7 @@ from src.core.domain.date_posted import DatePosted
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
 from src.core.exceptions import ModelNotFoundError
-from src.scheduler import (
+from src.orchestration.scheduler import (
     SchedulerManager,
     get_scheduler_manager,
     run_all_profiles,
@@ -111,7 +111,7 @@ class TestRunAllProfiles:
         mock_service.run = AsyncMock(return_value=MagicMock())
         factory = MagicMock(return_value=mock_service)
 
-        with caplog.at_level(logging.INFO, logger="src.scheduler"):
+        with caplog.at_level(logging.INFO, logger="src.orchestration.scheduler"):
             await run_all_profiles(profiles, factory)
 
         # The factory is built only for the enabled profile.
@@ -156,7 +156,7 @@ class TestRunAllProfiles:
         mock_service.run = AsyncMock(return_value=MagicMock())
         mock_factory = MagicMock(return_value=mock_service)
 
-        with caplog.at_level(logging.INFO, logger="src.scheduler"):
+        with caplog.at_level(logging.INFO, logger="src.orchestration.scheduler"):
             await run_all_profiles(profiles, mock_factory)
 
         log_text = " ".join(caplog.messages)
@@ -176,8 +176,8 @@ class TestRunScheduledCycle:
 
         factory = MagicMock()
         with patch(
-            "src.service_factory.build_settings_service", return_value=settings_service
-        ), patch("src.scheduler.run_all_profiles", new=AsyncMock()) as mock_run:
+            "src.orchestration.service_factory.build_settings_service", return_value=settings_service
+        ), patch("src.orchestration.scheduler.run_all_profiles", new=AsyncMock()) as mock_run:
             await run_scheduled_cycle(factory)
 
         settings_service.apply_to_environment.assert_called_once()
@@ -190,8 +190,8 @@ class TestRunScheduledCycle:
         settings_service.list_profiles.return_value = []
 
         with patch(
-            "src.service_factory.build_settings_service", return_value=settings_service
-        ), patch("src.scheduler.run_all_profiles", new=AsyncMock()) as mock_run:
+            "src.orchestration.service_factory.build_settings_service", return_value=settings_service
+        ), patch("src.orchestration.scheduler.run_all_profiles", new=AsyncMock()) as mock_run:
             await run_scheduled_cycle(MagicMock())
 
         mock_run.assert_not_awaited()
@@ -203,7 +203,7 @@ class TestSchedulerManager:
     def test_start_registers_job_and_starts(self):
         """start() builds a BackgroundScheduler, adds the job, and starts it."""
         fake = MagicMock()
-        with patch("src.scheduler.BackgroundScheduler", return_value=fake):
+        with patch("src.orchestration.scheduler.BackgroundScheduler", return_value=fake):
             manager = SchedulerManager()
             manager.start("0 8 * * 1-5", "UTC")
 
@@ -215,7 +215,7 @@ class TestSchedulerManager:
         """reschedule() calls reschedule_job with a new trigger when running."""
         fake = MagicMock()
         fake.running = True
-        with patch("src.scheduler.BackgroundScheduler", return_value=fake):
+        with patch("src.orchestration.scheduler.BackgroundScheduler", return_value=fake):
             manager = SchedulerManager()
             manager.start("0 8 * * 1-5", "UTC")
             manager.reschedule("30 6 * * *", "America/New_York")
@@ -231,7 +231,7 @@ class TestSchedulerManager:
         """shutdown() stops a running scheduler and leaves the manager not running."""
         fake = MagicMock()
         fake.running = True
-        with patch("src.scheduler.BackgroundScheduler", return_value=fake):
+        with patch("src.orchestration.scheduler.BackgroundScheduler", return_value=fake):
             manager = SchedulerManager()
             manager.start("0 8 * * 1-5", "UTC")
             manager.shutdown()

@@ -36,12 +36,19 @@ diagram and `docs/adr.md` for the reasoning behind these choices.
 ## Entrypoint architecture
 
 - `src/main.py` is a **thin entrypoint** — wires and dispatches only, no logic.
-  Never add logic directly to `main.py`.
+  Never add logic directly to `main.py`. It stays at `src/` root because
+  `python -m src.main` is the public entrypoint contract.
 - CLI concerns → `src/cli/` (`args.py`, `overrides.py`).
 - Logging config → `src/infra/logging.py`.
-- Profile loading → `src/bootstrap.py`. Immediate run → `src/runner.py`.
-- `bootstrap.py` and `runner.py` have **no CLI/argparse dependency** — they
-  accept plain Python objects so the API entrypoint can reuse them.
+- The **composition / run layer** → `src/orchestration/`: `bootstrap.py`
+  (profile loading), `runner.py` (immediate run), `scheduler.py` (scheduled
+  run), `service_factory.py` (the composition root / DI wiring), and the
+  `mark_runner.py` / `resume_runner.py` / `generation_runner.py` command
+  backends. This is the only layer allowed to import both `adapters/` and
+  `core/` — it assembles the hexagon.
+- `orchestration/bootstrap.py`, `runner.py`, and the `*_runner.py` backends have
+  **no CLI/argparse dependency** — they accept plain Python objects so the API
+  entrypoint reuses them.
 - `src/api/` is the **FastAPI entrypoint** (`main.py`, `deps.py`, `schemas.py`,
   `routers/`) serving the `web/` UI. It drives the pipeline through the services
   rather than duplicating run logic. `src/evaluator/`, `src/scraper/`,
@@ -55,5 +62,7 @@ diagram and `docs/adr.md` for the reasoning behind these choices.
 - Scraper adapters → `src/adapters/scrapers/` (built via `scraper_factory.py`)
 - Evaluator adapters → `src/adapters/evaluator/` (selected via `factory.py`)
 - Output adapters → `src/adapters/output/`
-- Unit tests → `tests/unit/` (mirrors `src/` exactly)
+- Composition + run orchestration → `src/orchestration/`
+- Unit tests → `tests/unit/` (mirrors `src/` exactly — orchestration modules are
+  tested under `tests/unit/orchestration/`)
 - Shared fixtures → `tests/conftest.py`

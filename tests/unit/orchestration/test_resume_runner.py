@@ -7,7 +7,7 @@ Exercised against a real ResumeService over an in-memory store with a stub parse
 from src.adapters.repository.sqlite_resume_repository import SQLiteResumeRepository
 from src.core.ports.resume_parser_port import ResumeParserPort
 from src.core.services.resume_service import ResumeService
-from src.resume_runner import (
+from src.orchestration.resume_runner import (
     run_resume_activate,
     run_resume_list,
     run_resume_upload,

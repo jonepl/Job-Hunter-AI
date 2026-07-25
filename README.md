@@ -21,12 +21,16 @@ Built on **Hexagonal Architecture (Ports and Adapters)**. Core domain logic is f
 
 ```
 src/
-├── main.py            ← thin CLI entrypoint
-├── bootstrap.py       ← profile loading
-├── runner.py          ← immediate run logic
-├── scheduler.py       ← APScheduler scheduled mode
-├── service_factory.py ← composition root
-├── api/               ← future FastAPI entrypoint
+├── main.py            ← thin CLI entrypoint (python -m src.main)
+├── orchestration/     ← composition + run layer (assembles the hexagon)
+│   ├── bootstrap.py       ← profile loading
+│   ├── runner.py          ← immediate run logic
+│   ├── scheduler.py       ← APScheduler scheduled mode
+│   ├── service_factory.py ← composition root
+│   ├── mark_runner.py     ← mark CLI backend
+│   ├── resume_runner.py   ← resume CLI backend
+│   └── generation_runner.py ← generate CLI backend
+├── api/               ← FastAPI driving adapter (serves API + SPA)
 ├── cli/               ← argparse definitions and CLI overrides
 ├── infra/             ← logging configuration
 ├── core/

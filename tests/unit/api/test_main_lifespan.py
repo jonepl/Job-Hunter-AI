@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from src.api.main import create_app
-from src.scheduler import get_scheduler_manager
+from src.orchestration.scheduler import get_scheduler_manager
 
 
 def test_lifespan_does_not_start_scheduler_when_disabled(monkeypatch):
@@ -31,7 +31,7 @@ def test_lifespan_starts_and_stops_scheduler_when_enabled(monkeypatch):
     )
     manager = MagicMock()
 
-    with patch("src.service_factory.build_settings_service", return_value=service), patch(
+    with patch("src.orchestration.service_factory.build_settings_service", return_value=service), patch(
         "src.api.main.SchedulerManager", return_value=manager
     ):
         with TestClient(create_app()):

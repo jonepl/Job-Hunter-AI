@@ -18,7 +18,7 @@ from src.adapters.repository.sqlite_settings_repository import (
 from src.api.deps import get_settings_service
 from src.api.main import create_app
 from src.core.services.settings_service import SettingsService
-from src.scheduler import set_scheduler_manager
+from src.orchestration.scheduler import set_scheduler_manager
 
 
 def _client(monkeypatch) -> TestClient:

@@ -88,9 +88,9 @@ def build_run_service() -> RunService:
     Returns:
         A ready RunService.
     """
-    # Imported here (not at module top) to avoid a src.scheduler ↔ src.service_factory
+    # Imported here (not at module top) to avoid a src.orchestration.scheduler ↔ src.orchestration.service_factory
     # import cycle: run_scheduled_cycle imports build_service from this module lazily.
-    from src.scheduler import run_all_profiles
+    from src.orchestration.scheduler import run_all_profiles
 
     return RunService(
         run_repo=build_run_repository(),

@@ -12,7 +12,7 @@ import pytest
 from src.core.domain.generation import Generation
 from src.core.domain.voice_descriptor import VoiceDescriptor
 from src.core.exceptions import GenerationError, ModelNotFoundError
-from src.generation_runner import run_generate_cover_letter, run_generate_resume
+from src.orchestration.generation_runner import run_generate_cover_letter, run_generate_resume
 
 
 def _generation(**overrides) -> Generation:

@@ -25,8 +25,9 @@ Implement a new feature following this repo's hexagonal conventions.
 - **New pipeline behavior** → a method on `JobSearchService`
   (`src/core/services/job_search_service.py`).
 - **New domain data** → a Pydantic entity/field under `src/core/domain/`.
-- **New config surface** → a `.env` variable, loaded in `bootstrap.py` / the
-  relevant factory, documented in `docs/env.md`.
+- **New config surface** → a `.env` variable, loaded in
+  `orchestration/bootstrap.py` / the relevant factory, documented in
+  `docs/env.md`.
 
 ## Steps
 

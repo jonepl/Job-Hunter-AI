@@ -57,8 +57,14 @@ Adapters → Ports ← Core Domain     (all dependencies point inward)
   (`openai_evaluator.py`, `anthropic_evaluator.py`, `factory.py`, `prompts.py`),
   `output/` (`email_output.py`, `file_output.py`).
 - Entrypoint chain: `src/main.py` (thin) → `cli/` (argparse + overrides) →
-  `bootstrap.py` (load profiles) → `runner.py` / `scheduler.py` →
-  `service_factory.py` (builds a `JobSearchService` per `SearchProfile`).
+  `orchestration/bootstrap.py` (load profiles) →
+  `orchestration/runner.py` / `orchestration/scheduler.py` →
+  `orchestration/service_factory.py` (builds a `JobSearchService` per `SearchProfile`).
+- `src/orchestration/` — the composition/run layer that assembles the hexagon:
+  `bootstrap.py`, `runner.py`, `scheduler.py`, `service_factory.py`, and the
+  `mark_runner.py` / `resume_runner.py` / `generation_runner.py` command backends.
+  It is the one layer allowed to import both `adapters/` and `core/`. `main.py`
+  stays at `src/` root (the `python -m src.main` entrypoint).
 - `src/infra/` — `logging.py`, `cost_tracker.py`, `cost_estimator.py`.
 
 ## Non-obvious gotchas
