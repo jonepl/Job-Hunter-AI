@@ -19,9 +19,15 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Bring in the uv binary from its official image (no host install script needed)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Install Python dependencies from the lockfile (reproducible; skips the dev group)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+# Run subsequent commands and the app through the uv-managed venv
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Install Playwright browser binaries (used by the LinkedIn scraper on CLI runs)
 RUN playwright install --with-deps

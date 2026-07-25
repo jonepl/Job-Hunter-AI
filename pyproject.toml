@@ -1,0 +1,28 @@
+[project]
+name = "job-hunter-ai"
+version = "0.1.0"
+description = "Dockerized job-search agent: scrape, LLM-evaluate, deliver top matches."
+requires-python = ">=3.10"
+dependencies = [
+    "openai",
+    "anthropic",
+    "google-genai",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "python-dotenv",
+    "playwright",
+    "beautifulsoup4",
+    "requests",
+    "pypdf2",
+    "python-docx",
+    "lxml",
+    "apscheduler",
+    "pytz",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]

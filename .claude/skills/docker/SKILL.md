@@ -27,7 +27,8 @@ Build, configure, and run the single-container job-search agent.
 - Base image `python:3.10-slim`, `WORKDIR /app`.
 - `apt-get install` the system deps Playwright needs (curl, wget, gnupg,
   ca-certificates).
-- `pip install --no-cache-dir -r requirements.txt`.
+- Copy the `uv` binary from `ghcr.io/astral-sh/uv:latest`, then
+  `uv sync --frozen --no-dev` from `pyproject.toml` + `uv.lock`.
 - `playwright install --with-deps`.
 - `COPY src/ ./src/` and `mkdir -p output logs`.
 - `CMD ["python", "-m", "src.main"]`.

@@ -27,10 +27,10 @@ belongs in a script; if it needs judgment it belongs with the agent.
 
 ## What setup.sh does
 
-Verifies prerequisites (Python 3.10+, pip, etc.), creates the `.venv` virtual
-environment, installs Python dependencies from `requirements.txt`, installs
-Playwright browser binaries, generates a `.env` with placeholders, and runs
-validation checks.
+Verifies prerequisites (Python 3.10+, uv, etc.), runs `uv sync --frozen` (which
+creates the `.venv` and installs the locked dependency set from `pyproject.toml`
++ `uv.lock`), installs Playwright browser binaries, generates a `.env` with
+placeholders, and runs validation checks.
 
 ## Project structure (as-built)
 
@@ -56,13 +56,13 @@ Job-Hunter-AI/
 │       ├── evaluator/  ← openai_evaluator.py, anthropic_evaluator.py, factory.py, prompts.py
 │       └── output/     ← email_output.py, file_output.py
 ├── tests/unit/                     ← mirrors src/ exactly (no integration suite yet)
-├── setup.sh  Dockerfile  docker-compose.yml  requirements.txt  .env
+├── setup.sh  Dockerfile  docker-compose.yml  pyproject.toml  uv.lock  .env
 ```
 
 `src/api/`, `src/evaluator/`, `src/scraper/`, `src/tools/` are empty stubs —
 real code lives under `src/adapters/`.
 
-## Dependencies (requirements.txt)
+## Dependencies (pyproject.toml)
 
 `openai`, `anthropic` (LLM providers); `python-dotenv` (config); `playwright`
 (LinkedIn browser automation); `requests` (JSearch API); `pypdf2` (resume
