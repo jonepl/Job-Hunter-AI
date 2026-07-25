@@ -22,10 +22,10 @@ from dotenv import load_dotenv
 from src.infra.logging import configure_logging
 from src.cli.args import parse_args
 from src.cli.overrides import apply_cli_overrides, apply_evaluator_override
-from src.bootstrap import load_profiles
-from src.runner import run_immediate
-from src.scheduler import start_scheduler
-from src.service_factory import build_service
+from src.orchestration.bootstrap import load_profiles
+from src.orchestration.runner import run_immediate
+from src.orchestration.scheduler import start_scheduler
+from src.orchestration.service_factory import build_service
 
 
 async def main() -> None:
@@ -52,7 +52,7 @@ async def main() -> None:
     # Apply DB-backed settings into the environment (W7 env bridge, ADR-035) so the
     # evaluator/enrichment/schedule factories read the current config. Runs before the
     # CLI overrides so precedence stays .env → DB → CLI (CLI wins, for testing).
-    from src.service_factory import build_settings_service
+    from src.orchestration.service_factory import build_settings_service
 
     settings_service = build_settings_service()
     settings_service.apply_to_environment()
@@ -83,7 +83,7 @@ def _dispatch_mark(args) -> None:
     """
     from src.adapters.repository.factory import build_repository
     from src.core.domain.job_status import JobStatus
-    from src.mark_runner import run_mark
+    from src.orchestration.mark_runner import run_mark
 
     status = JobStatus(args.status) if args.status else None
     saved = True if args.save else (False if args.unsave else None)
@@ -105,12 +105,12 @@ def _dispatch_resume(args) -> None:
     Args:
         args: The parsed ``resume`` namespace (resume_action plus its arguments).
     """
-    from src.resume_runner import (
+    from src.orchestration.resume_runner import (
         run_resume_activate,
         run_resume_list,
         run_resume_upload,
     )
-    from src.service_factory import build_resume_service
+    from src.orchestration.service_factory import build_resume_service
 
     action = getattr(args, "resume_action", None)
     if action is None:
@@ -137,11 +137,11 @@ async def _dispatch_generate(args) -> None:
             cover letters, the optional voice overrides).
     """
     from src.core.domain.voice_descriptor import VoiceDescriptor
-    from src.generation_runner import (
+    from src.orchestration.generation_runner import (
         run_generate_cover_letter,
         run_generate_resume,
     )
-    from src.service_factory import build_generation_service
+    from src.orchestration.service_factory import build_generation_service
 
     kind = getattr(args, "generate_kind", None)
     if kind is None:

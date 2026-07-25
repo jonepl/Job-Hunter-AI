@@ -6,7 +6,7 @@ from src.core.domain.date_posted import DatePosted
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
 from src.core.services.generation_service import GenerationService
-from src.service_factory import build_generation_service, build_service
+from src.orchestration.service_factory import build_generation_service, build_service
 
 
 def _profile() -> SearchProfile:
@@ -36,7 +36,7 @@ def _patched_build(**overrides):
     }
     defaults.update(overrides)
     patchers = [
-        patch(f"src.service_factory.{name}", return_value=value)
+        patch(f"src.orchestration.service_factory.{name}", return_value=value)
         for name, value in defaults.items()
     ]
     return patchers
@@ -115,7 +115,7 @@ def test_build_generation_service_assembles_all_collaborators(monkeypatch):
         "build_repository": MagicMock(),
     }
     started = [
-        patch(f"src.service_factory.{name}", return_value=value)
+        patch(f"src.orchestration.service_factory.{name}", return_value=value)
         for name, value in patchers.items()
     ]
     for p in started:

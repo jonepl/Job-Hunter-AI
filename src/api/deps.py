@@ -13,7 +13,7 @@ from src.core.services.generation_service import GenerationService
 from src.core.services.resume_service import ResumeService
 from src.core.services.run_service import RunService
 from src.core.services.settings_service import SettingsService
-from src.service_factory import (
+from src.orchestration.service_factory import (
     build_generation_service,
     build_resume_service,
     build_run_service,

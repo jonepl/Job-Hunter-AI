@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.core.exceptions import ModelNotFoundError
-from src.runner import _log_report_results, run_immediate
+from src.orchestration.runner import _log_report_results, run_immediate
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ async def test_run_immediate_skips_disabled_profiles(caplog):
     mock_svc.run = AsyncMock(return_value=_make_report())
     factory = MagicMock(return_value=mock_svc)
 
-    with caplog.at_level(logging.INFO, logger="src.runner"):
+    with caplog.at_level(logging.INFO, logger="src.orchestration.runner"):
         await run_immediate(profiles=profiles, service_factory=factory)
 
     # The factory is built only for the enabled profile.

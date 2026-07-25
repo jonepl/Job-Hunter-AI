@@ -215,6 +215,8 @@ code is marked inferred.
   carry no CLI dependency so a future API entrypoint can reuse them.
 - **Consequences:** Better testability and reuse. Never add logic directly to
   `main.py`.
+- **Update (ADR-038):** these focused modules were later collected from the `src/`
+  root into a single `src/orchestration/` package. `main.py` stays at the root.
 
 ## ADR-021: src/api/ reserved as a placeholder
 
@@ -714,3 +716,29 @@ code is marked inferred.
   malicious builds of the 2026-05-11 supply-chain incident (CVE-2026-45321). Tests gained
   a `renderWithRouter` helper (memory history) and a `TextEncoder`/`scrollTo` polyfill in
   the jsdom setup, both required by the router core.
+
+## ADR-038: Composition/run modules collected into `src/orchestration/`
+
+- **Status:** Accepted (refines ADR-020)
+- **Context:** ADR-020 broke `main.py` into focused modules, but those modules
+  (`bootstrap.py`, `runner.py`, `scheduler.py`, `service_factory.py`, and later the
+  `mark_runner.py` / `resume_runner.py` / `generation_runner.py` command backends)
+  accumulated as **loose files at the `src/` root**. Every other tier of the
+  hexagon already had its own package — `core/`, `adapters/`, `cli/`, `infra/`,
+  `api/` — while this tier, the composition/application layer that assembles the
+  hexagon, was the one exception: eight top-level `.py` files interleaved with the
+  package directories. The layer that is architecturally distinct (it alone may
+  import both `adapters/` and `core/`) was the least visible in the tree.
+- **Decision:** Collect those seven modules into a single `src/orchestration/`
+  package, making the composition/run layer an explicit, named tier. `main.py`
+  **stays at `src/` root** — it is the `python -m src.main` entrypoint contract,
+  bound by the Dockerfile `CMD`, the README, and CLAUDE.md. Tests move to the
+  mirrored `tests/unit/orchestration/`. The move is a pure relocation: no behavior,
+  signatures, or the documented `scheduler ↔ service_factory` lazy-import cycle
+  changed — both endpoints simply now live in the same package.
+- **Consequences:** The top level is now `main.py` plus packages, and the layer
+  that crosses the hexagon boundary reads as one unit. Import paths gained an
+  `orchestration.` segment (`from src.orchestration.service_factory import …`) and
+  patch targets in tests shifted accordingly. The convention going forward: new
+  composition/run/wiring modules belong in `src/orchestration/`, not the `src/`
+  root; only the thin entrypoint lives at the root.

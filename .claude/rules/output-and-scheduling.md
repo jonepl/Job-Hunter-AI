@@ -21,11 +21,11 @@
 ## Scheduling
 
 - `SCHEDULE_ENABLED=true` (`.env` only — never a CLI flag) activates APScheduler
-  mode (`src/scheduler.py`, `BlockingScheduler` + `CronTrigger`). `false` runs
-  all profiles once and exits (`src/runner.py`).
+  mode (`src/orchestration/scheduler.py`, `BlockingScheduler` + `CronTrigger`).
+  `false` runs all profiles once and exits (`src/orchestration/runner.py`).
 - `SCHEDULE_CRON` and `SCHEDULE_TIMEZONE` configure the schedule.
 - Each `SearchProfile` (`src/core/domain/search_profile.py`) gets its own service
-  instance via `service_factory.build_service()`.
+  instance via `orchestration/service_factory.build_service()`.
 - Profiles run **sequentially, not concurrently** — prevents API flooding.
 - Profile failures are caught and logged — a failing profile never stops the
   remaining ones.

@@ -19,7 +19,7 @@ from src.api.schemas import (
     SettingsUpdate,
 )
 from src.core.services.settings_service import SECRET_NAMES, SettingsService
-from src.scheduler import get_scheduler_manager
+from src.orchestration.scheduler import get_scheduler_manager
 
 logger = logging.getLogger(__name__)
 

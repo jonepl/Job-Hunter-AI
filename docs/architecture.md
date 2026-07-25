@@ -81,7 +81,8 @@ The CLI has four modes: the default (no-subcommand) invocation runs a search; th
 `generate` subcommand produces a document for a stored job
 (`generate resume <job_id>` / `generate cover-letter <job_id>` with `--tone` /
 `--person` / `--style-notes`). Each dispatches to an argparse-free runner
-(`src/mark_runner.py`, `src/resume_runner.py`, `src/generation_runner.py`) so the API
+(`src/orchestration/mark_runner.py`, `src/orchestration/resume_runner.py`,
+`src/orchestration/generation_runner.py`) so the API
 can reuse the same paths (the resume runner shares the `ResumeService` the browser
 `POST /api/resume` upload now drives, W5; the generation runner shares the
 `GenerationService` the browser now drives asynchronously, W6). Only the six **human-set** statuses
@@ -190,13 +191,14 @@ job-search-agent/
 │
 ├── src/
 │   ├── main.py                          ← thin CLI entrypoint (search + mark + resume dispatch)
-│   ├── bootstrap.py                     ← profile loading
-│   ├── runner.py                        ← immediate run logic
-│   ├── mark_runner.py                   ← run_mark() — mark CLI backend (no argparse dep)
-│   ├── resume_runner.py                 ← resume upload/list/activate — resume CLI backend
-│   ├── generation_runner.py             ← generate resume/cover-letter — generation CLI backend
-│   ├── scheduler.py                     ← APScheduler — Blocking (CLI) + in-process Background (web) schedulers, live reschedule
-│   ├── service_factory.py               ← Builds JobSearchService + build_resume/generation/run_service()
+│   ├── orchestration/                   ← composition + run layer (imports both adapters/ and core/)
+│   │   ├── bootstrap.py                 ← profile loading
+│   │   ├── runner.py                    ← immediate run logic
+│   │   ├── mark_runner.py               ← run_mark() — mark CLI backend (no argparse dep)
+│   │   ├── resume_runner.py             ← resume upload/list/activate — resume CLI backend
+│   │   ├── generation_runner.py         ← generate resume/cover-letter — generation CLI backend
+│   │   ├── scheduler.py                 ← APScheduler — Blocking (CLI) + in-process Background (web) schedulers, live reschedule
+│   │   └── service_factory.py           ← Builds JobSearchService + build_resume/generation/run_service()
 │   │
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
 │   │   ├── __init__.py
@@ -341,11 +343,15 @@ web/                                     ← Job Hunter AI Web (Vite + React + T
 tests/
 │
 ├── unit/                                    ← mirrors src/ exactly
-│   ├── test_bootstrap.py                    ← tests for load_profiles()
-│   ├── test_runner.py                       ← tests for run_immediate()
-│   ├── test_mark_runner.py                  ← tests for run_mark() (mark CLI backend)
-│   ├── test_scheduler.py                    ← tests for run_all_profiles()
 │   ├── test_main_args.py                    ← tests for main() argument wiring
+│   ├── orchestration/                       ← mirrors src/orchestration/
+│   │   ├── test_bootstrap.py                ← tests for load_profiles()
+│   │   ├── test_runner.py                   ← tests for run_immediate()
+│   │   ├── test_mark_runner.py              ← tests for run_mark() (mark CLI backend)
+│   │   ├── test_resume_runner.py            ← tests for the resume CLI backend
+│   │   ├── test_generation_runner.py        ← tests for the generate CLI backend
+│   │   ├── test_scheduler.py                ← tests for run_all_profiles()
+│   │   └── test_service_factory.py          ← tests for build_service() wiring
 │   ├── api/
 │   │   └── test_jobs_router.py              ← tests for GET/PATCH /api/jobs[/{id}] (FastAPI TestClient)
 │   ├── cli/

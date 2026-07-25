@@ -11,7 +11,7 @@ from src.core.domain.fingerprint import compute_fingerprint
 from src.core.domain.job import Job
 from src.core.domain.job_status import JobStatus
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
-from src.mark_runner import run_mark
+from src.orchestration.mark_runner import run_mark
 
 _NOW = datetime(2026, 7, 14, 9, 0, 0)
 

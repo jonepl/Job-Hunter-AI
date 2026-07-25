@@ -12,7 +12,7 @@ store instead of the environment directly.
 import sys
 
 from src.core.domain.search_profile import SearchProfile
-from src.service_factory import build_settings_service
+from src.orchestration.service_factory import build_settings_service
 
 
 def load_profiles() -> list[SearchProfile]:

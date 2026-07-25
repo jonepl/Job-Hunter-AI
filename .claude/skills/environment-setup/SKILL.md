@@ -45,7 +45,8 @@ Job-Hunter-AI/
 │   ├── prd.md  architecture.md  adr.md  env.md
 │   └── resume/resume.pdf           ← candidate resume (volume mounted)
 ├── src/
-│   ├── main.py bootstrap.py runner.py scheduler.py service_factory.py
+│   ├── main.py                     ← thin entrypoint (python -m src.main)
+│   ├── orchestration/              ← bootstrap, runner, scheduler, service_factory, *_runner
 │   ├── cli/                        ← argparse + overrides
 │   ├── infra/                      ← logging, cost_tracker, cost_estimator
 │   ├── core/
