@@ -19,6 +19,7 @@ def test_incomplete_subclass_fails_at_instantiation():
     class Partial(ResumeRepositoryPort):
         def get_active(self):
             return None
+
         # deliberately omits the other abstract methods
 
     with pytest.raises(TypeError):

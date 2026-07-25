@@ -7,7 +7,6 @@ files, consistent with the mock-all-externals rule (the store is our own).
 
 from datetime import datetime
 
-import pytest
 from fastapi.testclient import TestClient
 
 from src.adapters.repository.sqlite_repository import SQLiteJobRepository
@@ -35,6 +34,7 @@ def _job(title: str, company: str = "Acme Corp", url: str = "https://x/1") -> Jo
 
 def _match_result(job: Job, score: int) -> MatchResult:
     """Return a MatchResult for the given job and score."""
+
     def _cat(mx: int) -> ScoreCategory:
         return ScoreCategory(max=mx, earned=mx, reasoning="ok")
 
@@ -128,6 +128,7 @@ def test_list_jobs_ordered_by_score_descending():
 # GET /api/jobs/{id} — detail fan-out (W2)
 # ---------------------------------------------------------------------------
 
+
 def test_get_job_detail_returns_full_shape():
     """The detail endpoint returns the breakdown, skills, status, and history."""
     repo = SQLiteJobRepository(db_path=":memory:")
@@ -151,8 +152,12 @@ def test_get_job_detail_returns_full_shape():
     assert breakdown[0]["earned"] == 20 and breakdown[0]["max"] == 20
     # Creation history row present.
     assert body["statusHistory"] == [
-        {"fromStatus": None, "toStatus": "evaluated", "note": None,
-         "changedAt": body["statusHistory"][0]["changedAt"]}
+        {
+            "fromStatus": None,
+            "toStatus": "evaluated",
+            "note": None,
+            "changedAt": body["statusHistory"][0]["changedAt"],
+        }
     ]
 
 
@@ -165,6 +170,7 @@ def test_get_job_detail_unknown_id_returns_404():
 # ---------------------------------------------------------------------------
 # PATCH /api/jobs/{id}/status — the first mutation (W2)
 # ---------------------------------------------------------------------------
+
 
 def test_patch_status_moves_job_and_records_history():
     """A human status write moves the job and appends a history row."""
@@ -201,9 +207,7 @@ def test_patch_status_rejects_machine_status_with_422():
     repo = SQLiteJobRepository(db_path=":memory:")
     job_id = _seed(repo, "Senior Engineer", score=88, url="https://x/1")
 
-    resp = _client(repo).patch(
-        f"/api/jobs/{job_id}/status", json={"status": "evaluated"}
-    )
+    resp = _client(repo).patch(f"/api/jobs/{job_id}/status", json={"status": "evaluated"})
     assert resp.status_code == 422
 
 
@@ -218,6 +222,7 @@ def test_patch_status_unknown_id_returns_404():
 # ---------------------------------------------------------------------------
 # PATCH /api/jobs/{id}/saved — the bookmark toggle (W2)
 # ---------------------------------------------------------------------------
+
 
 def test_patch_saved_toggles_bookmark():
     """The saved endpoint flips the bookmark and never writes history."""

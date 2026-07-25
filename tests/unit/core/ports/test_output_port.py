@@ -38,6 +38,7 @@ def test_output_port_missing_implementation_raises_type_error():
 def test_output_port_deliver_signature_matches_contract():
     """Happy path — deliver accepts a RunReport and returns None."""
     import inspect
+
     sig = inspect.signature(OutputPort.deliver)
     params = list(sig.parameters.keys())
     assert "report" in params

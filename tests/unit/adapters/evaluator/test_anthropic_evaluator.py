@@ -98,9 +98,7 @@ async def test_evaluate_raises_model_not_found_on_404(sample_resume, sample_job)
     """A 404 model-not-found is re-raised as ModelNotFoundError to abort the run."""
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(
-        side_effect=anthropic.NotFoundError(
-            "model not found", response=MagicMock(), body=None
-        )
+        side_effect=anthropic.NotFoundError("model not found", response=MagicMock(), body=None)
     )
 
     evaluator = ClaudeEvaluator(api_key="test-key", model="claude-sonnet-9")
@@ -204,9 +202,7 @@ async def test_evaluate_returns_default_on_validation_error(sample_resume, sampl
     payload = {"score": 999, "matched_skills": [], "missing_skills": [], "summary": "bad score"}
 
     mock_client = AsyncMock()
-    mock_client.messages.create = AsyncMock(
-        return_value=make_mock_anthropic_response(payload)
-    )
+    mock_client.messages.create = AsyncMock(return_value=make_mock_anthropic_response(payload))
 
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
@@ -242,9 +238,7 @@ async def test_rescue_fields_misplaced_in_score_breakdown(sample_resume, sample_
     }
 
     mock_client = AsyncMock()
-    mock_client.messages.create = AsyncMock(
-        return_value=make_mock_anthropic_response(payload)
-    )
+    mock_client.messages.create = AsyncMock(return_value=make_mock_anthropic_response(payload))
 
     evaluator = ClaudeEvaluator(api_key="test-key")
     evaluator._client = mock_client
@@ -384,6 +378,7 @@ async def test_evaluate_uses_correct_model(sample_resume, sample_job):
 # New tests — tuple return with token counts
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_evaluate_returns_tuple(sample_resume, sample_job):
     """evaluate() returns a tuple of (MatchResult, int, int)."""
@@ -409,7 +404,9 @@ async def test_evaluate_returns_token_counts(sample_resume, sample_job):
     """evaluate() extracts input_tokens and output_tokens from response.usage."""
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(
-        return_value=make_mock_anthropic_response(_full_payload(), input_tokens=2500, output_tokens=450)
+        return_value=make_mock_anthropic_response(
+            _full_payload(), input_tokens=2500, output_tokens=450
+        )
     )
 
     evaluator = ClaudeEvaluator(api_key="test-key")

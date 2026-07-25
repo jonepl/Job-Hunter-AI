@@ -1,6 +1,5 @@
 """Unit tests for scheduler.run_all_profiles()."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -83,9 +82,7 @@ class TestRunAllProfiles:
         profiles = [_make_profile(1), _make_profile(2)]
 
         failing_service = MagicMock()
-        failing_service.run = AsyncMock(
-            side_effect=ModelNotFoundError("model 'gpt-4oo' not found")
-        )
+        failing_service.run = AsyncMock(side_effect=ModelNotFoundError("model 'gpt-4oo' not found"))
         second_service = MagicMock()
         second_service.run = AsyncMock(return_value=MagicMock())
 
@@ -175,9 +172,13 @@ class TestRunScheduledCycle:
         settings_service.list_profiles.return_value = profiles
 
         factory = MagicMock()
-        with patch(
-            "src.orchestration.service_factory.build_settings_service", return_value=settings_service
-        ), patch("src.orchestration.scheduler.run_all_profiles", new=AsyncMock()) as mock_run:
+        with (
+            patch(
+                "src.orchestration.service_factory.build_settings_service",
+                return_value=settings_service,
+            ),
+            patch("src.orchestration.scheduler.run_all_profiles", new=AsyncMock()) as mock_run,
+        ):
             await run_scheduled_cycle(factory)
 
         settings_service.apply_to_environment.assert_called_once()
@@ -189,9 +190,13 @@ class TestRunScheduledCycle:
         settings_service = MagicMock()
         settings_service.list_profiles.return_value = []
 
-        with patch(
-            "src.orchestration.service_factory.build_settings_service", return_value=settings_service
-        ), patch("src.orchestration.scheduler.run_all_profiles", new=AsyncMock()) as mock_run:
+        with (
+            patch(
+                "src.orchestration.service_factory.build_settings_service",
+                return_value=settings_service,
+            ),
+            patch("src.orchestration.scheduler.run_all_profiles", new=AsyncMock()) as mock_run,
+        ):
             await run_scheduled_cycle(MagicMock())
 
         mock_run.assert_not_awaited()

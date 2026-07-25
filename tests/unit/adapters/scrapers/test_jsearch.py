@@ -39,8 +39,10 @@ async def test_fetch_jobs_returns_list_of_job_models():
     """Happy path — fetch_jobs returns validated Job Pydantic models."""
     scraper = JSearchScraper(platform="indeed")
 
-    with patch("src.adapters.scrapers.jsearch.requests.get",
-               return_value=make_mock_response(_JSEARCH_RESPONSE)):
+    with patch(
+        "src.adapters.scrapers.jsearch.requests.get",
+        return_value=make_mock_response(_JSEARCH_RESPONSE),
+    ):
         results = await scraper.fetch_jobs("Python Developer", "Remote")
 
     assert len(results) == 1
@@ -77,8 +79,10 @@ async def test_fetch_jobs_maps_salary_and_employment_fields():
     """The six new fields map from their JSearch keys onto the Job."""
     scraper = JSearchScraper(platform="indeed")
 
-    with patch("src.adapters.scrapers.jsearch.requests.get",
-               return_value=make_mock_response(_JSEARCH_RESPONSE_FULL)):
+    with patch(
+        "src.adapters.scrapers.jsearch.requests.get",
+        return_value=make_mock_response(_JSEARCH_RESPONSE_FULL),
+    ):
         results = await scraper.fetch_jobs("Python Developer", "Remote")
 
     job = results[0]
@@ -97,8 +101,10 @@ async def test_fetch_jobs_absent_salary_keys_yield_none():
     scraper = JSearchScraper(platform="indeed")
 
     # _JSEARCH_RESPONSE carries no salary/employment keys.
-    with patch("src.adapters.scrapers.jsearch.requests.get",
-               return_value=make_mock_response(_JSEARCH_RESPONSE)):
+    with patch(
+        "src.adapters.scrapers.jsearch.requests.get",
+        return_value=make_mock_response(_JSEARCH_RESPONSE),
+    ):
         results = await scraper.fetch_jobs("Python Developer", "Remote")
 
     job = results[0]
@@ -114,8 +120,10 @@ async def test_fetch_jobs_posted_at_distinct_from_scraped_at():
     """posted_at carries the reported posting time; scraped_at is 'now' (A.0)."""
     scraper = JSearchScraper(platform="indeed")
 
-    with patch("src.adapters.scrapers.jsearch.requests.get",
-               return_value=make_mock_response(_JSEARCH_RESPONSE)):
+    with patch(
+        "src.adapters.scrapers.jsearch.requests.get",
+        return_value=make_mock_response(_JSEARCH_RESPONSE),
+    ):
         results = await scraper.fetch_jobs("Python Developer", "Remote")
 
     job = results[0]
@@ -128,11 +136,13 @@ async def test_fetch_jobs_posted_at_distinct_from_scraped_at():
 async def test_fetch_jobs_unparseable_posted_at_yields_none():
     """A malformed posted-at string degrades to None, not a dropped record."""
     scraper = JSearchScraper(platform="indeed")
-    payload = {"data": [{**_JSEARCH_RESPONSE["data"][0],
-                         "job_posted_at_datetime_utc": "not-a-date"}]}
+    payload = {
+        "data": [{**_JSEARCH_RESPONSE["data"][0], "job_posted_at_datetime_utc": "not-a-date"}]
+    }
 
-    with patch("src.adapters.scrapers.jsearch.requests.get",
-               return_value=make_mock_response(payload)):
+    with patch(
+        "src.adapters.scrapers.jsearch.requests.get", return_value=make_mock_response(payload)
+    ):
         results = await scraper.fetch_jobs("Python Developer", "Remote")
 
     assert len(results) == 1
@@ -146,8 +156,10 @@ async def test_fetch_jobs_stamps_correct_platform_label():
     glassdoor_scraper = JSearchScraper(platform="glassdoor")
     ziprecruiter_scraper = JSearchScraper(platform="ziprecruiter")
 
-    with patch("src.adapters.scrapers.jsearch.requests.get",
-               return_value=make_mock_response(_JSEARCH_RESPONSE)):
+    with patch(
+        "src.adapters.scrapers.jsearch.requests.get",
+        return_value=make_mock_response(_JSEARCH_RESPONSE),
+    ):
         indeed_results = await indeed_scraper.fetch_jobs("Python Developer", "Remote")
         glassdoor_results = await glassdoor_scraper.fetch_jobs("Python Developer", "Remote")
         ziprecruiter_results = await ziprecruiter_scraper.fetch_jobs("Python Developer", "Remote")
@@ -186,8 +198,9 @@ async def test_fetch_jobs_returns_empty_list_when_no_results():
     """Edge case — returns empty list when API returns an empty data array."""
     scraper = JSearchScraper(platform="ziprecruiter")
 
-    with patch("src.adapters.scrapers.jsearch.requests.get",
-               return_value=make_mock_response({"data": []})):
+    with patch(
+        "src.adapters.scrapers.jsearch.requests.get", return_value=make_mock_response({"data": []})
+    ):
         results = await scraper.fetch_jobs("Python Developer", "Remote")
 
     assert results == []
@@ -242,7 +255,9 @@ async def test_hybrid_omits_remote_jobs_only_with_warning(caplog):
             await scraper.fetch_jobs("Python Developer", "New York", work_types=[WorkType.HYBRID])
 
     assert "remote_jobs_only" not in captured_params
-    assert any("hybrid work type filter not natively supported" in r.message for r in caplog.records)
+    assert any(
+        "hybrid work type filter not natively supported" in r.message for r in caplog.records
+    )
 
 
 @pytest.mark.asyncio
@@ -260,7 +275,8 @@ async def test_multiple_work_types_omits_remote_jobs_only(caplog):
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
         with patch("src.adapters.scrapers.jsearch.requests.get", side_effect=capture_get):
             await scraper.fetch_jobs(
-                "Python Developer", "Remote",
+                "Python Developer",
+                "Remote",
                 work_types=[WorkType.REMOTE, WorkType.HYBRID],
             )
 
@@ -292,8 +308,10 @@ async def test_platform_label_in_log_messages(caplog):
     scraper = JSearchScraper(platform="indeed")
 
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
-        with patch("src.adapters.scrapers.jsearch.requests.get",
-                   return_value=make_mock_response(_JSEARCH_RESPONSE)):
+        with patch(
+            "src.adapters.scrapers.jsearch.requests.get",
+            return_value=make_mock_response(_JSEARCH_RESPONSE),
+        ):
             await scraper.fetch_jobs("Python Developer", "Remote", work_types=[WorkType.REMOTE])
 
     assert any("indeed" in r.message for r in caplog.records)
@@ -302,6 +320,7 @@ async def test_platform_label_in_log_messages(caplog):
 # ---------------------------------------------------------------------------
 # Date posted filter — params and logging
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_date_posted_added_to_params():
@@ -359,8 +378,10 @@ async def test_date_posted_logged_when_set(caplog):
     scraper = JSearchScraper(platform="indeed")
 
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
-        with patch("src.adapters.scrapers.jsearch.requests.get",
-                   return_value=make_mock_response(_JSEARCH_RESPONSE)):
+        with patch(
+            "src.adapters.scrapers.jsearch.requests.get",
+            return_value=make_mock_response(_JSEARCH_RESPONSE),
+        ):
             await scraper.fetch_jobs("Python Developer", "Remote", date_posted=DatePosted.DAYS3)
 
     assert any("3days" in r.message for r in caplog.records)
@@ -374,8 +395,10 @@ async def test_no_date_posted_logged_when_not_set(caplog):
     scraper = JSearchScraper(platform="indeed")
 
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
-        with patch("src.adapters.scrapers.jsearch.requests.get",
-                   return_value=make_mock_response(_JSEARCH_RESPONSE)):
+        with patch(
+            "src.adapters.scrapers.jsearch.requests.get",
+            return_value=make_mock_response(_JSEARCH_RESPONSE),
+        ):
             await scraper.fetch_jobs("Python Developer", "Remote", date_posted=None)
 
     assert any("no date posted filter" in r.message for r in caplog.records)
@@ -384,6 +407,7 @@ async def test_no_date_posted_logged_when_not_set(caplog):
 # ---------------------------------------------------------------------------
 # JSEARCH_MAX_PAGES — pagination configuration
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_num_pages_default_is_two(monkeypatch):
@@ -512,8 +536,10 @@ async def test_log_message_includes_page_count(monkeypatch, caplog):
     scraper = JSearchScraper(platform="indeed")
 
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.jsearch"):
-        with patch("src.adapters.scrapers.jsearch.requests.get",
-                   return_value=make_mock_response(_JSEARCH_RESPONSE)):
+        with patch(
+            "src.adapters.scrapers.jsearch.requests.get",
+            return_value=make_mock_response(_JSEARCH_RESPONSE),
+        ):
             await scraper.fetch_jobs("Python Developer", "Remote")
 
     assert any("3 page(s)" in r.message for r in caplog.records)

@@ -183,17 +183,21 @@ class ClaudeEvaluator(EvaluatorPort):
             input_tokens = response.usage.input_tokens
             output_tokens = response.usage.output_tokens
 
-            return MatchResult(
-                job=job,
-                score=evaluated.score,
-                seniority_level=evaluated.seniority_level,
-                years_experience_detected=evaluated.years_experience_detected,
-                score_breakdown=evaluated.score_breakdown,
-                matched_skills=evaluated.matched_skills,
-                missing_skills=evaluated.missing_skills,
-                summary=evaluated.summary,
-                hire_recommendation=evaluated.hire_recommendation,
-            ), input_tokens, output_tokens
+            return (
+                MatchResult(
+                    job=job,
+                    score=evaluated.score,
+                    seniority_level=evaluated.seniority_level,
+                    years_experience_detected=evaluated.years_experience_detected,
+                    score_breakdown=evaluated.score_breakdown,
+                    matched_skills=evaluated.matched_skills,
+                    missing_skills=evaluated.missing_skills,
+                    summary=evaluated.summary,
+                    hire_recommendation=evaluated.hire_recommendation,
+                ),
+                input_tokens,
+                output_tokens,
+            )
 
         except anthropic.NotFoundError as exc:
             raise ModelNotFoundError(

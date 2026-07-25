@@ -16,11 +16,13 @@ def test_build_scrapers_linkedin_only():
 def test_build_scrapers_jsearch_platforms():
     """active=[INDEED, GLASSDOOR, ZIPRECRUITER] returns three JSearchScrapers
     with the correct platform labels."""
-    result = build_scrapers([
-        ScraperName.INDEED,
-        ScraperName.GLASSDOOR,
-        ScraperName.ZIPRECRUITER,
-    ])
+    result = build_scrapers(
+        [
+            ScraperName.INDEED,
+            ScraperName.GLASSDOOR,
+            ScraperName.ZIPRECRUITER,
+        ]
+    )
     assert len(result) == 3
     assert all(isinstance(s, JSearchScraper) for s in result)
     assert result[0].platform == "indeed"

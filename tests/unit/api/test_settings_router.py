@@ -115,11 +115,11 @@ def test_put_settings_reschedules_running_scheduler(monkeypatch):
         resp = client.put(
             "/api/settings",
             json={
-            "evaluatorProvider": "openai",
-            "scheduleCron": "30 6 * * *",
-            "scheduleTimezone": "UTC",
-            "voice": {},
-        },
+                "evaluatorProvider": "openai",
+                "scheduleCron": "30 6 * * *",
+                "scheduleTimezone": "UTC",
+                "voice": {},
+            },
         )
     finally:
         set_scheduler_manager(None)

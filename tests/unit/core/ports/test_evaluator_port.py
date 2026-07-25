@@ -47,6 +47,7 @@ def test_evaluator_port_missing_implementation_raises_type_error():
 def test_evaluator_port_evaluate_signature_matches_contract():
     """Happy path — evaluate accepts resume and job parameters."""
     import inspect
+
     sig = inspect.signature(EvaluatorPort.evaluate)
     params = list(sig.parameters.keys())
     assert "resume" in params

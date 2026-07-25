@@ -57,9 +57,7 @@ class SQLiteSettingsRepository(SettingsRepositoryPort):
 
     def get(self, key: str) -> str | None:
         """Return the value for ``key``, or None when it is not stored."""
-        row = self._conn.execute(
-            "SELECT value FROM settings WHERE key = ?", (key,)
-        ).fetchone()
+        row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row["value"] if row is not None else None
 
     def set(self, key: str, value: str) -> None:

@@ -38,9 +38,7 @@ def _feedback_block(feedback: str | None) -> str:
     return FEEDBACK_TEMPLATE.format(locations=feedback) if feedback else ""
 
 
-async def _call_json(
-    client: AsyncAnthropic, model: str, system: str, user: str
-) -> dict:
+async def _call_json(client: AsyncAnthropic, model: str, system: str, user: str) -> dict:
     """Call Claude, strip any code fence, and return the parsed JSON object.
 
     Args:

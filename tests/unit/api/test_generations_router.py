@@ -181,9 +181,7 @@ def test_generate_with_no_resume_returns_400(tmp_path):
 
 def test_generate_unknown_job_returns_400(tmp_path):
     """Generating for an unknown job id is a clear 400."""
-    resp = _client(_service(tmp_path)).post(
-        "/api/jobs/999/generate", json={"kind": "resume"}
-    )
+    resp = _client(_service(tmp_path)).post("/api/jobs/999/generate", json={"kind": "resume"})
     assert resp.status_code == 400
 
 

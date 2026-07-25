@@ -18,10 +18,10 @@ from src.core.domain.fingerprint import (
     relation,
 )
 
-
 # ---------------------------------------------------------------------------
 # Company normalization
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "raw, expected",
@@ -47,6 +47,7 @@ def test_normalize_company(raw, expected):
 # ---------------------------------------------------------------------------
 # Title normalization
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "raw, expected",
@@ -78,6 +79,7 @@ def test_title_preserves_token_order():
 # ---------------------------------------------------------------------------
 # Location normalization
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "raw, expected",
@@ -111,6 +113,7 @@ def test_california_and_abbrev_converge():
 # compute_fingerprint and the key
 # ---------------------------------------------------------------------------
 
+
 def test_compute_fingerprint_builds_key():
     """A complete fingerprint yields a pipe-joined canonical key with the version."""
     fp = compute_fingerprint("Acme Corp Inc", "Sr. Software Engineer", "Remote")
@@ -140,6 +143,7 @@ def test_incomplete_fingerprint_disables_dedup(company, title, location):
 # ---------------------------------------------------------------------------
 # Relation: match / near-miss / distinct
 # ---------------------------------------------------------------------------
+
 
 def test_relation_match():
     """Identical canonical fields across three raw variants are a match."""

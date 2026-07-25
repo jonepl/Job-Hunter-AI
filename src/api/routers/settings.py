@@ -109,9 +109,7 @@ def schedule_preview(
     try:
         return SchedulePreview(next_runs=service.next_run_times(cron, timezone, n=3))
     except Exception as exc:  # noqa: BLE001 — bad user input, not a server fault
-        raise HTTPException(
-            status_code=400, detail=f"Invalid schedule: {exc}"
-        ) from exc
+        raise HTTPException(status_code=400, detail=f"Invalid schedule: {exc}") from exc
 
 
 def _known_secret_or_404(name: str) -> None:

@@ -31,8 +31,9 @@ def test_lifespan_starts_and_stops_scheduler_when_enabled(monkeypatch):
     )
     manager = MagicMock()
 
-    with patch("src.orchestration.service_factory.build_settings_service", return_value=service), patch(
-        "src.api.main.SchedulerManager", return_value=manager
+    with (
+        patch("src.orchestration.service_factory.build_settings_service", return_value=service),
+        patch("src.api.main.SchedulerManager", return_value=manager),
     ):
         with TestClient(create_app()):
             service.apply_to_environment.assert_called_once()

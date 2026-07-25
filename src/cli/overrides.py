@@ -36,10 +36,7 @@ def apply_cli_overrides(
             p.location = args.location
 
     if args.work_type:
-        work_types = [
-            WorkType(w.lower())
-            for w in args.work_type
-        ]
+        work_types = [WorkType(w.lower()) for w in args.work_type]
         for p in profiles:
             p.work_types = work_types
 

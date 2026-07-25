@@ -144,7 +144,9 @@ class JobSearchService:
             RunReport containing qualifying results, near-miss results, and
             run metadata.
         """
-        logger.info("Pipeline started — query=%r location=%r threshold=%d", query, location, threshold)
+        logger.info(
+            "Pipeline started — query=%r location=%r threshold=%d", query, location, threshold
+        )
 
         if date_posted:
             logger.info("Date posted filter: %s", date_posted.value)
@@ -194,9 +196,7 @@ class JobSearchService:
                     await asyncio.sleep(enrich_delay)
                     return verdict
 
-            enrich_results = await asyncio.gather(
-                *[enrich_with_limit(job) for job in all_jobs]
-            )
+            enrich_results = await asyncio.gather(*[enrich_with_limit(job) for job in all_jobs])
             for job, verdict in zip(all_jobs, enrich_results):
                 if verdict.errored:
                     enrichment_error_count += 1
@@ -255,12 +255,10 @@ class JobSearchService:
             """Evaluate a single job with semaphore-controlled concurrency."""
             async with semaphore:
                 try:
-                    result, input_tokens, output_tokens = (
-                        await self._evaluator.evaluate(
-                            resume,
-                            job,
-                            work_types=work_types_list,
-                        )
+                    result, input_tokens, output_tokens = await self._evaluator.evaluate(
+                        resume,
+                        job,
+                        work_types=work_types_list,
                     )
                     await asyncio.sleep(evaluation_delay)
                     if cost_tracker:
@@ -272,8 +270,7 @@ class JobSearchService:
                         )
                         if eval_cost:
                             logger.info(
-                                "Evaluated '%s' @ '%s' — score=%d"
-                                " | tokens=%d/%d | cost=%s",
+                                "Evaluated '%s' @ '%s' — score=%d | tokens=%d/%d | cost=%s",
                                 job.title,
                                 job.company,
                                 result.score,
@@ -297,9 +294,7 @@ class JobSearchService:
                     logger.error("Evaluation failed for %r: %s", job.title, exc)
                     return None
 
-        eval_results = await asyncio.gather(
-            *[evaluate_with_limit(job) for job in jobs_for_eval]
-        )
+        eval_results = await asyncio.gather(*[evaluate_with_limit(job) for job in jobs_for_eval])
 
         # Step 3.5 — persist each new evaluation and attach its "seen on" set.
         # Results align with jobs_for_eval (gather preserves order), which aligns
@@ -362,9 +357,7 @@ class JobSearchService:
         near_misses: list[MatchResult] = []
         if not qualifying:
             near_miss_floor = max(0, threshold - near_miss_band)
-            near_misses = [
-                r for r in all_evaluated if near_miss_floor <= r.score < threshold
-            ][:5]
+            near_misses = [r for r in all_evaluated if near_miss_floor <= r.score < threshold][:5]
 
         # Step 8 — build run cost summary
         run_cost = cost_tracker.build_run_cost() if cost_tracker else None
@@ -454,9 +447,7 @@ class JobSearchService:
         false_skips: int | None = None
         if self._enrichment_mode == "shadow":
             false_skips = sum(
-                1
-                for r in evaluated
-                if _job_key(r.job) in flagged_keys and r.score >= threshold
+                1 for r in evaluated if _job_key(r.job) in flagged_keys and r.score >= threshold
             )
 
         estimated_savings_usd: float | None = None
@@ -592,8 +583,7 @@ class JobSearchService:
                     fp.canon_company, fp.canon_title, exclude_key=fp.key
                 ):
                     logger.info(
-                        "Near-miss (logged, not merged) — %r @ %r: "
-                        "stored location %r vs new %r",
+                        "Near-miss (logged, not merged) — %r @ %r: stored location %r vs new %r",
                         job.title,
                         job.company,
                         near.location,

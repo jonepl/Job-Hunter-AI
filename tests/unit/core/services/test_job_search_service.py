@@ -16,10 +16,10 @@ from src.core.domain.scraper_name import ScraperName
 from src.core.exceptions import ModelNotFoundError
 from src.core.services.job_search_service import JobSearchService
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def make_job(title: str = "Engineer", platform: str = "linkedin") -> Job:
     """Return a minimal valid Job for use in tests."""
@@ -36,6 +36,7 @@ def make_job(title: str = "Engineer", platform: str = "linkedin") -> Job:
 
 def _zero_breakdown() -> ScoreBreakdown:
     """Return a zero-value ScoreBreakdown for service test fixtures."""
+
     def _z(max_val: int) -> ScoreCategory:
         return ScoreCategory(max=max_val, earned=0, reasoning="n/a")
 
@@ -88,7 +89,11 @@ def make_service(
     scrapers = []
     for i, jobs in enumerate(scraper_jobs):
         mock = MagicMock()
-        exc = (scraper_exceptions or [])[i] if scraper_exceptions and i < len(scraper_exceptions) else None
+        exc = (
+            (scraper_exceptions or [])[i]
+            if scraper_exceptions and i < len(scraper_exceptions)
+            else None
+        )
         if exc:
             mock.fetch_jobs = AsyncMock(side_effect=exc)
         else:
@@ -98,7 +103,9 @@ def make_service(
     jobs_flat = [job for jobs in scraper_jobs for job in jobs]
     evaluator = MagicMock()
     evaluator.evaluate = AsyncMock(
-        side_effect=[(make_match_result(job, score), 100, 50) for job, score in zip(jobs_flat, eval_scores)]
+        side_effect=[
+            (make_match_result(job, score), 100, 50) for job, score in zip(jobs_flat, eval_scores)
+        ]
     )
 
     output = MagicMock()
@@ -125,6 +132,7 @@ def make_service(
 # ---------------------------------------------------------------------------
 # Existing tests — updated for RunReport return type
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_run_returns_ranked_results_above_threshold():
@@ -248,13 +256,18 @@ async def test_run_scrapes_all_platforms_concurrently():
 
     await service.run(query="Python Developer", location="Remote", threshold=70)
 
-    scrapers[0].fetch_jobs.assert_called_once_with("Python Developer", "Remote", work_types=None, date_posted=None)
-    scrapers[1].fetch_jobs.assert_called_once_with("Python Developer", "Remote", work_types=None, date_posted=None)
+    scrapers[0].fetch_jobs.assert_called_once_with(
+        "Python Developer", "Remote", work_types=None, date_posted=None
+    )
+    scrapers[1].fetch_jobs.assert_called_once_with(
+        "Python Developer", "Remote", work_types=None, date_posted=None
+    )
 
 
 # ---------------------------------------------------------------------------
 # New tests — RunReport return type
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_returns_run_report_not_list():
@@ -318,6 +331,7 @@ async def test_near_misses_capped_at_five():
 async def test_zero_results_warning_logged(caplog):
     """WARNING log is emitted when zero jobs pass the threshold."""
     import logging
+
     service, _, _, _ = make_service(
         scraper_jobs=[[make_job()]],
         eval_scores=[30],
@@ -339,7 +353,9 @@ async def test_top_results_caps_output():
         eval_scores=scores,
     )
 
-    report = await service.run(query="Python Developer", location="Remote", threshold=70, top_results=5)
+    report = await service.run(
+        query="Python Developer", location="Remote", threshold=70, top_results=5
+    )
 
     assert len(report.qualifying_results) == 5
     assert report.qualifying_results[0].score == 90
@@ -356,7 +372,9 @@ async def test_top_results_returns_all_when_under_cap():
         eval_scores=scores,
     )
 
-    report = await service.run(query="Python Developer", location="Remote", threshold=70, top_results=5)
+    report = await service.run(
+        query="Python Developer", location="Remote", threshold=70, top_results=5
+    )
 
     assert len(report.qualifying_results) == 3
 
@@ -372,7 +390,9 @@ async def test_top_results_applied_after_score_filter():
         eval_scores=scores,
     )
 
-    report = await service.run(query="Python Developer", location="Remote", threshold=70, top_results=3)
+    report = await service.run(
+        query="Python Developer", location="Remote", threshold=70, top_results=3
+    )
 
     assert len(report.qualifying_results) == 3
     assert all(r.score >= 70 for r in report.qualifying_results)
@@ -399,6 +419,7 @@ async def test_top_results_not_set_returns_all_qualifying():
 async def test_top_results_none_logged_correctly(caplog):
     """INFO log contains 'not set' when top_results is None."""
     import logging
+
     service, _, _, _ = make_service(eval_scores=[80])
 
     with caplog.at_level(logging.INFO):
@@ -412,6 +433,7 @@ async def test_top_results_none_logged_correctly(caplog):
 # ---------------------------------------------------------------------------
 # New tests — date_posted
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_date_posted_passed_to_all_scrapers():
@@ -445,9 +467,7 @@ async def test_no_date_posted_passes_none_to_scrapers():
         eval_scores=[80, 75],
     )
 
-    await service.run(
-        query="Python Developer", location="Remote", threshold=70, date_posted=None
-    )
+    await service.run(query="Python Developer", location="Remote", threshold=70, date_posted=None)
 
     scrapers[0].fetch_jobs.assert_called_once_with(
         "Python Developer", "Remote", work_types=None, date_posted=None
@@ -473,6 +493,7 @@ async def test_date_posted_in_run_report():
 async def test_date_posted_logged_at_pipeline_start(caplog):
     """INFO log contains the date_posted value when date_posted is set."""
     import logging
+
     service, _, _, _ = make_service(eval_scores=[80])
 
     with caplog.at_level(logging.INFO):
@@ -486,6 +507,7 @@ async def test_date_posted_logged_at_pipeline_start(caplog):
 # ---------------------------------------------------------------------------
 # New tests — active_scrapers
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_only_active_scrapers_called():
@@ -525,6 +547,7 @@ async def test_active_scrapers_in_run_report():
 # ---------------------------------------------------------------------------
 # New tests — cost_tracker integration
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_cost_tracker_called_per_evaluation():
@@ -571,16 +594,22 @@ async def test_cost_tracker_not_called_when_none():
 async def test_run_report_includes_run_cost():
     """RunReport.run_cost is populated when cost_tracker returns a RunCost."""
     from unittest.mock import MagicMock as MM
-    from src.core.domain.run_cost import RunCost, EvaluationCost
+
+    from src.core.domain.run_cost import EvaluationCost, RunCost
 
     jobs = [make_job()]
     service, _, _, _ = make_service(scraper_jobs=[jobs], eval_scores=[80])
 
     mock_run_cost = RunCost(
-        evaluations=[EvaluationCost(
-            job_title="Engineer", company="Acme",
-            input_tokens=100, output_tokens=50, cost_usd=0.001,
-        )],
+        evaluations=[
+            EvaluationCost(
+                job_title="Engineer",
+                company="Acme",
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=0.001,
+            )
+        ],
         total_input_tokens=100,
         total_output_tokens=50,
         total_cost_usd=0.001,
@@ -606,6 +635,7 @@ async def test_run_report_includes_run_cost():
 # ---------------------------------------------------------------------------
 # Rate limiting tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_evaluation_delay_applied():
@@ -634,6 +664,7 @@ async def test_max_concurrent_default_is_two():
     with patch("asyncio.Semaphore", wraps=asyncio.Semaphore) as mock_semaphore:
         with patch.dict("os.environ", {}, clear=False):
             import os
+
             os.environ.pop("MAX_CONCURRENT_EVALUATIONS", None)
             await service.run(
                 query="Python Developer",
@@ -763,9 +794,7 @@ async def test_shadow_mode_evaluates_all_and_measures_false_skips(no_sleep):
 async def test_shadow_mode_zero_false_skips_when_flagged_below_threshold(no_sleep):
     """A flagged job that scores below threshold is a correct skip, not a false one."""
     jobs = [make_job("A")]
-    service, _, _, _ = _enrich_service(
-        jobs, flags=[True], scores={"A": 50}, mode="shadow"
-    )
+    service, _, _, _ = _enrich_service(jobs, flags=[True], scores={"A": 50}, mode="shadow")
 
     report = await service.run(query="Q", location="Remote", threshold=70)
 
@@ -843,9 +872,7 @@ async def test_error_count_surfaced_when_pre_filter_fails(no_sleep):
 async def test_enrichment_throttle_reads_env(no_sleep):
     """The pre-filter stage sizes its semaphore from ENRICHMENT_MAX_CONCURRENT."""
     jobs = [make_job("A")]
-    service, _, _, _ = _enrich_service(
-        jobs, flags=[False], scores={"A": 80}, mode="shadow"
-    )
+    service, _, _, _ = _enrich_service(jobs, flags=[False], scores={"A": 80}, mode="shadow")
 
     with patch("asyncio.Semaphore", wraps=asyncio.Semaphore) as mock_semaphore:
         with patch.dict("os.environ", {"ENRICHMENT_MAX_CONCURRENT": "4"}):
@@ -858,6 +885,7 @@ async def test_enrichment_throttle_reads_env(no_sleep):
 # ---------------------------------------------------------------------------
 # B1 — dedup, reuse, sightings, near-misses (JobRepositoryPort)
 # ---------------------------------------------------------------------------
+
 
 def _same_job(platform: str, url: str = "https://example.com/jobs/1") -> Job:
     """Return a job with a fixed identity but overridable platform/url."""
@@ -972,12 +1000,18 @@ async def test_near_miss_is_logged_not_merged(caplog):
     assert evaluator2.evaluate.call_count == 1
     assert any("Near-miss" in rec.message for rec in caplog.records)
     # Both distinct jobs persisted.
-    assert repo.find_by_fingerprint(
-        compute_fingerprint("Acme", "Senior Software Engineer", "New York, NY").key
-    ) is not None
-    assert repo.find_by_fingerprint(
-        compute_fingerprint("Acme", "Senior Software Engineer", "Austin, TX").key
-    ) is not None
+    assert (
+        repo.find_by_fingerprint(
+            compute_fingerprint("Acme", "Senior Software Engineer", "New York, NY").key
+        )
+        is not None
+    )
+    assert (
+        repo.find_by_fingerprint(
+            compute_fingerprint("Acme", "Senior Software Engineer", "Austin, TX").key
+        )
+        is not None
+    )
 
 
 @pytest.mark.asyncio

@@ -23,9 +23,7 @@ logger = logging.getLogger(__name__)
 _LABELS = {"resume": "Tailored resume", "cover_letter": "Cover letter"}
 
 
-async def run_generate_resume(
-    service: GenerationService, job_id: int
-) -> tuple[str, int]:
+async def run_generate_resume(service: GenerationService, job_id: int) -> tuple[str, int]:
     """Generate a tailored resume for ``job_id``.
 
     Args:
@@ -65,9 +63,7 @@ async def run_generate_cover_letter(
     except (GenerationError, ModelNotFoundError) as exc:
         return str(exc), 1
     except Exception as exc:  # noqa: BLE001 — never echo content-bearing detail
-        logger.error(
-            "Cover-letter generation failed for job %d (%s)", job_id, type(exc).__name__
-        )
+        logger.error("Cover-letter generation failed for job %d (%s)", job_id, type(exc).__name__)
         return _provider_failure("cover letter", exc), 1
     return _describe(generation), 0
 
@@ -82,9 +78,7 @@ def _describe(generation: Generation) -> str:
     if generation.outcome == "repaired" and generation.repair_note:
         lines.append(f"  Auto-repaired formatting: {generation.repair_note}.")
     if generation.outcome == "needs_review":
-        lines.append(
-            "  Needs review at: " + ", ".join(generation.review_locations) + "."
-        )
+        lines.append("  Needs review at: " + ", ".join(generation.review_locations) + ".")
         lines.append("  The .docx was written with [PLACEHOLDER: review] markers.")
     return "\n".join(lines)
 

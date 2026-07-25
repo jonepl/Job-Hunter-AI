@@ -146,9 +146,7 @@ def _has_ambiguous_hyphen(text: str) -> bool:
     Returns:
         True when at least one ambiguous hyphen is present.
     """
-    return any(
-        not _is_compound_hyphen(text, m.start()) for m in _HYPHEN.finditer(text)
-    )
+    return any(not _is_compound_hyphen(text, m.start()) for m in _HYPHEN.finditer(text))
 
 
 def _is_compound_hyphen(text: str, index: int) -> bool:
@@ -164,6 +162,4 @@ def _is_compound_hyphen(text: str, index: int) -> bool:
     if index == 0 or index + 1 >= len(text):
         return False
     before, after = text[index - 1], text[index + 1]
-    return (
-        before.isascii() and before.isalpha() and after.isascii() and after.isalpha()
-    )
+    return before.isascii() and before.isalpha() and after.isascii() and after.isalpha()

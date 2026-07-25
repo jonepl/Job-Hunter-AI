@@ -36,9 +36,7 @@ def test_write_resume_produces_a_valid_docx(tmp_path):
 def test_write_resume_normalizes_a_stray_bullet_marker(tmp_path):
     """A bullet already carrying a marker is rendered with exactly one '•'."""
     path = str(tmp_path / "r.docx")
-    doc = TailoredResume(
-        summary="s", sections=[ResumeSection(heading="X", bullets=["• Did it"])]
-    )
+    doc = TailoredResume(summary="s", sections=[ResumeSection(heading="X", bullets=["• Did it"])])
     DocxWriter().write_resume(doc, path)
     assert "• Did it" in _paragraph_texts(path)
     assert "• • Did it" not in _paragraph_texts(path)

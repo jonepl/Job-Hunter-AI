@@ -19,9 +19,9 @@ import sys
 
 from dotenv import load_dotenv
 
-from src.infra.logging import configure_logging
 from src.cli.args import parse_args
 from src.cli.overrides import apply_cli_overrides, apply_evaluator_override
+from src.infra.logging import configure_logging
 from src.orchestration.bootstrap import load_profiles
 from src.orchestration.runner import run_immediate
 from src.orchestration.scheduler import start_scheduler
@@ -161,9 +161,7 @@ async def _dispatch_generate(args) -> None:
                 else os.getenv("VOICE_STYLE_NOTES", "")
             ),
         )
-        message, exit_code = await run_generate_cover_letter(
-            service, args.job_id, voice
-        )
+        message, exit_code = await run_generate_cover_letter(service, args.job_id, voice)
 
     print(message)
     sys.exit(exit_code)

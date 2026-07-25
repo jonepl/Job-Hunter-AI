@@ -68,8 +68,7 @@ async def _call_json(client: AsyncOpenAI, model: str, system: str, user: str) ->
         )
     except NotFoundError as exc:
         raise ModelNotFoundError(
-            f"OpenAI model {model!r} not found. Check TAILOR_MODEL, or unset it to "
-            f"use the default."
+            f"OpenAI model {model!r} not found. Check TAILOR_MODEL, or unset it to use the default."
         ) from exc
     raw = response.choices[0].message.content or ""
     return json.loads(raw)

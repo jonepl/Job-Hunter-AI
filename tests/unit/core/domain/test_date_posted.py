@@ -4,10 +4,10 @@ import pytest
 
 from src.core.domain.date_posted import DatePosted
 
-
 # ---------------------------------------------------------------------------
 # from_string — valid values
 # ---------------------------------------------------------------------------
+
 
 def test_from_string_24h():
     """'24h' parses to DatePosted.DAY."""
@@ -33,6 +33,7 @@ def test_from_string_month():
 # from_string — case insensitivity and whitespace
 # ---------------------------------------------------------------------------
 
+
 def test_from_string_case_insensitive_week():
     """'Week' (mixed case) parses to DatePosted.WEEK."""
     assert DatePosted.from_string("Week") == DatePosted.WEEK
@@ -52,6 +53,7 @@ def test_from_string_strips_whitespace():
 # from_string — invalid value
 # ---------------------------------------------------------------------------
 
+
 def test_from_string_raises_on_invalid():
     """Unrecognised value raises ValueError with supported values in the message."""
     with pytest.raises(ValueError) as exc_info:
@@ -63,6 +65,7 @@ def test_from_string_raises_on_invalid():
 # ---------------------------------------------------------------------------
 # linkedin_param
 # ---------------------------------------------------------------------------
+
 
 def test_linkedin_param_24h():
     """DAY.linkedin_param returns 'r86400'."""
@@ -87,6 +90,7 @@ def test_linkedin_param_month():
 # ---------------------------------------------------------------------------
 # jsearch_param
 # ---------------------------------------------------------------------------
+
 
 def test_jsearch_param_24h():
     """DAY.jsearch_param returns 'today'."""

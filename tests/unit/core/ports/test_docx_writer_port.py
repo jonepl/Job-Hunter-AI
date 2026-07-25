@@ -19,6 +19,7 @@ def test_incomplete_subclass_fails_at_instantiation():
     class Partial(DocxWriterPort):
         def write_resume(self, doc, path):
             return None
+
         # deliberately omits write_cover_letter
 
     with pytest.raises(TypeError):

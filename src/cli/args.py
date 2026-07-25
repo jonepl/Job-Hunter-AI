@@ -51,18 +51,14 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Job search query. Overrides SEARCH_QUERY or PROFILE_N_QUERY "
-            "in .env for all profiles."
+            "Job search query. Overrides SEARCH_QUERY or PROFILE_N_QUERY in .env for all profiles."
         ),
     )
     parser.add_argument(
         "--location",
         type=str,
         default=None,
-        help=(
-            "Job search location. Overrides SEARCH_LOCATION or "
-            "PROFILE_N_LOCATION in .env."
-        ),
+        help=("Job search location. Overrides SEARCH_LOCATION or PROFILE_N_LOCATION in .env."),
     )
     parser.add_argument(
         "--work-type",

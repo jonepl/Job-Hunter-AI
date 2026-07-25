@@ -25,4 +25,25 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-asyncio",
+    "ruff>=0.16.0",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# Mirror src/ layout; leave generated/vendored trees out.
+extend-exclude = ["web", ".venv"]
+
+[tool.ruff.lint]
+# E/W  pycodestyle (PEP 8)   F  Pyflakes (unused imports/vars, undefined names)
+# I    isort (import order)  UP pyupgrade (modern 3.10+ syntax)
+# D (pydocstyle) is intentionally deferred — enable once docstrings are backfilled.
+select = ["E", "W", "F", "I", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.ruff.lint.per-file-ignores]
+# Prompt templates carry long content lines that must reach the LLM verbatim;
+# reflowing them would change the prompt, so line length is not enforced here.
+"src/adapters/evaluator/prompts.py" = ["E501"]

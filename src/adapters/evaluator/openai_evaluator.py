@@ -150,23 +150,28 @@ class OpenAIEvaluator(EvaluatorPort):
                                 "score": {"type": "integer"},
                                 "seniority_level": {"type": "string"},
                                 "years_experience_detected": {
-                                    "anyOf": [
-                                        {"type": "integer"},
-                                        {"type": "null"}
-                                    ]
+                                    "anyOf": [{"type": "integer"}, {"type": "null"}]
                                 },
                                 "score_breakdown": {
                                     "type": "object",
                                     "properties": {
                                         "role_alignment": {"$ref": "#/$defs/ScoreCategory"},
                                         "technical_stack_match": {"$ref": "#/$defs/ScoreCategory"},
-                                        "system_design_architecture": {"$ref": "#/$defs/ScoreCategory"},
+                                        "system_design_architecture": {
+                                            "$ref": "#/$defs/ScoreCategory"
+                                        },
                                         "impact_and_metrics": {"$ref": "#/$defs/ScoreCategory"},
-                                        "domain_industry_experience": {"$ref": "#/$defs/ScoreCategory"},
-                                        "problem_space_relevance": {"$ref": "#/$defs/ScoreCategory"},
-                                        "ownership_and_leadership": {"$ref": "#/$defs/ScoreCategory"},
+                                        "domain_industry_experience": {
+                                            "$ref": "#/$defs/ScoreCategory"
+                                        },
+                                        "problem_space_relevance": {
+                                            "$ref": "#/$defs/ScoreCategory"
+                                        },
+                                        "ownership_and_leadership": {
+                                            "$ref": "#/$defs/ScoreCategory"
+                                        },
                                         "resume_signal_quality": {"$ref": "#/$defs/ScoreCategory"},
-                                        "career_trajectory": {"$ref": "#/$defs/ScoreCategory"}
+                                        "career_trajectory": {"$ref": "#/$defs/ScoreCategory"},
                                     },
                                     "required": [
                                         "role_alignment",
@@ -177,28 +182,17 @@ class OpenAIEvaluator(EvaluatorPort):
                                         "problem_space_relevance",
                                         "ownership_and_leadership",
                                         "resume_signal_quality",
-                                        "career_trajectory"
+                                        "career_trajectory",
                                     ],
-                                    "additionalProperties": False
+                                    "additionalProperties": False,
                                 },
-                                "matched_skills": {
-                                    "type": "array",
-                                    "items": {"type": "string"}
-                                },
-                                "missing_skills": {
-                                    "type": "array",
-                                    "items": {"type": "string"}
-                                },
+                                "matched_skills": {"type": "array", "items": {"type": "string"}},
+                                "missing_skills": {"type": "array", "items": {"type": "string"}},
                                 "summary": {"type": "string"},
                                 "hire_recommendation": {
                                     "type": "string",
-                                    "enum": [
-                                        "Strong Yes",
-                                        "Yes",
-                                        "Borderline",
-                                        "No"
-                                    ]
-                                }
+                                    "enum": ["Strong Yes", "Yes", "Borderline", "No"],
+                                },
                             },
                             "required": [
                                 "score",
@@ -208,7 +202,7 @@ class OpenAIEvaluator(EvaluatorPort):
                                 "matched_skills",
                                 "missing_skills",
                                 "summary",
-                                "hire_recommendation"
+                                "hire_recommendation",
                             ],
                             "additionalProperties": False,
                             "$defs": {
@@ -217,37 +211,40 @@ class OpenAIEvaluator(EvaluatorPort):
                                     "properties": {
                                         "max": {"type": "integer"},
                                         "earned": {"type": "integer"},
-                                        "reasoning": {"type": "string"}
+                                        "reasoning": {"type": "string"},
                                     },
                                     "required": ["max", "earned", "reasoning"],
-                                    "additionalProperties": False
+                                    "additionalProperties": False,
                                 }
-                            }
-                        }
-                    }
+                            },
+                        },
+                    },
                 },
                 temperature=0.2,
             )
 
             raw = response.choices[0].message.content or ""
             data = json.loads(raw)
-            # logger.info("GPT-4o raw response for %r: %s", job.title, data)  # DEBUG — remove after inspection
             evaluated = _EvaluationResponse(**data)
 
             input_tokens = response.usage.prompt_tokens
             output_tokens = response.usage.completion_tokens
 
-            return MatchResult(
-                job=job,
-                score=evaluated.score,
-                seniority_level=evaluated.seniority_level,
-                years_experience_detected=evaluated.years_experience_detected,
-                score_breakdown=evaluated.score_breakdown,
-                matched_skills=evaluated.matched_skills,
-                missing_skills=evaluated.missing_skills,
-                summary=evaluated.summary,
-                hire_recommendation=evaluated.hire_recommendation,
-            ), input_tokens, output_tokens
+            return (
+                MatchResult(
+                    job=job,
+                    score=evaluated.score,
+                    seniority_level=evaluated.seniority_level,
+                    years_experience_detected=evaluated.years_experience_detected,
+                    score_breakdown=evaluated.score_breakdown,
+                    matched_skills=evaluated.matched_skills,
+                    missing_skills=evaluated.missing_skills,
+                    summary=evaluated.summary,
+                    hire_recommendation=evaluated.hire_recommendation,
+                ),
+                input_tokens,
+                output_tokens,
+            )
 
         except NotFoundError as exc:
             raise ModelNotFoundError(

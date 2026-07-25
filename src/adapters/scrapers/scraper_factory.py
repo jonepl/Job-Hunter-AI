@@ -1,9 +1,9 @@
 """ScraperFactory — builds scraper adapter instances from ScraperName values."""
 
+from src.adapters.scrapers.jsearch import JSearchScraper
+from src.adapters.scrapers.linkedin import LinkedInScraper
 from src.core.domain.scraper_name import ScraperName
 from src.core.ports.scraper_port import ScraperPort
-from src.adapters.scrapers.linkedin import LinkedInScraper
-from src.adapters.scrapers.jsearch import JSearchScraper
 
 
 def build_scrapers(active: list[ScraperName]) -> list[ScraperPort]:

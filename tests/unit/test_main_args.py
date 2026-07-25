@@ -1,6 +1,5 @@
 """Unit tests for CLI argument parsing and profile overrides in main.py."""
 
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,7 +7,6 @@ import pytest
 from src.cli.args import parse_args
 from src.core.domain.scraper_name import ScraperName
 from src.main import main
-
 
 # ---------------------------------------------------------------------------
 # CLI argument parsing tests
@@ -92,11 +90,13 @@ async def test_scrapers_cli_overrides_env(tmp_path):
         captured_profiles.append(profile)
         return mock_svc
 
-    with patch("sys.argv", ["prog", "--scrapers", "indeed"]), \
-         patch.dict("os.environ", env, clear=True), \
-         patch("src.main.load_dotenv"), \
-         patch("src.main.configure_logging"), \
-         patch("src.main.build_service", side_effect=capture_build_service):
+    with (
+        patch("sys.argv", ["prog", "--scrapers", "indeed"]),
+        patch.dict("os.environ", env, clear=True),
+        patch("src.main.load_dotenv"),
+        patch("src.main.configure_logging"),
+        patch("src.main.build_service", side_effect=capture_build_service),
+    ):
         await main()
 
     assert len(captured_profiles) == 1
@@ -108,11 +108,13 @@ async def test_scrapers_invalid_name_exits(tmp_path):
     """--scrapers linkedin,monster → sys.exit(1) with 'Invalid scraper name' message."""
     env = {**_BASE_ENV, "DB_PATH": str(tmp_path / "a.db")}
 
-    with patch("sys.argv", ["prog", "--scrapers", "linkedin,monster"]), \
-         patch.dict("os.environ", env, clear=True), \
-         patch("src.main.load_dotenv"), \
-         patch("src.main.configure_logging"), \
-         patch("builtins.print") as mock_print:
+    with (
+        patch("sys.argv", ["prog", "--scrapers", "linkedin,monster"]),
+        patch.dict("os.environ", env, clear=True),
+        patch("src.main.load_dotenv"),
+        patch("src.main.configure_logging"),
+        patch("builtins.print") as mock_print,
+    ):
         with pytest.raises(SystemExit) as exc_info:
             await main()
 
@@ -126,11 +128,13 @@ async def test_scrapers_empty_string_exits(tmp_path):
     """--scrapers '' (empty string) → sys.exit(1) due to empty parse result."""
     env = {**_BASE_ENV, "DB_PATH": str(tmp_path / "a.db")}
 
-    with patch("sys.argv", ["prog", "--scrapers", ""]), \
-         patch.dict("os.environ", env, clear=True), \
-         patch("src.main.load_dotenv"), \
-         patch("src.main.configure_logging"), \
-         patch("builtins.print"):
+    with (
+        patch("sys.argv", ["prog", "--scrapers", ""]),
+        patch.dict("os.environ", env, clear=True),
+        patch("src.main.load_dotenv"),
+        patch("src.main.configure_logging"),
+        patch("builtins.print"),
+    ):
         with pytest.raises(SystemExit) as exc_info:
             await main()
 
@@ -150,11 +154,13 @@ async def test_query_cli_overrides_env(tmp_path):
         captured_profiles.append(profile)
         return mock_svc
 
-    with patch("sys.argv", ["prog", "--query", "Full Stack Engineer"]), \
-         patch.dict("os.environ", env, clear=True), \
-         patch("src.main.load_dotenv"), \
-         patch("src.main.configure_logging"), \
-         patch("src.main.build_service", side_effect=capture_build_service):
+    with (
+        patch("sys.argv", ["prog", "--query", "Full Stack Engineer"]),
+        patch.dict("os.environ", env, clear=True),
+        patch("src.main.load_dotenv"),
+        patch("src.main.configure_logging"),
+        patch("src.main.build_service", side_effect=capture_build_service),
+    ):
         await main()
 
     assert captured_profiles[0].query == "Full Stack Engineer"

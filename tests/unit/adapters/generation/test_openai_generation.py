@@ -53,9 +53,7 @@ async def test_tailor_parses_structured_json():
         "skills": ["Python"],
     }
     adapter._client = MagicMock()
-    adapter._client.chat.completions.create = AsyncMock(
-        return_value=_response(json.dumps(payload))
-    )
+    adapter._client.chat.completions.create = AsyncMock(return_value=_response(json.dumps(payload)))
 
     result = await adapter.tailor(_resume(), _job())
     assert result.summary == "Backend leader."
@@ -74,9 +72,7 @@ async def test_cover_letter_parses_structured_json():
         "closing": "Sincerely",
     }
     adapter._client = MagicMock()
-    adapter._client.chat.completions.create = AsyncMock(
-        return_value=_response(json.dumps(payload))
-    )
+    adapter._client.chat.completions.create = AsyncMock(return_value=_response(json.dumps(payload)))
 
     result = await adapter.generate(_resume(), _job(), VoiceDescriptor())
     assert result.salutation == "Dear Team,"

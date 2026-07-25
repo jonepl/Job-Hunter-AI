@@ -70,8 +70,7 @@ class SQLiteJobRepository(JobRepositoryPort):
 
         seen_on_by_job = self._seen_on_by_job()
         return [
-            self._row_to_stored_job(row, seen_on=seen_on_by_job.get(row["id"], []))
-            for row in rows
+            self._row_to_stored_job(row, seen_on=seen_on_by_job.get(row["id"], [])) for row in rows
         ]
 
     def get_job(self, job_id: int) -> StoredJob | None:
@@ -87,9 +86,7 @@ class SQLiteJobRepository(JobRepositoryPort):
         machine: bool = False,
     ) -> bool:
         """Transition a job to ``to_status`` with the ADR-025 guards."""
-        row = self._conn.execute(
-            "SELECT status FROM jobs WHERE id = ?", (job_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)).fetchone()
         if row is None:
             return False
 
@@ -100,9 +97,7 @@ class SQLiteJobRepository(JobRepositoryPort):
             return False  # the machine never clobbers a human-set status
 
         now_iso = datetime.now().isoformat()
-        self._conn.execute(
-            "UPDATE jobs SET status = ? WHERE id = ?", (to_status.value, job_id)
-        )
+        self._conn.execute("UPDATE jobs SET status = ? WHERE id = ?", (to_status.value, job_id))
         self._conn.execute(
             "INSERT INTO status_history "
             "(job_id, from_status, to_status, note, changed_at) "
@@ -114,9 +109,7 @@ class SQLiteJobRepository(JobRepositoryPort):
 
     def set_saved(self, job_id: int, saved: bool) -> None:
         """Set the ``saved`` bookmark (idempotent, never writes history)."""
-        self._conn.execute(
-            "UPDATE jobs SET saved = ? WHERE id = ?", (1 if saved else 0, job_id)
-        )
+        self._conn.execute("UPDATE jobs SET saved = ? WHERE id = ?", (1 if saved else 0, job_id))
         self._conn.commit()
 
     def get_status_history(self, job_id: int) -> list[StatusHistoryEntry]:
@@ -138,9 +131,7 @@ class SQLiteJobRepository(JobRepositoryPort):
 
     def find_by_fingerprint(self, key: str) -> StoredJob | None:
         """Return the stored job with the exact canonical fingerprint ``key``."""
-        row = self._conn.execute(
-            "SELECT * FROM jobs WHERE fingerprint = ?", (key,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM jobs WHERE fingerprint = ?", (key,)).fetchone()
         return self._row_to_stored_job(row) if row is not None else None
 
     def find_near_misses(
@@ -233,9 +224,7 @@ class SQLiteJobRepository(JobRepositoryPort):
             "seen_at = excluded.seen_at, url = excluded.url",
             (job_id, platform, url, now_iso),
         )
-        self._conn.execute(
-            "UPDATE jobs SET last_seen_at = ? WHERE id = ?", (now_iso, job_id)
-        )
+        self._conn.execute("UPDATE jobs SET last_seen_at = ? WHERE id = ?", (now_iso, job_id))
         self._conn.commit()
 
     def get_seen_on(self, job_id: int) -> list[str]:
@@ -252,9 +241,7 @@ class SQLiteJobRepository(JobRepositoryPort):
 
     def _get_by_id(self, job_id: int) -> StoredJob | None:
         """Return the stored job with the given primary key, or None."""
-        row = self._conn.execute(
-            "SELECT * FROM jobs WHERE id = ?", (job_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return self._row_to_stored_job(row) if row is not None else None
 
     def _seen_on_by_job(self) -> dict[int, list[str]]:
@@ -271,9 +258,7 @@ class SQLiteJobRepository(JobRepositoryPort):
             result.setdefault(row["job_id"], []).append(row["platform"])
         return result
 
-    def _row_to_stored_job(
-        self, row: sqlite3.Row, seen_on: list[str] | None = None
-    ) -> StoredJob:
+    def _row_to_stored_job(self, row: sqlite3.Row, seen_on: list[str] | None = None) -> StoredJob:
         """Map a ``jobs`` row (with its sightings) to a StoredJob entity.
 
         Args:
@@ -310,9 +295,7 @@ class SQLiteJobRepository(JobRepositoryPort):
             salary_currency=row["salary_currency"],
             salary_period=row["salary_period"],
             employment_type=row["employment_type"],
-            posted_at=(
-                datetime.fromisoformat(row["posted_at"]) if row["posted_at"] else None
-            ),
+            posted_at=(datetime.fromisoformat(row["posted_at"]) if row["posted_at"] else None),
             first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
             last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
             seen_on=seen_on,

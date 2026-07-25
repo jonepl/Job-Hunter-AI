@@ -40,26 +40,16 @@ def estimate_run_cost(
     linkedin_limit = 25
 
     # Calculate max jobs per platform type
-    jsearch_count = sum(
-        1 for name in profile.active_scrapers
-        if name != ScraperName.LINKEDIN
-    )
-    linkedin_count = sum(
-        1 for name in profile.active_scrapers
-        if name == ScraperName.LINKEDIN
-    )
+    jsearch_count = sum(1 for name in profile.active_scrapers if name != ScraperName.LINKEDIN)
+    linkedin_count = sum(1 for name in profile.active_scrapers if name == ScraperName.LINKEDIN)
 
-    max_jobs = (
-        jsearch_count * max_pages * 10
-        + linkedin_count * linkedin_limit
-    )
+    max_jobs = jsearch_count * max_pages * 10 + linkedin_count * linkedin_limit
 
     def _token_cost(input_t: int, output_t: int) -> float:
         """Calculate cost for given input and output token counts."""
-        return (
-            (input_t / 1_000_000) * input_cost_per_1m
-            + (output_t / 1_000_000) * output_cost_per_1m
-        )
+        return (input_t / 1_000_000) * input_cost_per_1m + (
+            output_t / 1_000_000
+        ) * output_cost_per_1m
 
     est_min = _token_cost(MIN_INPUT_TOKENS_PER_EVAL, MIN_OUTPUT_TOKENS_PER_EVAL) * max_jobs
     est_max = _token_cost(MAX_INPUT_TOKENS_PER_EVAL, MAX_OUTPUT_TOKENS_PER_EVAL) * max_jobs

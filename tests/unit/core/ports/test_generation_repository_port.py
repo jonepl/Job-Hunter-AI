@@ -19,6 +19,7 @@ def test_incomplete_subclass_fails_at_instantiation():
     class Partial(GenerationRepositoryPort):
         def save(self, generation):
             return generation
+
         # deliberately omits get and list_for_job
 
     with pytest.raises(TypeError):
@@ -29,9 +30,7 @@ def test_port_declares_the_expected_methods():
     """The contract exposes exactly the save/update/get/list operations."""
     methods = {
         name
-        for name, _ in inspect.getmembers(
-            GenerationRepositoryPort, predicate=inspect.isfunction
-        )
+        for name, _ in inspect.getmembers(GenerationRepositoryPort, predicate=inspect.isfunction)
         if not name.startswith("_")
     }
     assert methods == {"save", "update", "get", "list_for_job"}

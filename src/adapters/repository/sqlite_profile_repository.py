@@ -59,9 +59,7 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
 
     def list_profiles(self) -> list[SearchProfile]:
         """Return every stored profile ordered by position, then id."""
-        rows = self._conn.execute(
-            "SELECT * FROM search_profiles ORDER BY position, id"
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM search_profiles ORDER BY position, id").fetchall()
         return [self._row_to_profile(row) for row in rows]
 
     def get_profile(self, profile_id: int) -> SearchProfile | None:
@@ -73,11 +71,9 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
 
     def create_profile(self, profile: SearchProfile) -> SearchProfile:
         """Persist a new profile at the next position; return it with its id."""
-        next_position = (
-            self._conn.execute(
-                "SELECT COALESCE(MAX(position), -1) + 1 FROM search_profiles"
-            ).fetchone()[0]
-        )
+        next_position = self._conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM search_profiles"
+        ).fetchone()[0]
         cursor = self._conn.execute(
             "INSERT INTO search_profiles ("
             "name, query, location, work_types, date_posted, active_scrapers, "
@@ -140,24 +136,19 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
             at: ISO-8601 timestamp of the run start.
         """
         self._conn.execute(
-            "UPDATE search_profiles SET last_run_at = ?, last_run_status = ? "
-            "WHERE id = ?",
+            "UPDATE search_profiles SET last_run_at = ?, last_run_status = ? WHERE id = ?",
             (at, status, profile_id),
         )
         self._conn.commit()
 
     def delete_profile(self, profile_id: int) -> None:
         """Remove the profile with ``profile_id`` (a no-op when absent)."""
-        self._conn.execute(
-            "DELETE FROM search_profiles WHERE id = ?", (profile_id,)
-        )
+        self._conn.execute("DELETE FROM search_profiles WHERE id = ?", (profile_id,))
         self._conn.commit()
 
     def count(self) -> int:
         """Return the number of stored profiles."""
-        return self._conn.execute(
-            "SELECT COUNT(*) FROM search_profiles"
-        ).fetchone()[0]
+        return self._conn.execute("SELECT COUNT(*) FROM search_profiles").fetchone()[0]
 
     def close(self) -> None:
         """Close the underlying database connection."""
@@ -174,14 +165,10 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
             query=row["query"],
             location=row["location"],
             work_types=(
-                [WorkType(v) for v in json.loads(work_types_raw)]
-                if work_types_raw
-                else None
+                [WorkType(v) for v in json.loads(work_types_raw)] if work_types_raw else None
             ),
             date_posted=DatePosted(date_posted_raw) if date_posted_raw else None,
-            active_scrapers=[
-                ScraperName(v) for v in json.loads(row["active_scrapers"])
-            ],
+            active_scrapers=[ScraperName(v) for v in json.loads(row["active_scrapers"])],
             score_threshold=row["score_threshold"],
             top_results=row["top_results"],
             enabled=bool(row["enabled"]),

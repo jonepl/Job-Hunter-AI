@@ -52,6 +52,7 @@ def test_parse_args_work_type_multiple():
 # mark subcommand (Story C, ADR-025)
 # ---------------------------------------------------------------------------
 
+
 def test_parse_args_mark_status_and_note():
     """The mark subcommand captures job id, status, and note."""
     with patch(

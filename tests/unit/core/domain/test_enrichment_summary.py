@@ -67,9 +67,7 @@ def test_graduation_not_ready_in_enforce_mode():
 
 def test_graduation_not_ready_when_pre_filter_errored():
     """A run with any pre-filter errors only partially measured precision."""
-    summary = _summary(
-        evaluated_count=GRADUATION_MIN_EVALS, false_skips=0, error_count=3
-    )
+    summary = _summary(evaluated_count=GRADUATION_MIN_EVALS, false_skips=0, error_count=3)
 
     assert summary.graduation_ready is False
 

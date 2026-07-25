@@ -1,7 +1,6 @@
 """Unit tests for src/infra/logging.py — logging configuration."""
 
 import logging
-import os
 
 import pytest
 

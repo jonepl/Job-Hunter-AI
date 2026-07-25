@@ -33,8 +33,7 @@ class DatePosted(Enum):
             return cls(value.lower().strip())
         except ValueError:
             raise ValueError(
-                f"Invalid date posted value: '{value}'. "
-                f"Supported values: 24h, 3days, week, month"
+                f"Invalid date posted value: '{value}'. Supported values: 24h, 3days, week, month"
             )
 
     @property

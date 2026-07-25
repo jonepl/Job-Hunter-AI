@@ -9,8 +9,8 @@ Contains no CLI or argparse dependency. Accepts plain Python objects only.
 import logging
 import os
 import sys
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 
 from src.core.domain.run_report import RunReport
 from src.core.domain.search_profile import SearchProfile
@@ -29,9 +29,7 @@ def _record_last_run(
 ) -> None:
     """Stamp a profile's last-run status when a settings service is available (Part B)."""
     if settings_service is not None:
-        settings_service.set_profile_last_run(
-            profile_id, status, datetime.now().isoformat()
-        )
+        settings_service.set_profile_last_run(profile_id, status, datetime.now().isoformat())
 
 
 async def run_immediate(

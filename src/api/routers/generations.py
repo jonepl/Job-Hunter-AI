@@ -24,9 +24,7 @@ from src.core.services.generation_service import GenerationService
 
 router = APIRouter(tags=["generations"])
 
-_DOCX_MEDIA_TYPE = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
+_DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 _DOWNLOAD_FILENAMES = {"resume": "resume.docx", "cover_letter": "cover-letter.docx"}
 
 
@@ -78,9 +76,7 @@ def list_job_generations(
     Returns:
         The job's generations as provenance-only response models.
     """
-    return [
-        GenerationOut.from_generation(g) for g in service.generations_for_job(job_id)
-    ]
+    return [GenerationOut.from_generation(g) for g in service.generations_for_job(job_id)]
 
 
 @router.get("/generations/{generation_id}", response_model=GenerationOut)

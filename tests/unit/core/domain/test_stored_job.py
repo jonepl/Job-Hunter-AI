@@ -58,6 +58,4 @@ def test_stored_job_carries_seen_on():
 def test_stored_job_description_defaults_none_and_roundtrips():
     """description is optional and carries the raw posting text when present."""
     assert _stored().description is None
-    assert _stored(description="Own end-to-end design.").description == (
-        "Own end-to-end design."
-    )
+    assert _stored(description="Own end-to-end design.").description == ("Own end-to-end design.")

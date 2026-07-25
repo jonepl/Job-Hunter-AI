@@ -33,9 +33,7 @@ class _FakeSettingsService:
         return list(self._profiles)
 
 
-def _service(
-    *, profiles: list, fail: bool = False
-) -> tuple[RunService, SQLiteRunRepository]:
+def _service(*, profiles: list, fail: bool = False) -> tuple[RunService, SQLiteRunRepository]:
     """Build a RunService over an in-memory repo + fakes; return both."""
     repo = SQLiteRunRepository(db_path=":memory:")
 
@@ -114,9 +112,7 @@ def test_poll_unknown_run_returns_404():
 def test_list_runs_returns_history_newest_first():
     """GET /runs lists recent runs newest-first."""
     service, repo = _service(profiles=["p1"])
-    repo.save(
-        RunRecord(id="old", status="succeeded", started_at=_NOW - timedelta(hours=1))
-    )
+    repo.save(RunRecord(id="old", status="succeeded", started_at=_NOW - timedelta(hours=1)))
     repo.save(RunRecord(id="new", status="succeeded", started_at=_NOW))
 
     resp = _client(service).get("/api/runs")

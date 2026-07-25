@@ -26,8 +26,10 @@ def test_extract_text_joins_and_strips_pages(mock_reader_cls):
 def test_extract_text_tolerates_none_page_text(mock_reader_cls):
     """A page returning None contributes an empty string, not a crash."""
     reader = MagicMock()
-    reader.pages = [MagicMock(extract_text=MagicMock(return_value=None)),
-                    MagicMock(extract_text=MagicMock(return_value="Real"))]
+    reader.pages = [
+        MagicMock(extract_text=MagicMock(return_value=None)),
+        MagicMock(extract_text=MagicMock(return_value="Real")),
+    ]
     mock_reader_cls.return_value = reader
     assert PyPDF2ResumeParser().extract_text(b"%PDF-fake") == "Real"
 
