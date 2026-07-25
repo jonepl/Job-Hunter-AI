@@ -209,16 +209,15 @@ an explanation of what happened; the top near-miss jobs rendered as normal
 `JobCard`s; the total evaluated this run; a **suggested lower threshold** with a
 one-click apply.
 
-### 6.3 Settings (six sub-screens)
-Left config nav: Voice & tone · Match threshold · Run schedule · Search profiles ·
+### 6.3 Settings (five sub-screens)
+Left config nav: Voice & tone · Run schedule · Search profiles ·
 Evaluator provider · Master resume.
 
 | Screen | Contents | Notes |
 |---|---|---|
 | **Voice & tone** | Tone preset (`direct`/`warm`/`formal`/`bold`), first-person toggle (`first person`/`implied`), free-text **style notes**, live preview | **No writing samples** (ADR-030). Style notes are the high-fidelity mechanism. Preview is the tuning loop. |
-| **Match threshold** | Slider 0–100, last-run qualifying count, near-miss band, applies-to scope | Unchanged from design |
 | **Run schedule** | Presets (Hourly/Daily/Twice daily/Weekdays), editable cron expression, timezone, **Next 3 runs** preview | Live edit reschedules in-process — no restart (ADR-032) |
-| **Search profiles** | List with query, scrapers, next-run time, Edit/Pause/Resume, `+ New profile` | Unchanged |
+| **Search profiles** | List with query, scrapers, next-run time, Edit/Pause/Resume, `+ New profile`; the editor sets the per-profile **match threshold** (slider 0–100 + mono value, qualify-zone rail, near-miss band) | Threshold is per-profile (ADR-033); folded into the profile editor — no longer a standalone section |
 | **Evaluator provider** | Provider cards with cost/job, **masked API key + Replace**, **`ENRICHMENT_MODE` shadow/enforce toggle** | Key is **write-only**: masked suffix on read, replacement on write (ADR-031) |
 | **Master resume** | File provenance (name, version, upload date, size, parsed skills/roles), Download/Replace, drop zone, **version history + Restore** | **Never preview resume content** (ADR-028) |
 

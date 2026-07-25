@@ -25,7 +25,6 @@ const mockedResume = api.getResume as jest.MockedFunction<typeof api.getResume>;
 
 const LABELS = [
   "Voice & tone",
-  "Match threshold",
   "Run schedule",
   "Search profiles",
   "Evaluator provider",
@@ -55,10 +54,9 @@ describe("<SettingsNav>", () => {
   it("shows the live value for each section", async () => {
     renderWithClient(<SettingsNav active="voice" onSelect={jest.fn()} />);
 
-    // Tone (capitalized), first profile's threshold (ADR-033 — per-profile),
-    // the raw cron, the profile count, the provider label, and the active version.
+    // Tone (capitalized), the raw cron, the profile count, the provider label,
+    // and the active resume version.
     await waitFor(() => expect(screen.getByText("Direct")).toBeInTheDocument());
-    expect(screen.getByText("75")).toBeInTheDocument();
     expect(screen.getByText("0 8 * * 1-5")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("Anthropic")).toBeInTheDocument();

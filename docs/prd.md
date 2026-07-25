@@ -330,7 +330,10 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   thereafter (ADR-031). All five rail sections work: **Voice & tone** (global voice
   descriptor + live preview), **Match threshold** (per-profile, ADR-033), **Run
   schedule** (cron + timezone with a "Next 3 runs" preview), **Search profiles** (full
-  CRUD), and **Evaluator provider** (provider/model + the API keys). Secrets are
+  CRUD), and **Evaluator provider** (provider/model + the API keys). *(The standalone
+  **Match threshold** section was later folded into the Search profiles editor — the
+  per-profile threshold now lives on the profile editor rather than its own rail
+  section.)* Secrets are
   **write-only** — the API returns only a masked suffix and a server-computed "differs
   from .env" indicator, never a key; a replace persists and a reset reverts to `.env`.
   Runs pick up the DB config through an env bridge that writes effective settings into

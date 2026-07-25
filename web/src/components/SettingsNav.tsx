@@ -13,7 +13,6 @@ import { useSettings } from "../hooks/useSettings";
 
 const SECTIONS = [
   { id: "voice", label: "Voice & tone" },
-  { id: "threshold", label: "Match threshold" },
   { id: "schedule", label: "Run schedule" },
   { id: "profiles", label: "Search profiles" },
   { id: "provider", label: "Evaluator provider" },
@@ -38,11 +37,8 @@ export function SettingsNav({ active, onSelect }: Props) {
   const { data: profiles } = useProfiles();
   const { data: resume } = useResume();
 
-  // Threshold is per-profile (ADR-033) — there is no global number, so the rail
-  // shows the first/default profile's as a representative value.
   const values: Record<SectionId, string> = {
     voice: settings ? capitalize(settings.voice.tone) : "",
-    threshold: profiles?.[0] ? String(profiles[0].scoreThreshold) : "",
     schedule: settings?.scheduleCron ?? "",
     profiles: profiles ? String(profiles.length) : "",
     provider: settings ? (settings.evaluatorProvider === "anthropic" ? "Anthropic" : "OpenAI") : "",

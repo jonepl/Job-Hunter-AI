@@ -7,6 +7,7 @@ import {
   useProfiles,
   useUpdateProfile,
 } from "../../hooks/useProfiles";
+import { useSettings } from "../../hooks/useSettings";
 import { profileToInput } from "../../lib/settings";
 import {
   Field,
@@ -316,17 +317,10 @@ function ProfileEditor({
         </select>
       </Field>
 
-      <Field label="Score threshold" htmlFor="p-threshold">
-        <input
-          id="p-threshold"
-          type="number"
-          min={0}
-          max={100}
-          value={draft.scoreThreshold}
-          onChange={(e) => set({ scoreThreshold: Number(e.target.value) })}
-          className={inputClass + " font-mono"}
-        />
-      </Field>
+      <ThresholdField
+        value={draft.scoreThreshold}
+        onChange={(v) => set({ scoreThreshold: v })}
+      />
 
       <Field label="Top results" htmlFor="p-top" hint="Blank returns all qualifying results.">
         <input
@@ -354,5 +348,99 @@ function ProfileEditor({
         </button>
       </div>
     </section>
+  );
+}
+
+// Match threshold editor for the profile form (ADR-033): the score a job must reach
+// to qualify, stored per profile. A slider gives feel, the paired mono number box
+// gives exact entry, and the qualify-zone rail previews the result live. The
+// near-miss band (NEAR_MISS_BAND) is backend-owned and read-only — it only shades
+// the rail and labels the stat cell. Its settings read is non-blocking: the slider
+// and number always work even if the band is unknown; only the shading + stat cell
+// gate on it, so the editor never breaks when useSettings fails.
+function ThresholdField({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const { data: settings } = useSettings();
+  const floor = settings ? Math.max(0, value - settings.nearMissBand) : null;
+
+  /** Clamp any input to the 0–100 score domain (ADR-033: no unreachable threshold). */
+  const clamp = (n: number) => Math.max(0, Math.min(100, n));
+
+  return (
+    <div className="max-w-md space-y-3">
+      {/* Value + domain caption. The number box is the precise-entry control. */}
+      <div className="flex items-baseline justify-between">
+        <label htmlFor="p-threshold" className="block text-label font-semibold text-text">
+          Score threshold
+        </label>
+        <span className="font-mono text-caption text-text-3">0–100</span>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <input
+          id="p-threshold-range"
+          type="range"
+          min={0}
+          max={100}
+          value={value}
+          onChange={(e) => onChange(clamp(Number(e.target.value)))}
+          aria-label="Score threshold"
+          className="w-full accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        />
+        <input
+          id="p-threshold"
+          type="number"
+          min={0}
+          max={100}
+          value={value}
+          onChange={(e) => onChange(clamp(Number(e.target.value)))}
+          aria-label="Score threshold value"
+          className="w-20 shrink-0 rounded-control border border-border-strong bg-bg px-3 py-2 text-control font-mono text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        />
+      </div>
+
+      {/* Qualify-zone rail — presentational; qualify fill threshold→100, near-miss
+          band shaded when the (real) band is known, accent tick at the threshold. */}
+      <div>
+        <div className="relative h-[10px] rounded-pill bg-surface-2">
+          {floor !== null && (
+            <div
+              className="absolute inset-y-0 bg-nearmiss-soft"
+              style={{ left: `${floor}%`, width: `${value - floor}%` }}
+            />
+          )}
+          <div
+            className="absolute inset-y-0 right-0 rounded-r-pill bg-qualify-soft"
+            style={{ left: `${value}%` }}
+          />
+          <div
+            className="absolute -top-[3px] -bottom-[3px] w-[2px] bg-accent"
+            style={{ left: `${value}%` }}
+          />
+        </div>
+        <div className="mt-1 flex justify-between font-mono text-label text-text-3">
+          <span>0</span>
+          <span>100</span>
+        </div>
+      </div>
+
+      {/* Near-miss band stat — real values only; gated on the settings read so the
+          band is never fabricated. */}
+      {floor !== null && (
+        <div className="overflow-hidden rounded-card border border-border">
+          <div className="p-4">
+            <span className="block font-mono text-label uppercase text-text-3">Near-miss band</span>
+            <span className="mt-1 block text-body font-semibold text-nearmiss">
+              {floor}–{value - 1}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

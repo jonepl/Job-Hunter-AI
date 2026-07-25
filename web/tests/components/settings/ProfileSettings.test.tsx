@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 
 import { ProfileSettings } from "../../../src/components/settings/ProfileSettings";
 import { api } from "../../../src/api/client";
-import { makeProfile, renderWithClient } from "../../helpers";
+import { makeProfile, makeSettings, renderWithClient } from "../../helpers";
 
 jest.mock("../../../src/api/client", () => ({
   api: {
@@ -11,6 +11,7 @@ jest.mock("../../../src/api/client", () => ({
     createProfile: jest.fn(),
     updateProfile: jest.fn(),
     deleteProfile: jest.fn(),
+    getSettings: jest.fn(),
   },
 }));
 
@@ -18,6 +19,7 @@ const mockedList = api.listProfiles as jest.MockedFunction<typeof api.listProfil
 const mockedCreate = api.createProfile as jest.MockedFunction<typeof api.createProfile>;
 const mockedUpdate = api.updateProfile as jest.MockedFunction<typeof api.updateProfile>;
 const mockedDelete = api.deleteProfile as jest.MockedFunction<typeof api.deleteProfile>;
+const mockedGetSettings = api.getSettings as jest.MockedFunction<typeof api.getSettings>;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -28,6 +30,7 @@ beforeEach(() => {
   mockedCreate.mockResolvedValue(makeProfile({ id: 3, name: "New" }));
   mockedUpdate.mockResolvedValue(makeProfile({ id: 1, name: "Backend" }));
   mockedDelete.mockResolvedValue(undefined);
+  mockedGetSettings.mockResolvedValue(makeSettings());
 });
 
 describe("<ProfileSettings>", () => {
@@ -109,5 +112,31 @@ describe("<ProfileSettings>", () => {
     const list = await screen.findByTestId("profile-list");
 
     expect(within(list).getByText("running now")).toBeInTheDocument();
+  });
+
+  it("saves the edited threshold from the number input", async () => {
+    mockedList.mockResolvedValue([makeProfile({ id: 1, name: "Backend", scoreThreshold: 70 })]);
+    renderWithClient(<ProfileSettings />);
+    await screen.findByTestId("profile-list");
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const box = await screen.findByLabelText("Score threshold value");
+    await userEvent.clear(box);
+    await userEvent.type(box, "85");
+    await userEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalled());
+    expect(mockedUpdate).toHaveBeenCalledWith(1, expect.objectContaining({ scoreThreshold: 85 }));
+  });
+
+  it("renders the near-miss band from the backend band width", async () => {
+    mockedList.mockResolvedValue([makeProfile({ id: 1, name: "Backend", scoreThreshold: 70 })]);
+    mockedGetSettings.mockResolvedValue(makeSettings({ nearMissBand: 15 }));
+    renderWithClient(<ProfileSettings />);
+    await screen.findByTestId("profile-list");
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    // Profile threshold 70, band 15 → floor 55, top threshold − 1 = 69.
+    expect(await screen.findByText("55–69")).toBeInTheDocument();
   });
 });

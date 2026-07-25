@@ -20,9 +20,6 @@ jest.mock("../../src/api/client", () => ({
 jest.mock("../../src/components/settings/VoiceSettings", () => ({
   VoiceSettings: () => <div data-testid="panel-voice" />,
 }));
-jest.mock("../../src/components/settings/ThresholdSettings", () => ({
-  ThresholdSettings: () => <div data-testid="panel-threshold" />,
-}));
 jest.mock("../../src/components/settings/ScheduleSettings", () => ({
   ScheduleSettings: () => <div data-testid="panel-schedule" />,
 }));
@@ -48,7 +45,6 @@ describe("<Settings>", () => {
     renderWithClient(<Settings />);
     for (const label of [
       "Voice & tone",
-      "Match threshold",
       "Run schedule",
       "Search profiles",
       "Evaluator provider",
