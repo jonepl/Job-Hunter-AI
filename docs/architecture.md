@@ -419,7 +419,8 @@ tests/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── setup.sh
-├── requirements.txt
+├── pyproject.toml                       ← dependencies (uv)
+├── uv.lock                              ← locked, reproducible resolution
 ├── .env
 ├── .gitignore
 └── README.md
@@ -1224,8 +1225,9 @@ RUN npm run build
 FROM python:3.10-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y ...            # Playwright system deps
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/        # uv binary
+COPY pyproject.toml uv.lock .
+RUN uv sync --frozen --no-dev                                 # locked install
 RUN playwright install --with-deps
 COPY src/ ./src/
 COPY --from=frontend /web/dist ./web/dist               # SPA served at / by FastAPI

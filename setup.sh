@@ -65,27 +65,25 @@ if ! command -v git &>/dev/null; then
 fi
 success "Git $(git --version | awk '{print $3}') found"
 
-# pip
-if ! command -v pip3 &>/dev/null; then
-    error "pip not found. Reinstall Python from https://python.org"
+# uv
+if ! command -v uv &>/dev/null; then
+    error "uv not found. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh (or: brew install uv)"
 fi
-success "pip found"
+success "uv $(uv --version | awk '{print $2}') found"
 
 echo ""
 
 # =============================================================================
-# STEP 2 — Create Python Virtual Environment
+# STEP 2 — Sync Python Dependencies (uv creates & manages .venv)
 # =============================================================================
-info "Step 2: Creating Python virtual environment..."
+info "Step 2: Syncing Python dependencies with uv..."
 
-if [ -d ".venv" ]; then
-    warn ".venv already exists — skipping creation"
-else
-    python3 -m venv .venv
-    success "Virtual environment created at .venv/"
-fi
+# uv sync creates .venv (if absent) and installs the locked dependency set,
+# including the dev group (pytest). --frozen fails if uv.lock is out of date.
+uv sync --frozen
+success "Dependencies synced into .venv/"
 
-# Activate virtual environment
+# Activate so later validation checks and the user's shell land in the venv
 source .venv/bin/activate
 success "Virtual environment activated"
 
@@ -109,29 +107,19 @@ fi
 echo ""
 
 # =============================================================================
-# STEP 4 — Install Python Dependencies
+# STEP 4 — Install Playwright Browser Binaries
 # =============================================================================
-info "Step 4: Installing Python dependencies..."
+info "Step 4: Installing Playwright browser binaries..."
 
-.venv/bin/pip install -r requirements.txt --quiet
-success "Python dependencies installed"
-
-echo ""
-
-# =============================================================================
-# STEP 5 — Install Playwright Browser Binaries
-# =============================================================================
-info "Step 5: Installing Playwright browser binaries..."
-
-.venv/bin/playwright install
+uv run playwright install
 success "Playwright browser binaries installed"
 
 echo ""
 
 # =============================================================================
-# STEP 6 — Final Validation
+# STEP 5 — Final Validation
 # =============================================================================
-info "Step 6: Running final validation..."
+info "Step 5: Running final validation..."
 
 # Check .env is git-ignored
 if git check-ignore -q .env 2>/dev/null; then

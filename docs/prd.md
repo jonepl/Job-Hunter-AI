@@ -427,7 +427,7 @@ stale PRD section to refresh.
   concurrent (`asyncio.gather` over scrapers) and APScheduler scheduling already
   ships in Phase 1. Only LangGraph remains correctly deferred.
 - **Tech stack (§6)** does not list `beautifulsoup4`, `lxml`, `requests`, or
-  `pytz` (all in `requirements.txt`). `beautifulsoup4` / `lxml` appear **unused**
+  `pytz` (all in `pyproject.toml`). `beautifulsoup4` / `lxml` appear **unused**
   — LinkedIn scraping uses Playwright selectors, not BeautifulSoup — and are
   candidates for removal.
 
