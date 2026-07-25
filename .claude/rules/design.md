@@ -28,8 +28,12 @@ Design System v1.0.
   `border-color`. Never animate layout or opacity by default.
 - **`prefers-reduced-motion` is respected** — already handled in `tokens.css`;
   don't reintroduce unconditional transitions.
-- **No browser storage** (`localStorage` / `sessionStorage`). React Query's
-  in-memory cache only.
+- **No browser storage** (`localStorage` / `sessionStorage`) for domain/app data —
+  React Query's in-memory cache only. **One exception (ADR-037): the theme UI
+  preference** persists in `localStorage` (key `theme`), read synchronously by a guard
+  in `index.html` before first paint. Navigation state (screen, Settings section,
+  Search rail selection) lives in the **URL**, not storage. Nothing else may use
+  browser storage.
 
 ---
 

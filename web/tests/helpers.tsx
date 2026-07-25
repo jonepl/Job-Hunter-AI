@@ -1,5 +1,13 @@
 import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router";
 import { render } from "@testing-library/react";
 
 import type {
@@ -15,15 +23,68 @@ import type {
   SettingsOut,
 } from "../src/api/client";
 
-/** Render a component wrapped in a fresh (retry-free) React Query provider. */
-export function renderWithClient(ui: ReactElement) {
-  const client = new QueryClient({
+/** A fresh, retry-free QueryClient for a single test render. */
+function makeTestClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+}
+
+/** Render a component wrapped in a fresh (retry-free) React Query provider. */
+export function renderWithClient(ui: ReactElement) {
+  const client = makeTestClient();
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
   return { client, ...render(ui, { wrapper }) };
+}
+
+/**
+ * Render a routing-aware component inside a memory router (+ a fresh QueryClient),
+ * so `useSearch` / `useParams` / `useNavigate` resolve. `ui` mounts at both the
+ * search route ("/") and the settings route ("/settings/$section"); `initialEntries`
+ * selects which one is active (default "/"). Screens that read/write the URL
+ * selection get the same behavior they have in production.
+ */
+export async function renderWithRouter(
+  ui: ReactElement,
+  { initialEntries = ["/"] }: { initialEntries?: string[] } = {},
+) {
+  const client = makeTestClient();
+  const Component = () => ui;
+  const rootRoute = createRootRoute({ component: Outlet });
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/",
+    validateSearch: (search: Record<string, unknown>) => ({
+      view: search.view === "tracked" ? ("tracked" as const) : undefined,
+      profile: typeof search.profile === "number" ? search.profile : undefined,
+    }),
+    component: Component,
+  });
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/settings/$section",
+    component: Component,
+  });
+  const routeTree = rootRoute.addChildren([indexRoute, settingsRoute]);
+  const router = createRouter({
+    routeTree,
+    history: createMemoryHistory({ initialEntries }),
+  });
+  // Resolve the initial match up front so the first render is populated — otherwise
+  // RouterProvider paints empty and settles a tick later, breaking synchronous queries.
+  await router.load();
+  return {
+    client,
+    router,
+    ...render(
+      <QueryClientProvider client={client}>
+        {/* The ad-hoc test router differs from the registered app router type. */}
+        <RouterProvider router={router as never} />
+      </QueryClientProvider>,
+    ),
+  };
 }
 
 /** Build a JobSummary fixture with sensible defaults; override any field. */

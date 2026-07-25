@@ -21,6 +21,14 @@ const SECTIONS = [
 
 export type SectionId = (typeof SECTIONS)[number]["id"];
 
+/** The valid section ids, in rail order. `SECTIONS[0]` is the default landing pane. */
+export const SECTION_IDS = SECTIONS.map((s) => s.id) as readonly SectionId[];
+
+/** Narrow an arbitrary URL segment to a known section id. */
+export function isSectionId(value: string | undefined): value is SectionId {
+  return value !== undefined && (SECTION_IDS as readonly string[]).includes(value);
+}
+
 interface Props {
   active: SectionId;
   onSelect: (id: SectionId) => void;

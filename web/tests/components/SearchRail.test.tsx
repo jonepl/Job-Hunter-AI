@@ -3,8 +3,7 @@ import userEvent from "@testing-library/user-event";
 
 import { SearchRail } from "../../src/components/SearchRail";
 import { api } from "../../src/api/client";
-import { SearchViewProvider } from "../../src/lib/searchView";
-import { makeJob, makeProfile, makeRun, renderWithClient } from "../helpers";
+import { makeJob, makeProfile, makeRun, renderWithRouter } from "../helpers";
 
 jest.mock("../../src/api/client", () => ({
   api: { listJobs: jest.fn(), listProfiles: jest.fn(), listRuns: jest.fn() },
@@ -15,11 +14,7 @@ const mockedProfiles = api.listProfiles as jest.MockedFunction<typeof api.listPr
 const mockedRuns = api.listRuns as jest.MockedFunction<typeof api.listRuns>;
 
 function renderRail() {
-  return renderWithClient(
-    <SearchViewProvider>
-      <SearchRail onNewProfile={jest.fn()} />
-    </SearchViewProvider>,
-  );
+  return renderWithRouter(<SearchRail onNewProfile={jest.fn()} />);
 }
 
 beforeEach(() => {
@@ -41,7 +36,7 @@ beforeEach(() => {
 
 describe("<SearchRail>", () => {
   it("renders the three rail sections", async () => {
-    renderRail();
+    await renderRail();
     expect(screen.getByRole("navigation", { name: "Search navigation" })).toBeInTheDocument();
     expect(screen.getByText("Tracked")).toBeInTheDocument();
     expect(screen.getByText("Search profiles")).toBeInTheDocument();
@@ -52,20 +47,20 @@ describe("<SearchRail>", () => {
   });
 
   it("counts only the in-flight jobs on the Tracked row", async () => {
-    renderRail();
+    await renderRail();
     const tracked = screen.getByRole("button", { name: "All in flight" });
     await waitFor(() => expect(tracked).toHaveTextContent("2"));
   });
 
   it("marks the resolved profile current with the inset accent bar", async () => {
-    renderRail();
+    await renderRail();
     const backend = await screen.findByRole("button", { name: "Backend" });
     expect(backend).toHaveAttribute("aria-current", "page");
     expect(backend.className).toContain("shadow-[inset_2px_0_0_var(--accent)]");
   });
 
   it("selects a different profile on click", async () => {
-    renderRail();
+    await renderRail();
     const platform = await screen.findByRole("button", { name: "Platform" });
     await userEvent.click(platform);
     expect(platform).toHaveAttribute("aria-current", "page");
@@ -73,7 +68,7 @@ describe("<SearchRail>", () => {
   });
 
   it("shows the global run history newest-first with a Latest tag", async () => {
-    renderRail();
+    await renderRail();
     const history = await screen.findByTestId("run-history");
     expect(history).toHaveTextContent("Latest");
     expect(history).toHaveTextContent("3 matches · delivered");
@@ -85,7 +80,7 @@ describe("<SearchRail>", () => {
     mockedProfiles.mockRejectedValue(new Error("boom"));
     mockedRuns.mockRejectedValue(new Error("boom"));
 
-    renderRail();
+    await renderRail();
     await waitFor(() => expect(mockedProfiles).toHaveBeenCalled());
     expect(screen.getByText("Tracked")).toBeInTheDocument();
     expect(screen.getByText("Search profiles")).toBeInTheDocument();
