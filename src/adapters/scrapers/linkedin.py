@@ -5,8 +5,8 @@ import logging
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Page
-from playwright.async_api import async_playwright
+from playwright.async_api import Page, async_playwright
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.job import Job
@@ -45,10 +45,7 @@ class LinkedInScraper(ScraperPort):
         encoded_query = quote_plus(query)
         encoded_location = quote_plus(location)
         work_type_param = WorkType.to_linkedin_param(work_types or [])
-        date_posted_param = (
-            f"&f_TPR={date_posted.linkedin_param}"
-            if date_posted else ""
-        )
+        date_posted_param = f"&f_TPR={date_posted.linkedin_param}" if date_posted else ""
         url = (
             f"https://www.linkedin.com/jobs/search/?"
             f"keywords={encoded_query}"
@@ -74,13 +71,15 @@ class LinkedInScraper(ScraperPort):
                 browser = await p.chromium.launch(headless=True)
                 page = await browser.new_page()
 
-                await page.set_extra_http_headers({
-                    "User-Agent": (
-                        "Mozilla/5.0 (X11; Linux x86_64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
-                    )
-                })
+                await page.set_extra_http_headers(
+                    {
+                        "User-Agent": (
+                            "Mozilla/5.0 (X11; Linux x86_64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/120.0.0.0 Safari/537.36"
+                        )
+                    }
+                )
 
                 logger.info("LinkedIn — navigating to search URL")
                 await page.goto(url, timeout=30_000)
@@ -110,28 +109,28 @@ class LinkedInScraper(ScraperPort):
                         # Salary and employment type are only on the detail page,
                         # which we deliberately do not fetch (rate-limit rule) — they
                         # stay None for LinkedIn jobs.
-                        time_el = await card.query_selector(
-                            ".base-search-card__metadata time"
-                        )
+                        time_el = await card.query_selector(".base-search-card__metadata time")
 
                         title = (await title_el.inner_text()).strip() if title_el else ""
                         company = (await company_el.inner_text()).strip() if company_el else ""
-                        location_text = (await location_el.inner_text()).strip() if location_el else ""
-                        url_href = await link_el.get_attribute("href") if link_el else ""
-                        posted_attr = (
-                            await time_el.get_attribute("datetime") if time_el else None
+                        location_text = (
+                            (await location_el.inner_text()).strip() if location_el else ""
                         )
+                        url_href = await link_el.get_attribute("href") if link_el else ""
+                        posted_attr = await time_el.get_attribute("datetime") if time_el else None
 
                         if not title or not url_href:
                             continue
 
-                        card_data.append({
-                            "title": title,
-                            "company": company,
-                            "location": location_text,
-                            "url": url_href,
-                            "posted_at": posted_attr,
-                        })
+                        card_data.append(
+                            {
+                                "title": title,
+                                "company": company,
+                                "location": location_text,
+                                "url": url_href,
+                                "posted_at": posted_attr,
+                            }
+                        )
                     except Exception as exc:
                         logger.warning("LinkedIn — failed to parse card: %s", exc)
                         continue
@@ -149,16 +148,18 @@ class LinkedInScraper(ScraperPort):
                         except Exception:
                             posted_at = None
 
-                    jobs.append(Job(
-                        title=data["title"],
-                        company=data["company"],
-                        location=data["location"],
-                        url=data["url"],
-                        description=description,
-                        platform="linkedin",
-                        scraped_at=datetime.now(),
-                        posted_at=posted_at,
-                    ))
+                    jobs.append(
+                        Job(
+                            title=data["title"],
+                            company=data["company"],
+                            location=data["location"],
+                            url=data["url"],
+                            description=description,
+                            platform="linkedin",
+                            scraped_at=datetime.now(),
+                            posted_at=posted_at,
+                        )
+                    )
 
                 await browser.close()
 

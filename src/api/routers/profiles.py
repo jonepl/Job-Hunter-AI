@@ -68,9 +68,7 @@ def delete_profile(
     if service.get_profile(profile_id) is None:
         raise HTTPException(status_code=404, detail=f"No profile {profile_id}")
     if service.profile_count() <= 1:
-        raise HTTPException(
-            status_code=409, detail="Cannot delete the last remaining profile."
-        )
+        raise HTTPException(status_code=409, detail="Cannot delete the last remaining profile.")
     service.delete_profile(profile_id)
 
 

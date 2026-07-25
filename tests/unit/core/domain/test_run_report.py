@@ -2,19 +2,18 @@
 
 from datetime import datetime
 
-import pytest
-
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.run_report import RunReport
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_score_breakdown() -> ScoreBreakdown:
     """Return a minimal valid ScoreBreakdown."""
+
     def _z(max_val: int) -> ScoreCategory:
         return ScoreCategory(max=max_val, earned=0, reasoning="n/a")
 
@@ -73,6 +72,7 @@ def _make_report(**kwargs) -> RunReport:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_has_qualifying_results_true():
     """has_qualifying_results returns True when qualifying_results is populated."""

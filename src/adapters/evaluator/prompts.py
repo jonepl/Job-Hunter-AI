@@ -70,12 +70,12 @@ USER_PROMPT = """Evaluate the match between the following resume
 and job description.
 
 CRITICAL SCHEMA RULES:
-- matched_skills, missing_skills, summary, and 
-  hire_recommendation MUST be at the TOP LEVEL 
+- matched_skills, missing_skills, summary, and
+  hire_recommendation MUST be at the TOP LEVEL
   of the JSON object
-- These fields must NEVER be nested inside 
+- These fields must NEVER be nested inside
   score_breakdown
-- score_breakdown contains ONLY the nine scoring 
+- score_breakdown contains ONLY the nine scoring
   category objects
 - Violating this structure will cause a system error
 

@@ -34,9 +34,7 @@ from src.infra.pricing import rates_for, show_cost_estimate
 
 # The six human-set statuses — the only values the API accepts for a status write
 # (machine states are never user-selectable, ui-spec §4). A bad value 422s.
-HumanStatus = Literal[
-    "applied", "started", "interviewing", "offer", "rejected", "not_interested"
-]
+HumanStatus = Literal["applied", "started", "interviewing", "offer", "rejected", "not_interested"]
 
 
 class JobSummary(BaseModel):
@@ -181,9 +179,7 @@ class JobDetail(BaseModel):
     last_seen_at: datetime
 
     @classmethod
-    def from_stored_job(
-        cls, job: StoredJob, history: list[StatusHistoryEntry]
-    ) -> "JobDetail":
+    def from_stored_job(cls, job: StoredJob, history: list[StatusHistoryEntry]) -> "JobDetail":
         """Build the detail model from a stored job and its status history.
 
         Args:
@@ -359,9 +355,7 @@ class VoiceIn(BaseModel):
 
     def to_descriptor(self) -> VoiceDescriptor:
         """Map the request voice to the domain VoiceDescriptor."""
-        return VoiceDescriptor(
-            tone=self.tone, person=self.person, style_notes=self.style_notes
-        )
+        return VoiceDescriptor(tone=self.tone, person=self.person, style_notes=self.style_notes)
 
 
 class GenerateRequest(BaseModel):
@@ -454,9 +448,7 @@ class SettingsOut(BaseModel):
             pricing=PricingOut(
                 show_cost_estimate=show_cost_estimate(),
                 openai=ProviderRates(input_per_1m=openai_in, output_per_1m=openai_out),
-                anthropic=ProviderRates(
-                    input_per_1m=anthropic_in, output_per_1m=anthropic_out
-                ),
+                anthropic=ProviderRates(input_per_1m=anthropic_in, output_per_1m=anthropic_out),
             ),
         )
 
@@ -565,9 +557,7 @@ class ProfileOut(BaseModel):
             name=profile.name,
             query=profile.query,
             location=profile.location,
-            work_types=(
-                [w.value for w in profile.work_types] if profile.work_types else None
-            ),
+            work_types=([w.value for w in profile.work_types] if profile.work_types else None),
             date_posted=profile.date_posted.value if profile.date_posted else None,
             active_scrapers=[s.value for s in profile.active_scrapers],
             score_threshold=profile.score_threshold,
@@ -600,17 +590,13 @@ class ProfileIn(BaseModel):
             ValueError: On an unknown enum value, or a missing location when the work
                 type is not remote-only (mirrors ``SearchProfile.from_env``).
         """
-        work_types = (
-            [WorkType(w) for w in self.work_types] if self.work_types else None
-        )
+        work_types = [WorkType(w) for w in self.work_types] if self.work_types else None
         location = self.location
         if not location:
             if work_types == [WorkType.REMOTE]:
                 location = "United States"
             else:
-                raise ValueError(
-                    "location is required unless the work type is remote only"
-                )
+                raise ValueError("location is required unless the work type is remote only")
         return SearchProfile(
             profile_id=profile_id,
             name=self.name,

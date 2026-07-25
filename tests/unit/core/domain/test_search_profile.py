@@ -5,7 +5,6 @@ import pytest
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
-from src.core.domain.work_type import WorkType
 
 
 class TestFromEnv:

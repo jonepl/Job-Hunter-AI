@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
 from src.infra.cost_estimator import estimate_run_cost
@@ -23,12 +21,14 @@ def _make_profile(scrapers: list[ScraperName]) -> SearchProfile:
 @patch.dict("os.environ", {"JSEARCH_MAX_PAGES": "2"})
 def test_estimate_max_jobs_all_four_scrapers():
     """All four scrapers: 3 JSearch * 2 pages * 10 + 1 LinkedIn * 25 = 85 jobs."""
-    profile = _make_profile([
-        ScraperName.LINKEDIN,
-        ScraperName.INDEED,
-        ScraperName.GLASSDOOR,
-        ScraperName.ZIPRECRUITER,
-    ])
+    profile = _make_profile(
+        [
+            ScraperName.LINKEDIN,
+            ScraperName.INDEED,
+            ScraperName.GLASSDOOR,
+            ScraperName.ZIPRECRUITER,
+        ]
+    )
     estimate = estimate_run_cost(
         profile=profile,
         provider="openai",
@@ -54,11 +54,13 @@ def test_estimate_max_jobs_linkedin_only():
 @patch.dict("os.environ", {"JSEARCH_MAX_PAGES": "2"})
 def test_estimate_max_jobs_jsearch_only():
     """Indeed, Glassdoor, ZipRecruiter only: 3 * 2 * 10 = 60 jobs."""
-    profile = _make_profile([
-        ScraperName.INDEED,
-        ScraperName.GLASSDOOR,
-        ScraperName.ZIPRECRUITER,
-    ])
+    profile = _make_profile(
+        [
+            ScraperName.INDEED,
+            ScraperName.GLASSDOOR,
+            ScraperName.ZIPRECRUITER,
+        ]
+    )
     estimate = estimate_run_cost(
         profile=profile,
         provider="openai",

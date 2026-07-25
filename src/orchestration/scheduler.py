@@ -26,9 +26,7 @@ def _record_last_run(
 ) -> None:
     """Stamp a profile's last-run status when a settings service is available (Part B)."""
     if settings_service is not None:
-        settings_service.set_profile_last_run(
-            profile_id, status, datetime.now().isoformat()
-        )
+        settings_service.set_profile_last_run(profile_id, status, datetime.now().isoformat())
 
 
 async def run_all_profiles(

@@ -21,8 +21,8 @@ only; no job content ever reaches it (CLAUDE.md #2) — the pipeline writes jobs
 """
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 from uuid import uuid4
 
 from src.core.domain.run_record import RunRecord
@@ -81,20 +81,14 @@ class RunService:
         """
         active = self._active_run()
         if active is not None:
-            raise RunInProgressError(
-                f"A run ({active.id}) is already in progress."
-            )
+            raise RunInProgressError(f"A run ({active.id}) is already in progress.")
         profiles = self._settings_service.list_profiles()
         if not profiles:
-            raise NoProfilesError(
-                "No search profiles configured — add one in Settings first."
-            )
+            raise NoProfilesError("No search profiles configured — add one in Settings first.")
         # ``getattr`` keeps this robust for test doubles that model profiles as bare
         # strings; real SearchProfiles always carry ``enabled``.
         if not any(getattr(p, "enabled", True) for p in profiles):
-            raise NoProfilesError(
-                "All search profiles are paused — resume one in Settings first."
-            )
+            raise NoProfilesError("All search profiles are paused — resume one in Settings first.")
         run = RunRecord(
             id=uuid4().hex,
             status="running",

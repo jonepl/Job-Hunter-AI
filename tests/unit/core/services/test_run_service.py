@@ -12,8 +12,8 @@ from datetime import datetime, timedelta
 import pytest
 
 from src.adapters.repository.sqlite_run_repository import SQLiteRunRepository
-from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.job import Job
+from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.run_record import RunRecord
 from src.core.domain.run_report import RunReport
 from src.core.exceptions import NoProfilesError, RunInProgressError
@@ -205,11 +205,7 @@ async def test_execute_run_ignores_a_non_running_row():
 def test_get_run_flips_timed_out_running_row_to_failed():
     """A running row older than the timeout self-heals to failed on read."""
     service, repo = _service(profiles=["p1"], timeout=60.0)
-    repo.save(
-        RunRecord(
-            id="stale", status="running", started_at=_NOW - timedelta(hours=1)
-        )
-    )
+    repo.save(RunRecord(id="stale", status="running", started_at=_NOW - timedelta(hours=1)))
 
     healed = service.get_run("stale")
     assert healed.status == "failed"

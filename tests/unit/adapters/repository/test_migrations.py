@@ -20,9 +20,7 @@ _NOW = datetime(2026, 7, 18, 9, 0, 0)
 
 def _table_names(conn: sqlite3.Connection) -> set[str]:
     """Return the set of user table names in the database."""
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table'"
-    ).fetchall()
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     return {row[0] for row in rows}
 
 
@@ -137,9 +135,7 @@ def test_migration_3_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     assert len(repo2.list_jobs()) == len(jobs_before) == 1
     resume_count = repo2._conn.execute("SELECT COUNT(*) FROM resumes").fetchone()[0]
     assert resume_count == 0
-    versions = [
-        row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
-    ]
+    versions = [row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")]
     assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     repo2.close()
 
@@ -179,7 +175,18 @@ def test_migration_8_upgrades_existing_profiles_to_enabled(tmp_path):
         "name, query, location, work_types, date_posted, active_scrapers, "
         "score_threshold, top_results, position, created_at"
         ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("Legacy", "Engineer", "Remote", None, "3days", '["linkedin"]', 75, None, 0, _NOW.isoformat()),
+        (
+            "Legacy",
+            "Engineer",
+            "Remote",
+            None,
+            "3days",
+            '["linkedin"]',
+            75,
+            None,
+            0,
+            _NOW.isoformat(),
+        ),
     )
     conn.commit()
     conn.close()
@@ -229,8 +236,14 @@ def test_migration_9_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     # Seed a job row at v8 (before the salary columns exist).
     repo = SQLiteJobRepository(db_path=db_path)  # opening applies migration 9
     columns = _jobs_columns(repo._conn)
-    for col in ("salary_min", "salary_max", "salary_currency", "salary_period",
-                "employment_type", "posted_at"):
+    for col in (
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "salary_period",
+        "employment_type",
+        "posted_at",
+    ):
         assert col in columns
 
     job = Job(
@@ -254,9 +267,7 @@ def test_migration_9_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     found = repo.get_job(stored.id)
     assert found is not None
     assert found.salary_min is None and found.posted_at is None
-    versions = [
-        row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")
-    ]
+    versions = [row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")]
     assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     repo.close()
 
@@ -307,8 +318,6 @@ def test_migrations_4_and_5_upgrade_existing_store_without_touching_jobs(tmp_pat
     assert len(repo.list_jobs()) == 1
     gen_count = repo._conn.execute("SELECT COUNT(*) FROM generations").fetchone()[0]
     assert gen_count == 0
-    versions = [
-        row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")
-    ]
+    versions = [row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")]
     assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     repo.close()

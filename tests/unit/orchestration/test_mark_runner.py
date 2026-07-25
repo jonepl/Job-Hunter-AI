@@ -18,6 +18,7 @@ _NOW = datetime(2026, 7, 14, 9, 0, 0)
 
 def _match_result(job: Job) -> MatchResult:
     """Return a minimal MatchResult for the given job."""
+
     def _cat(mx: int) -> ScoreCategory:
         return ScoreCategory(max=mx, earned=mx, reasoning="ok")
 

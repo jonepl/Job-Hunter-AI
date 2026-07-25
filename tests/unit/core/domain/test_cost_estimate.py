@@ -1,7 +1,5 @@
 """Unit tests for the CostEstimate domain model."""
 
-import pytest
-
 from src.core.domain.cost_estimate import CostEstimate
 
 

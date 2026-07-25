@@ -19,6 +19,7 @@ def test_incomplete_subclass_fails_at_instantiation():
     class Partial(JobRepositoryPort):
         def find_by_fingerprint(self, key):
             return None
+
         # deliberately omits the other abstract methods
 
     with pytest.raises(TypeError):

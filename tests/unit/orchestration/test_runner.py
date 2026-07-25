@@ -1,13 +1,12 @@
 """Unit tests for src/runner.py — immediate run and result logging."""
 
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src.core.exceptions import ModelNotFoundError
 from src.orchestration.runner import _log_report_results, run_immediate
-
 
 # ---------------------------------------------------------------------------
 # Helpers

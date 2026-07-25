@@ -110,9 +110,7 @@ async def test_model_not_found_is_surfaced():
 async def test_provider_failure_never_echoes_content():
     """A content-bearing LLM error is reported by type only — never its detail."""
     secret = "LEAKEDDOCUMENTTEXT99"
-    service = _service(
-        generate_resume=AsyncMock(side_effect=ValueError(f"bad json: {secret}"))
-    )
+    service = _service(generate_resume=AsyncMock(side_effect=ValueError(f"bad json: {secret}")))
     message, code = await run_generate_resume(service, 7)
 
     assert code == 1

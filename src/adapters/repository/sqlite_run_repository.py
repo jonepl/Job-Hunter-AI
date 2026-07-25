@@ -45,9 +45,7 @@ class SQLiteRunRepository(RunRepositoryPort):
         self._conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
         self._conn.execute("PRAGMA foreign_keys=ON")
         apply_migrations(self._conn)
-        logger.info(
-            "Run repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms
-        )
+        logger.info("Run repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms)
 
     def save(self, run: RunRecord) -> RunRecord:
         """Persist a new run record and return it."""
@@ -97,9 +95,7 @@ class SQLiteRunRepository(RunRepositoryPort):
 
     def get(self, run_id: str) -> RunRecord | None:
         """Return the run with ``run_id``, or None when absent."""
-        row = self._conn.execute(
-            "SELECT * FROM runs WHERE id = ?", (run_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         return self._row_to_run(row) if row is not None else None
 
     def list_recent(self, limit: int = 20) -> list[RunRecord]:
@@ -112,8 +108,7 @@ class SQLiteRunRepository(RunRepositoryPort):
     def active(self) -> RunRecord | None:
         """Return the single ``running`` run, or None when none is in progress."""
         row = self._conn.execute(
-            "SELECT * FROM runs WHERE status = 'running' "
-            "ORDER BY started_at DESC LIMIT 1"
+            "SELECT * FROM runs WHERE status = 'running' ORDER BY started_at DESC LIMIT 1"
         ).fetchone()
         return self._row_to_run(row) if row is not None else None
 
@@ -135,8 +130,6 @@ class SQLiteRunRepository(RunRepositoryPort):
             error=row["error"],
             started_at=datetime.fromisoformat(row["started_at"]),
             finished_at=(
-                datetime.fromisoformat(row["finished_at"])
-                if row["finished_at"]
-                else None
+                datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None
             ),
         )

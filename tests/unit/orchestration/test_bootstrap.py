@@ -21,8 +21,10 @@ def test_load_profiles_exits_when_no_profiles_configured():
     """load_profiles() calls sys.exit(1) when the store is empty."""
     service = MagicMock()
     service.list_profiles.return_value = []
-    with patch("src.orchestration.bootstrap.build_settings_service", return_value=service), \
-         patch("builtins.print"):
+    with (
+        patch("src.orchestration.bootstrap.build_settings_service", return_value=service),
+        patch("builtins.print"),
+    ):
         with pytest.raises(SystemExit) as exc_info:
             load_profiles()
     assert exc_info.value.code == 1

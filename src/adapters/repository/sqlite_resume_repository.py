@@ -51,21 +51,16 @@ class SQLiteResumeRepository(ResumeRepositoryPort):
         self._conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
         self._conn.execute("PRAGMA foreign_keys=ON")
         apply_migrations(self._conn)
-        logger.info(
-            "Resume repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms
-        )
+        logger.info("Resume repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms)
 
     def get_active(self) -> Resume | None:
         """Return the currently active resume version, or None when none stored."""
-        row = self._conn.execute(
-            "SELECT * FROM resumes WHERE is_active = 1"
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM resumes WHERE is_active = 1").fetchone()
         return self._row_to_resume(row) if row is not None else None
 
     def save_version(self, resume: Resume) -> Resume:
         """Persist ``resume`` as the next version and make it the active one."""
         next_version = self._next_version()
-        now_iso = datetime.now().isoformat()
         uploaded_iso = (resume.uploaded_at or datetime.now()).isoformat()
 
         # Deactivate the current active row, then insert the new active version —
@@ -97,22 +92,16 @@ class SQLiteResumeRepository(ResumeRepositoryPort):
 
     def list_versions(self) -> list[Resume]:
         """Return every stored resume version, newest first."""
-        rows = self._conn.execute(
-            "SELECT * FROM resumes ORDER BY version DESC"
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM resumes ORDER BY version DESC").fetchall()
         return [self._row_to_resume(row) for row in rows]
 
     def activate(self, version: int) -> bool:
         """Make an existing stored version the active one (restore)."""
-        row = self._conn.execute(
-            "SELECT id FROM resumes WHERE version = ?", (version,)
-        ).fetchone()
+        row = self._conn.execute("SELECT id FROM resumes WHERE version = ?", (version,)).fetchone()
         if row is None:
             return False
         self._conn.execute("UPDATE resumes SET is_active = 0 WHERE is_active = 1")
-        self._conn.execute(
-            "UPDATE resumes SET is_active = 1 WHERE version = ?", (version,)
-        )
+        self._conn.execute("UPDATE resumes SET is_active = 1 WHERE version = ?", (version,))
         self._conn.commit()
         logger.info("Activated master resume v%d", version)
         return True

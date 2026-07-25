@@ -79,9 +79,7 @@ async def test_unknown_model_raises_model_not_found():
     adapter = ClaudeTailor(api_key="sk-test", model="claude-sonnet-9")
     adapter._client = MagicMock()
     adapter._client.messages.create = AsyncMock(
-        side_effect=anthropic.NotFoundError(
-            message="not found", response=MagicMock(), body=None
-        )
+        side_effect=anthropic.NotFoundError(message="not found", response=MagicMock(), body=None)
     )
 
     with pytest.raises(ModelNotFoundError, match="claude-sonnet-9"):

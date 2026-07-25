@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -62,14 +62,16 @@ def mock_playwright_context():
     page.goto = AsyncMock()
     page.wait_for_selector = AsyncMock()
     page.query_selector = AsyncMock(return_value=description_el)
-    page.query_selector_all = AsyncMock(return_value=[
-        make_mock_card(
-            title="Senior Python Developer",
-            company="Acme Corp",
-            location="Remote",
-            href="https://linkedin.com/jobs/123",
-        )
-    ])
+    page.query_selector_all = AsyncMock(
+        return_value=[
+            make_mock_card(
+                title="Senior Python Developer",
+                company="Acme Corp",
+                location="Remote",
+                href="https://linkedin.com/jobs/123",
+            )
+        ]
+    )
 
     browser = AsyncMock()
     browser.new_page = AsyncMock(return_value=page)
@@ -91,7 +93,9 @@ def mock_playwright_context():
 async def test_fetch_jobs_returns_list_of_job_models(mock_playwright_context):
     """Happy path — fetch_jobs returns validated Job Pydantic models."""
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             results = await scraper.fetch_jobs("Python Developer", "Remote")
 
@@ -108,13 +112,16 @@ async def test_fetch_jobs_parses_posted_at_from_time_element(mock_playwright_con
     playwright_instance = await mock_playwright_context.__aenter__()
     browser = await playwright_instance.chromium.launch()
     page = await browser.new_page()
-    page.query_selector_all = AsyncMock(return_value=[
-        make_mock_card("SE", "Acme", "Remote", "https://linkedin.com/1",
-                       posted="2026-07-15"),
-    ])
+    page.query_selector_all = AsyncMock(
+        return_value=[
+            make_mock_card("SE", "Acme", "Remote", "https://linkedin.com/1", posted="2026-07-15"),
+        ]
+    )
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             results = await scraper.fetch_jobs("Python Developer", "Remote")
 
@@ -125,7 +132,9 @@ async def test_fetch_jobs_parses_posted_at_from_time_element(mock_playwright_con
 async def test_fetch_jobs_leaves_salary_and_employment_none(mock_playwright_context):
     """LinkedIn never exposes salary/employment type — they stay None."""
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             results = await scraper.fetch_jobs("Python Developer", "Remote")
 
@@ -142,7 +151,9 @@ async def test_fetch_jobs_missing_time_element_yields_none_posted_at(mock_playwr
     """A card without a <time> element degrades posted_at to None, not an error."""
     # The default mock card carries no <time> (posted=None).
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             results = await scraper.fetch_jobs("Python Developer", "Remote")
 
@@ -176,7 +187,9 @@ async def test_fetch_jobs_returns_empty_list_when_no_cards_found(mock_playwright
     page.wait_for_selector = AsyncMock(side_effect=PlaywrightTimeoutError("no cards"))
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             results = await scraper.fetch_jobs("Python Developer", "Remote")
 
@@ -189,14 +202,18 @@ async def test_fetch_jobs_respects_limit(mock_playwright_context):
     playwright_instance = await mock_playwright_context.__aenter__()
     browser = await playwright_instance.chromium.launch()
     page = await browser.new_page()
-    page.query_selector_all = AsyncMock(return_value=[
-        make_mock_card("Job A", "Co A", "Remote", "https://linkedin.com/1"),
-        make_mock_card("Job B", "Co B", "Remote", "https://linkedin.com/2"),
-        make_mock_card("Job C", "Co C", "Remote", "https://linkedin.com/3"),
-    ])
+    page.query_selector_all = AsyncMock(
+        return_value=[
+            make_mock_card("Job A", "Co A", "Remote", "https://linkedin.com/1"),
+            make_mock_card("Job B", "Co B", "Remote", "https://linkedin.com/2"),
+            make_mock_card("Job C", "Co C", "Remote", "https://linkedin.com/3"),
+        ]
+    )
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             results = await scraper.fetch_jobs("Python Developer", "Remote", limit=2)
 
@@ -214,14 +231,18 @@ async def test_fetch_jobs_all_cards_parsed_despite_navigation(mock_playwright_co
     playwright_instance = await mock_playwright_context.__aenter__()
     browser = await playwright_instance.chromium.launch()
     page = await browser.new_page()
-    page.query_selector_all = AsyncMock(return_value=[
-        make_mock_card("Job A", "Co A", "NYC", "https://linkedin.com/1"),
-        make_mock_card("Job B", "Co B", "Remote", "https://linkedin.com/2"),
-        make_mock_card("Job C", "Co C", "Austin", "https://linkedin.com/3"),
-    ])
+    page.query_selector_all = AsyncMock(
+        return_value=[
+            make_mock_card("Job A", "Co A", "NYC", "https://linkedin.com/1"),
+            make_mock_card("Job B", "Co B", "Remote", "https://linkedin.com/2"),
+            make_mock_card("Job C", "Co C", "Austin", "https://linkedin.com/3"),
+        ]
+    )
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             results = await scraper.fetch_jobs("Python Developer", "Remote")
 
@@ -233,7 +254,9 @@ async def test_fetch_jobs_all_cards_parsed_despite_navigation(mock_playwright_co
 
 
 @pytest.mark.asyncio
-async def test_fetch_jobs_description_navigation_called_after_all_cards_parsed(mock_playwright_context):
+async def test_fetch_jobs_description_navigation_called_after_all_cards_parsed(
+    mock_playwright_context,
+):
     """Regression — page.goto for descriptions is only called after Pass 1 completes.
 
     Verifies that card.query_selector is never called after page.goto fires,
@@ -251,8 +274,6 @@ async def test_fetch_jobs_description_navigation_called_after_all_cards_parsed(m
 
     call_log: list[str] = []
 
-    original_goto = page.goto.side_effect
-
     async def tracked_goto(url, **kwargs):
         call_log.append(f"goto:{url}")
 
@@ -268,7 +289,9 @@ async def test_fetch_jobs_description_navigation_called_after_all_cards_parsed(m
         card.query_selector = tracked_qs
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs("Python Developer", "Remote")
 
@@ -293,6 +316,7 @@ async def test_fetch_jobs_description_navigation_called_after_all_cards_parsed(m
 # Work type filter — URL and logging
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_remote_filter_added_to_url(mock_playwright_context):
     """work_types=[REMOTE] → f_WT=2 is present in the navigated search URL."""
@@ -301,7 +325,9 @@ async def test_remote_filter_added_to_url(mock_playwright_context):
     page = await browser.new_page()
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs("SE", "Remote", work_types=[WorkType.REMOTE])
 
@@ -317,7 +343,9 @@ async def test_hybrid_filter_added_to_url(mock_playwright_context):
     page = await browser.new_page()
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs("SE", "New York", work_types=[WorkType.HYBRID])
 
@@ -333,7 +361,9 @@ async def test_onsite_filter_added_to_url(mock_playwright_context):
     page = await browser.new_page()
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs("SE", "Austin, TX", work_types=[WorkType.ONSITE])
 
@@ -349,7 +379,9 @@ async def test_multiple_work_types_in_url(mock_playwright_context):
     page = await browser.new_page()
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs(
                 "SE", "New York", work_types=[WorkType.REMOTE, WorkType.HYBRID]
@@ -368,7 +400,9 @@ async def test_no_work_type_filter_omits_f_wt(mock_playwright_context):
     page = await browser.new_page()
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs("SE", "Remote", work_types=None)
 
@@ -381,7 +415,9 @@ async def test_no_work_type_logs_no_filter_message(mock_playwright_context, capl
     """work_types=None → INFO log contains 'no work type filter'."""
     scraper = LinkedInScraper()
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.linkedin"):
-        with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch(
+            "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+        ):
             with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
                 await scraper.fetch_jobs("SE", "Remote", work_types=None)
 
@@ -393,7 +429,9 @@ async def test_remote_work_type_logs_filter_applied(mock_playwright_context, cap
     """work_types=[REMOTE] → INFO log contains 'remote'."""
     scraper = LinkedInScraper()
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.linkedin"):
-        with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch(
+            "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+        ):
             with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
                 await scraper.fetch_jobs("SE", "Remote", work_types=[WorkType.REMOTE])
 
@@ -404,6 +442,7 @@ async def test_remote_work_type_logs_filter_applied(mock_playwright_context, cap
 # Date posted filter — URL and logging
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_date_posted_filter_added_to_url(mock_playwright_context):
     """date_posted=DAYS3 → f_TPR=r259200 is present in the navigated search URL."""
@@ -412,7 +451,9 @@ async def test_date_posted_filter_added_to_url(mock_playwright_context):
     page = await browser.new_page()
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs("SE", "Remote", date_posted=DatePosted.DAYS3)
 
@@ -428,7 +469,9 @@ async def test_date_posted_week_added_to_url(mock_playwright_context):
     page = await browser.new_page()
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs("SE", "Remote", date_posted=DatePosted.WEEK)
 
@@ -444,7 +487,9 @@ async def test_no_date_posted_omits_f_tpr(mock_playwright_context):
     page = await browser.new_page()
 
     scraper = LinkedInScraper()
-    with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+    with patch(
+        "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+    ):
         with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
             await scraper.fetch_jobs("SE", "Remote", date_posted=None)
 
@@ -457,7 +502,9 @@ async def test_date_posted_logged_when_set(mock_playwright_context, caplog):
     """date_posted=DAYS3 → INFO log contains '3days'."""
     scraper = LinkedInScraper()
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.linkedin"):
-        with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch(
+            "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+        ):
             with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
                 await scraper.fetch_jobs("SE", "Remote", date_posted=DatePosted.DAYS3)
 
@@ -469,7 +516,9 @@ async def test_no_date_posted_logged_when_not_set(mock_playwright_context, caplo
     """date_posted=None → INFO log contains 'no date posted filter'."""
     scraper = LinkedInScraper()
     with caplog.at_level(logging.INFO, logger="src.adapters.scrapers.linkedin"):
-        with patch("src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context):
+        with patch(
+            "src.adapters.scrapers.linkedin.async_playwright", return_value=mock_playwright_context
+        ):
             with patch("src.adapters.scrapers.linkedin.asyncio.sleep", new_callable=AsyncMock):
                 await scraper.fetch_jobs("SE", "Remote", date_posted=None)
 

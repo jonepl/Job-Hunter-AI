@@ -40,6 +40,7 @@ def test_scraper_port_missing_implementation_raises_type_error():
 def test_scraper_port_fetch_jobs_signature_matches_contract():
     """Happy path — fetch_jobs accepts query, location, and optional limit."""
     import inspect
+
     sig = inspect.signature(ScraperPort.fetch_jobs)
     params = list(sig.parameters.keys())
     assert "query" in params

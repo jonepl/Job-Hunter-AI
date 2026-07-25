@@ -71,9 +71,7 @@ def build_generation_service() -> GenerationService:
         resume_service=build_resume_service(),
         job_repository=build_repository(),
         generations_dir=os.getenv("GENERATIONS_DIR", "data/generations"),
-        generation_timeout_seconds=float(
-            os.getenv("GENERATION_TIMEOUT_SECONDS", "120")
-        ),
+        generation_timeout_seconds=float(os.getenv("GENERATION_TIMEOUT_SECONDS", "120")),
     )
 
 
@@ -88,7 +86,7 @@ def build_run_service() -> RunService:
     Returns:
         A ready RunService.
     """
-    # Imported here (not at module top) to avoid a src.orchestration.scheduler ↔ src.orchestration.service_factory
+    # Imported here (not at module top) to avoid a scheduler ↔ service_factory
     # import cycle: run_scheduled_cycle imports build_service from this module lazily.
     from src.orchestration.scheduler import run_all_profiles
 

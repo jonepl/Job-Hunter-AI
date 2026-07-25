@@ -209,9 +209,7 @@ class SettingsService:
             if name in stored and stored[name]:
                 os.environ[env] = stored[name]
 
-    def next_run_times(
-        self, cron: str, timezone: str = "UTC", n: int = 3
-    ) -> list[datetime]:
+    def next_run_times(self, cron: str, timezone: str = "UTC", n: int = 3) -> list[datetime]:
         """Return the next ``n`` fire times for a cron expression (no live scheduler).
 
         Args:

@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from openai import APIError, NotFoundError
@@ -238,9 +238,7 @@ async def test_evaluate_returns_default_result_on_invalid_schema(sample_resume, 
     payload = {"score": 999, "matched_skills": [], "missing_skills": [], "summary": "bad score"}
 
     mock_client = AsyncMock()
-    mock_client.chat.completions.create = AsyncMock(
-        return_value=make_mock_openai_response(payload)
-    )
+    mock_client.chat.completions.create = AsyncMock(return_value=make_mock_openai_response(payload))
 
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
@@ -259,9 +257,7 @@ async def test_evaluate_returns_default_result_on_invalid_hire_recommendation(
     payload["hire_recommendation"] = "Maybe"
 
     mock_client = AsyncMock()
-    mock_client.chat.completions.create = AsyncMock(
-        return_value=make_mock_openai_response(payload)
-    )
+    mock_client.chat.completions.create = AsyncMock(return_value=make_mock_openai_response(payload))
 
     evaluator = OpenAIEvaluator(api_key="test-key")
     evaluator._client = mock_client
@@ -275,6 +271,7 @@ async def test_evaluate_returns_default_result_on_invalid_hire_recommendation(
 # ---------------------------------------------------------------------------
 # New tests — tuple return with token counts
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_evaluate_returns_tuple(sample_resume, sample_job):
@@ -301,7 +298,9 @@ async def test_evaluate_returns_token_counts(sample_resume, sample_job):
     """evaluate() extracts prompt_tokens and completion_tokens from response.usage."""
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(
-        return_value=make_mock_openai_response(_full_payload(), prompt_tokens=3000, completion_tokens=400)
+        return_value=make_mock_openai_response(
+            _full_payload(), prompt_tokens=3000, completion_tokens=400
+        )
     )
 
     evaluator = OpenAIEvaluator(api_key="test-key")

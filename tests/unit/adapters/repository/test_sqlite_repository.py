@@ -7,8 +7,6 @@ against a real SQLite connection rather than a mock.
 
 from datetime import datetime
 
-import pytest
-
 from src.adapters.repository.sqlite_repository import SQLiteJobRepository
 from src.core.domain.fingerprint import compute_fingerprint
 from src.core.domain.job import Job
@@ -44,6 +42,7 @@ def _job(
 
 def _match_result(job: Job, score: int = 82) -> MatchResult:
     """Return a MatchResult for the given job."""
+
     def _cat(mx: int) -> ScoreCategory:
         return ScoreCategory(max=mx, earned=mx, reasoning="ok")
 
@@ -86,6 +85,7 @@ def _save(repo: SQLiteJobRepository, job: Job, score: int = 82):
 # ---------------------------------------------------------------------------
 # Save + find
 # ---------------------------------------------------------------------------
+
 
 def test_save_then_find_by_fingerprint_reuses_evaluation():
     """A saved job is found by its fingerprint with its stored MatchResult."""
@@ -157,6 +157,7 @@ def test_absent_salary_and_posted_at_are_none():
 # list_jobs
 # ---------------------------------------------------------------------------
 
+
 def test_list_jobs_empty_returns_empty_list():
     """An empty store lists no jobs."""
     assert _repo().list_jobs() == []
@@ -226,6 +227,7 @@ def test_list_jobs_uses_single_grouped_sightings_read(monkeypatch):
 # Sightings / seen-on
 # ---------------------------------------------------------------------------
 
+
 def test_seen_on_aggregates_distinct_platforms():
     """Recording sightings on multiple platforms yields a sorted distinct set."""
     repo = _repo()
@@ -261,6 +263,7 @@ def test_record_sighting_updates_last_seen_at():
 # Near-misses
 # ---------------------------------------------------------------------------
 
+
 def test_find_near_misses_same_company_title_different_location():
     """A job sharing company + title but not location is a near-miss."""
     repo = _repo()
@@ -292,6 +295,7 @@ def test_find_near_misses_different_title_returns_nothing():
 # Dedup-disabled (null fingerprint)
 # ---------------------------------------------------------------------------
 
+
 def test_null_fingerprints_do_not_collide():
     """Two jobs whose fingerprint is empty both persist (dedup disabled)."""
     repo = _repo()
@@ -314,6 +318,7 @@ def test_null_fingerprints_do_not_collide():
 # Migrations
 # ---------------------------------------------------------------------------
 
+
 def test_migrations_are_idempotent_across_reopen(tmp_path):
     """Reopening an existing database re-applies nothing and still works."""
     db_path = str(tmp_path / "agent.db")
@@ -326,9 +331,7 @@ def test_migrations_are_idempotent_across_reopen(tmp_path):
     assert found is not None
     assert found.match_result.score == 82
 
-    versions = [
-        row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")
-    ]
+    versions = [row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")]
     assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     repo2.close()
 
@@ -337,13 +340,13 @@ def test_migrations_are_idempotent_across_reopen(tmp_path):
 # Lifecycle — status, history, saved (migration 2, ADR-025)
 # ---------------------------------------------------------------------------
 
+
 def _history(repo: SQLiteJobRepository, job_id: int) -> list[tuple]:
     """Return (from_status, to_status, note) history rows for a job, in order."""
     return [
         (r["from_status"], r["to_status"], r["note"])
         for r in repo._conn.execute(
-            "SELECT from_status, to_status, note FROM status_history "
-            "WHERE job_id = ? ORDER BY id",
+            "SELECT from_status, to_status, note FROM status_history WHERE job_id = ? ORDER BY id",
             (job_id,),
         ).fetchall()
     ]

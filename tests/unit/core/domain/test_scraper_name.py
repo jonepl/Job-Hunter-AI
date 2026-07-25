@@ -4,10 +4,10 @@ import pytest
 
 from src.core.domain.scraper_name import ScraperName
 
-
 # ---------------------------------------------------------------------------
 # from_string — happy path
 # ---------------------------------------------------------------------------
+
 
 def test_from_string_linkedin():
     """'linkedin' parses to ScraperName.LINKEDIN."""
@@ -55,6 +55,7 @@ def test_from_string_raises_on_invalid():
 # parse_list
 # ---------------------------------------------------------------------------
 
+
 def test_parse_list_single():
     """Single-item comma string parses to one ScraperName."""
     assert ScraperName.parse_list("linkedin") == [ScraperName.LINKEDIN]
@@ -85,6 +86,7 @@ def test_parse_list_raises_on_invalid_name():
 # ---------------------------------------------------------------------------
 # all
 # ---------------------------------------------------------------------------
+
 
 def test_all_returns_all_four():
     """ScraperName.all() returns all four ScraperName values."""

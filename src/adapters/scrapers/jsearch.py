@@ -97,7 +97,7 @@ class JSearchScraper(ScraperPort):
             "query": f"{query} in {location}",
             "page": "1",
             "num_pages": str(max_pages),
-            "country": "US"
+            "country": "US",
         }
 
         if work_types is None:
@@ -161,27 +161,27 @@ class JSearchScraper(ScraperPort):
                     raw_posted = item.get("job_posted_at_datetime_utc")
                     if raw_posted:
                         try:
-                            posted_at = datetime.fromisoformat(
-                                raw_posted.replace("Z", "+00:00")
-                            )
+                            posted_at = datetime.fromisoformat(raw_posted.replace("Z", "+00:00"))
                         except Exception:
                             posted_at = None
 
-                    jobs.append(Job(
-                        title=item.get("job_title", ""),
-                        company=item.get("employer_name", ""),
-                        location=location_text,
-                        url=item.get("job_apply_link", ""),
-                        description=item.get("job_description", ""),
-                        platform=self.platform,
-                        scraped_at=datetime.now(),
-                        salary_min=_as_int(item.get("job_min_salary")),
-                        salary_max=_as_int(item.get("job_max_salary")),
-                        salary_currency=item.get("job_salary_currency"),
-                        salary_period=item.get("job_salary_period"),
-                        employment_type=item.get("job_employment_type"),
-                        posted_at=posted_at,
-                    ))
+                    jobs.append(
+                        Job(
+                            title=item.get("job_title", ""),
+                            company=item.get("employer_name", ""),
+                            location=location_text,
+                            url=item.get("job_apply_link", ""),
+                            description=item.get("job_description", ""),
+                            platform=self.platform,
+                            scraped_at=datetime.now(),
+                            salary_min=_as_int(item.get("job_min_salary")),
+                            salary_max=_as_int(item.get("job_max_salary")),
+                            salary_currency=item.get("job_salary_currency"),
+                            salary_period=item.get("job_salary_period"),
+                            employment_type=item.get("job_employment_type"),
+                            posted_at=posted_at,
+                        )
+                    )
                 except Exception as exc:
                     logger.warning("%s — failed to parse job item: %s", self.platform, exc)
                     continue

@@ -101,7 +101,7 @@ def test_estimate_counts_from_skills_section_and_date_ranges():
     stored = service.ingest(b"%PDF-counts", "r.pdf")
 
     assert stored.skill_count == 4  # Python, FastAPI, SQL, Docker
-    assert stored.role_count == 2   # two date ranges
+    assert stored.role_count == 2  # two date ranges
 
 
 def test_get_active_and_list_and_activate_pass_through():

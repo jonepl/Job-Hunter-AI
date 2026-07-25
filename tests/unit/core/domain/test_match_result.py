@@ -40,6 +40,7 @@ def _make_score_breakdown() -> ScoreBreakdown:
 
 # --- ScoreCategory tests ---
 
+
 def test_score_category_valid_instantiation():
     """Happy path — ScoreCategory accepts valid max, earned, and reasoning."""
     cat = ScoreCategory(max=20, earned=15, reasoning="Good match.")
@@ -62,6 +63,7 @@ def test_score_category_wrong_type_raises_validation_error():
 
 # --- ScoreBreakdown tests ---
 
+
 def test_score_breakdown_valid_instantiation():
     """Happy path — ScoreBreakdown accepts all nine valid ScoreCategory fields."""
     bd = _make_score_breakdown()
@@ -80,6 +82,7 @@ def test_score_breakdown_missing_category_raises_validation_error():
 
 
 # --- MatchResult tests ---
+
 
 def test_match_result_valid_instantiation(valid_job: Job):
     """Happy path — MatchResult model accepts all valid required fields."""

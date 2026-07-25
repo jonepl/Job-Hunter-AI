@@ -25,8 +25,8 @@ into the scheduled ``JobSearchService``.
 
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 from uuid import uuid4
 
 from src.core.domain.cover_letter import CoverLetter
@@ -109,9 +109,7 @@ class GenerationService:
             "resume", job_id, result, write, self._tailor.provider, self._tailor.model
         )
 
-    async def generate_cover_letter(
-        self, job_id: int, voice: VoiceDescriptor
-    ) -> Generation:
+    async def generate_cover_letter(self, job_id: int, voice: VoiceDescriptor) -> Generation:
         """Generate a cover-letter ``.docx`` for the stored job ``job_id``.
 
         Args:
@@ -251,9 +249,7 @@ class GenerationService:
             generation.id,
             age,
         )
-        return self._generation_repo.update(
-            generation.model_copy(update={"status": "failed"})
-        )
+        return self._generation_repo.update(generation.model_copy(update={"status": "failed"}))
 
     def generations_for_job(self, job_id: int) -> list[Generation]:
         """Return every generation recorded for a job, newest first (W6 detail fan-out).
@@ -284,9 +280,7 @@ class GenerationService:
         doc = await self._cover_letter.generate(resume, job, voice)
         formatted, result = self._format_cover_letter(doc)
         if result.outcome == "needs_review":
-            doc = await self._cover_letter.generate(
-                resume, job, voice, feedback=_feedback(result)
-            )
+            doc = await self._cover_letter.generate(resume, job, voice, feedback=_feedback(result))
             formatted, result = self._format_cover_letter(doc)
         return lambda path: self._writer.write_cover_letter(formatted, path), result
 
@@ -294,9 +288,7 @@ class GenerationService:
         """Load the active resume and the stored job, or raise GenerationError."""
         resume = self._resume_service.get_active()
         if resume is None:
-            raise GenerationError(
-                "No master resume stored — run 'resume upload <path>' first."
-            )
+            raise GenerationError("No master resume stored — run 'resume upload <path>' first.")
         stored = self._job_repository.get_job(job_id)
         if stored is None:
             raise GenerationError(f"No stored job {job_id}.")
@@ -345,14 +337,10 @@ class GenerationService:
         for section in doc.sections:
             for index, bullet in enumerate(section.bullets, start=1):
                 segments.append(
-                    TextSegment(
-                        location=f"{section.heading} → bullet {index}", text=bullet
-                    )
+                    TextSegment(location=f"{section.heading} → bullet {index}", text=bullet)
                 )
         for index, skill in enumerate(doc.skills, start=1):
-            segments.append(
-                TextSegment(location=f"Skills → item {index}", text=skill)
-            )
+            segments.append(TextSegment(location=f"Skills → item {index}", text=skill))
 
         result = format_segments(segments)
         texts = iter(seg.text for seg in result.segments)
@@ -376,9 +364,7 @@ class GenerationService:
         """Format a cover letter's text and rebuild it from the result."""
         segments = [TextSegment(location="Salutation", text=doc.salutation)]
         for index, paragraph in enumerate(doc.paragraphs, start=1):
-            segments.append(
-                TextSegment(location=f"Paragraph {index}", text=paragraph)
-            )
+            segments.append(TextSegment(location=f"Paragraph {index}", text=paragraph))
         segments.append(TextSegment(location="Closing", text=doc.closing))
 
         result = format_segments(segments)
@@ -387,9 +373,7 @@ class GenerationService:
         salutation = next(texts)
         paragraphs = [next(texts) for _ in doc.paragraphs]
         closing = next(texts)
-        rebuilt = CoverLetter(
-            salutation=salutation, paragraphs=paragraphs, closing=closing
-        )
+        rebuilt = CoverLetter(salutation=salutation, paragraphs=paragraphs, closing=closing)
         return rebuilt, result
 
 

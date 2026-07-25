@@ -55,9 +55,7 @@ class ResumeService:
         self._parser = parser
         self._repository = repository
         if max_size_bytes is None:
-            max_size_bytes = int(
-                os.getenv("RESUME_MAX_SIZE_BYTES", str(_DEFAULT_MAX_SIZE_BYTES))
-            )
+            max_size_bytes = int(os.getenv("RESUME_MAX_SIZE_BYTES", str(_DEFAULT_MAX_SIZE_BYTES)))
         self._max_size_bytes = max_size_bytes
 
     def ingest(self, data: bytes, filename: str) -> Resume:

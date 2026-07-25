@@ -70,28 +70,22 @@ class SearchProfile(BaseModel):
 
         query = os.getenv(f"{prefix}QUERY")
         if not query:
-            raise ValueError(
-                f"PROFILE_{n}_QUERY is required but not set in .env"
-            )
+            raise ValueError(f"PROFILE_{n}_QUERY is required but not set in .env")
 
         work_type_raw = os.getenv(f"{prefix}WORK_TYPE")
         work_types = (
             [WorkType(w.strip().lower()) for w in work_type_raw.split(",")]
-            if work_type_raw else None
+            if work_type_raw
+            else None
         )
 
         date_posted_raw = os.getenv(f"{prefix}DATE_POSTED", "3days")
         date_posted = DatePosted.from_string(date_posted_raw)
 
-        scrapers_raw = os.getenv(
-            f"{prefix}SCRAPERS",
-            "linkedin,indeed,glassdoor,ziprecruiter"
-        )
+        scrapers_raw = os.getenv(f"{prefix}SCRAPERS", "linkedin,indeed,glassdoor,ziprecruiter")
         active_scrapers = ScraperName.parse_list(scrapers_raw)
 
-        score_threshold = int(
-            os.getenv(f"{prefix}SCORE_THRESHOLD", "75")
-        )
+        score_threshold = int(os.getenv(f"{prefix}SCORE_THRESHOLD", "75"))
 
         top_results_raw = os.getenv(f"{prefix}TOP_RESULTS")
         top_results = int(top_results_raw) if top_results_raw else None
@@ -146,16 +140,14 @@ class SearchProfile(BaseModel):
         work_type_raw = os.getenv("WORK_TYPE")
         work_types = (
             [WorkType(w.strip().lower()) for w in work_type_raw.split(",")]
-            if work_type_raw else None
+            if work_type_raw
+            else None
         )
 
         date_posted_raw = os.getenv("DATE_POSTED", "3days")
         date_posted = DatePosted.from_string(date_posted_raw)
 
-        scrapers_raw = os.getenv(
-            "ACTIVE_SCRAPERS",
-            "linkedin,indeed,glassdoor,ziprecruiter"
-        )
+        scrapers_raw = os.getenv("ACTIVE_SCRAPERS", "linkedin,indeed,glassdoor,ziprecruiter")
         active_scrapers = ScraperName.parse_list(scrapers_raw)
 
         score_threshold = int(os.getenv("SCORE_THRESHOLD", "75"))
@@ -168,17 +160,17 @@ class SearchProfile(BaseModel):
             if work_types and work_types == [WorkType.REMOTE]:
                 location_raw = "United States"
             else:
-                raise ValueError(
-                    "SEARCH_LOCATION is required when WORK_TYPE is not remote"
-                )
+                raise ValueError("SEARCH_LOCATION is required when WORK_TYPE is not remote")
 
-        return [SearchProfile(
-            profile_id=1,
-            query=query,
-            location=location_raw,
-            work_types=work_types,
-            date_posted=date_posted,
-            active_scrapers=active_scrapers,
-            score_threshold=score_threshold,
-            top_results=top_results,
-        )]
+        return [
+            SearchProfile(
+                profile_id=1,
+                query=query,
+                location=location_raw,
+                work_types=work_types,
+                date_posted=date_posted,
+                active_scrapers=active_scrapers,
+                score_threshold=score_threshold,
+                top_results=top_results,
+            )
+        ]
