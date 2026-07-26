@@ -65,6 +65,19 @@ export function useTriggerRun() {
 }
 
 /**
+ * Start a background run for a single profile (the per-profile "Run now"). Shares the
+ * single-flight guard with the global run, and refreshes the recent-runs list on
+ * success so the rail/feed pick the new run up (per-profile-scheduling §D).
+ */
+export function useRunProfile() {
+  const qc = useQueryClient();
+  return useMutation<RunOut, Error, number>({
+    mutationFn: (profileId) => api.startRun(profileId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: runsQueryKey }),
+  });
+}
+
+/**
  * Poll one run while it is running. The interval stops (returns false) the moment
  * the status is terminal; a successful run invalidates the job list so the newly
  * evaluated jobs appear without a manual refresh.

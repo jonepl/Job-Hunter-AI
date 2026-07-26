@@ -102,8 +102,6 @@ describe("<ProviderSettings>", () => {
         envDefaults: {
           evaluatorProvider: "anthropic",
           evaluatorModel: null,
-          scheduleCron: "0 8 * * 1-5",
-          scheduleTimezone: "UTC",
           enrichmentMode: "shadow",
           voice: { tone: "direct", person: "first_person", styleNotes: "" },
         },

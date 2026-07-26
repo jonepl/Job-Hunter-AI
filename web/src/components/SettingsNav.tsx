@@ -13,7 +13,6 @@ import { useSettings } from "../hooks/useSettings";
 
 const SECTIONS = [
   { id: "voice", label: "Voice & tone" },
-  { id: "schedule", label: "Run schedule" },
   { id: "profiles", label: "Search profiles" },
   { id: "provider", label: "Evaluator provider" },
   { id: "resume", label: "Master resume" },
@@ -47,7 +46,6 @@ export function SettingsNav({ active, onSelect }: Props) {
 
   const values: Record<SectionId, string> = {
     voice: settings ? capitalize(settings.voice.tone) : "",
-    schedule: settings?.scheduleCron ?? "",
     profiles: profiles ? String(profiles.length) : "",
     provider: settings ? (settings.evaluatorProvider === "anthropic" ? "Anthropic" : "OpenAI") : "",
     resume: resume?.active ? `v${resume.active.version}` : "",

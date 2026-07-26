@@ -1,16 +1,15 @@
 import type { ProfileIn, ProfileOut, SettingsOut, SettingsUpdate } from "../api/client";
 
 // PUT /api/settings replaces every global field, so a panel that edits one field
-// (voice, provider, schedule) must send the full current settings with its change.
-// This drops the read-only parts (envDefaults, secrets) to the writable shape.
+// (voice, provider) must send the full current settings with its change. This drops
+// the read-only parts (envDefaults, secrets) to the writable shape. Scheduling is
+// per-profile now (per-profile-scheduling) — it is not a global setting.
 
 /** Map the settings read model to the writable update shape. */
 export function settingsToUpdate(s: SettingsOut): SettingsUpdate {
   return {
     evaluatorProvider: s.evaluatorProvider as SettingsUpdate["evaluatorProvider"],
     evaluatorModel: s.evaluatorModel,
-    scheduleCron: s.scheduleCron,
-    scheduleTimezone: s.scheduleTimezone,
     enrichmentMode: s.enrichmentMode as SettingsUpdate["enrichmentMode"],
     voice: s.voice,
   };
@@ -39,5 +38,9 @@ export function profileToInput(p: ProfileOut): ProfileIn {
     topResults: p.topResults,
     // Carry `enabled` through so an edit never silently resumes a paused profile.
     enabled: p.enabled,
+    // Carry the per-profile schedule through so a non-schedule edit never wipes it.
+    scheduleCron: p.scheduleCron,
+    scheduleTimezone: p.scheduleTimezone,
+    scheduleEnabled: p.scheduleEnabled,
   };
 }

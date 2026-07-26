@@ -1,13 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
-import type { ProfileIn, ProfileOut } from "../../api/client";
+import { api, type ProfileIn, type ProfileOut, type SchedulePreview } from "../../api/client";
 import {
   useCreateProfile,
   useDeleteProfile,
   useProfiles,
   useUpdateProfile,
 } from "../../hooks/useProfiles";
+import { useRunProfile } from "../../hooks/useRuns";
 import { useSettings } from "../../hooks/useSettings";
+import {
+  DAY_LABELS,
+  cronToSchedule,
+  defaultSchedule,
+  describeSchedule,
+  scheduleToCron,
+  type Frequency,
+  type ScheduleModel,
+} from "../../lib/cron";
 import { profileToInput } from "../../lib/settings";
 import {
   Field,
@@ -66,6 +77,13 @@ function lastRunText(p: ProfileOut): string {
   return "never run";
 }
 
+/** The per-profile schedule status line ("Scheduled — Weekdays at 08:00" / "Not scheduled"). */
+function scheduleText(p: ProfileOut): string {
+  if (!p.scheduleEnabled || !p.scheduleCron) return "Not scheduled";
+  const model = cronToSchedule(p.scheduleCron);
+  return model ? `Scheduled — ${describeSchedule(model)}` : `Scheduled — ${p.scheduleCron}`;
+}
+
 function blankDraft(): ProfileIn {
   return {
     name: "",
@@ -77,6 +95,9 @@ function blankDraft(): ProfileIn {
     scoreThreshold: 75,
     topResults: null,
     enabled: true,
+    scheduleCron: "",
+    scheduleTimezone: "UTC",
+    scheduleEnabled: false,
   };
 }
 
@@ -85,6 +106,7 @@ export function ProfileSettings() {
   const create = useCreateProfile();
   const update = useUpdateProfile();
   const remove = useDeleteProfile();
+  const runProfile = useRunProfile();
   const [draft, setDraft] = useState<ProfileIn | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,16 +195,26 @@ export function ProfileSettings() {
                 <p className="mt-0.5 truncate font-mono text-caption text-text-3">{p.query}</p>
               </div>
 
-              {/* Meta — platforms + last run. */}
+              {/* Meta — platforms, schedule, last run. */}
               <div className="flex flex-col items-end gap-[3px] text-right">
                 <span className="text-small text-text-2">
                   {platformLine(p.activeScrapers)}
                 </span>
+                <span className="font-mono text-label text-text-3">{scheduleText(p)}</span>
                 <span className="font-mono text-label text-text-3">{lastRunText(p)}</span>
               </div>
 
-              {/* Actions — edit, pause/resume, delete. */}
+              {/* Actions — run now, edit, pause/resume, delete. */}
               <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => runProfile.mutate(p.id)}
+                  disabled={!p.enabled || runProfile.isPending}
+                  className={secondaryClass + " disabled:opacity-40"}
+                  aria-label={`Run ${name} now`}
+                >
+                  Run now
+                </button>
                 <button type="button" onClick={() => startEdit(p)} className={secondaryClass}>
                   Edit
                 </button>
@@ -333,6 +365,13 @@ function ProfileEditor({
         />
       </Field>
 
+      <ScheduleField
+        enabled={draft.scheduleEnabled}
+        cron={draft.scheduleCron}
+        timezone={draft.scheduleTimezone}
+        onChange={(patch) => set(patch)}
+      />
+
       {error && (
         <p className="text-small text-danger" role="alert">
           {error}
@@ -347,6 +386,222 @@ function ProfileEditor({
           Cancel
         </button>
       </div>
+    </section>
+  );
+}
+
+/** Debounce a value so the schedule preview query doesn't fire on every keystroke. */
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return debounced;
+}
+
+const FREQUENCIES: { value: Frequency; label: string }[] = [
+  { value: "daily", label: "Every day" },
+  { value: "weekdays", label: "Weekdays (Mon–Fri)" },
+  { value: "weekly", label: "Specific days" },
+];
+
+/** The IANA timezone list, falling back to a small set where Intl lacks the API (jsdom). */
+function timezoneOptions(current: string): string[] {
+  const intl = Intl as unknown as { supportedValuesOf?: (k: string) => string[] };
+  const zones =
+    typeof intl.supportedValuesOf === "function"
+      ? intl.supportedValuesOf("timeZone")
+      : ["UTC", "America/New_York", "America/Los_Angeles", "Europe/London"];
+  return zones.includes(current) ? zones : [current, ...zones];
+}
+
+/** The browser's detected timezone, or "UTC" when unavailable. */
+function browserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+// Per-profile schedule builder (per-profile-scheduling §D). Cron stays the stored
+// source of truth; the intuitive controls (frequency + time + days) generate and parse
+// it, with an Advanced (raw cron) escape hatch for expressions the builder can't model.
+// A live "Next 3 runs" preview is computed server-side from the generated cron.
+function ScheduleField({
+  enabled,
+  cron,
+  timezone,
+  onChange,
+}: {
+  enabled: boolean;
+  cron: string;
+  timezone: string;
+  onChange: (patch: Partial<ProfileIn>) => void;
+}) {
+  // A cron the builder can't represent forces raw mode; empty cron starts in builder mode.
+  const parsed = cronToSchedule(cron);
+  const [advanced, setAdvanced] = useState(cron !== "" && parsed === null);
+  const [model, setModel] = useState<ScheduleModel>(parsed ?? defaultSchedule());
+
+  const tzValue = timezone || "UTC";
+  const debouncedCron = useDebounced(cron, 400);
+  const preview = useQuery<SchedulePreview>({
+    queryKey: ["profile-schedule-preview", debouncedCron, tzValue],
+    queryFn: () => api.getSchedulePreview(debouncedCron, tzValue),
+    enabled: enabled && debouncedCron.trim() !== "",
+    retry: false,
+  });
+
+  function enableSchedule(on: boolean) {
+    if (on && cron.trim() === "") {
+      const seeded = defaultSchedule();
+      setModel(seeded);
+      onChange({
+        scheduleEnabled: true,
+        scheduleCron: scheduleToCron(seeded),
+        scheduleTimezone: timezone && timezone !== "UTC" ? timezone : browserTimezone(),
+      });
+    } else {
+      onChange({ scheduleEnabled: on });
+    }
+  }
+
+  function updateModel(next: ScheduleModel) {
+    setModel(next);
+    onChange({ scheduleCron: scheduleToCron(next) });
+  }
+
+  function toggleDay(day: number) {
+    const days = model.daysOfWeek.includes(day)
+      ? model.daysOfWeek.filter((d) => d !== day)
+      : [...model.daysOfWeek, day];
+    updateModel({ ...model, daysOfWeek: days });
+  }
+
+  return (
+    <section className="space-y-4 rounded-card border border-border p-4" data-testid="schedule-field">
+      <label className="flex items-center gap-2 text-control font-semibold text-text">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => enableSchedule(e.target.checked)}
+          className="accent-accent"
+        />
+        Run on a schedule
+      </label>
+
+      {enabled && (
+        <div className="space-y-4">
+          {!advanced ? (
+            <>
+              <Field label="Frequency" htmlFor="p-sched-freq">
+                <select
+                  id="p-sched-freq"
+                  value={model.frequency}
+                  onChange={(e) => updateModel({ ...model, frequency: e.target.value as Frequency })}
+                  className={selectClass}
+                >
+                  {FREQUENCIES.map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {model.frequency === "weekly" && (
+                <fieldset>
+                  <legend className="text-label font-semibold text-text">Days</legend>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {DAY_LABELS.map((label, day) => (
+                      <label key={label} className="flex items-center gap-2 text-small text-text-2">
+                        <input
+                          type="checkbox"
+                          checked={model.daysOfWeek.includes(day)}
+                          onChange={() => toggleDay(day)}
+                          className="accent-accent"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+
+              <Field label="Time of day" htmlFor="p-sched-time">
+                <input
+                  id="p-sched-time"
+                  type="time"
+                  value={model.time}
+                  onChange={(e) => updateModel({ ...model, time: e.target.value })}
+                  className={inputClass + " font-mono"}
+                />
+              </Field>
+            </>
+          ) : (
+            <Field label="Cron expression" htmlFor="p-sched-cron" hint="Five fields, e.g. 0 8 * * 1-5">
+              <input
+                id="p-sched-cron"
+                value={cron}
+                onChange={(e) => onChange({ scheduleCron: e.target.value })}
+                placeholder="0 8 * * 1-5"
+                className={inputClass + " font-mono"}
+              />
+            </Field>
+          )}
+
+          <Field label="Timezone" htmlFor="p-sched-tz">
+            <select
+              id="p-sched-tz"
+              value={tzValue}
+              onChange={(e) => onChange({ scheduleTimezone: e.target.value })}
+              className={selectClass + " font-mono"}
+            >
+              {timezoneOptions(tzValue).map((z) => (
+                <option key={z} value={z}>
+                  {z}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {/* Generated cron — the stored value, always visible so the mapping is legible. */}
+          <p className="font-mono text-label text-text-3" data-testid="generated-cron">
+            Generated cron: <span className="text-text-2">{cron || "—"}</span>
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setAdvanced((a) => !a)}
+            className={ghostClass}
+          >
+            {advanced ? "Use the schedule builder" : "Advanced (raw cron)"}
+          </button>
+
+          {/* Live next-runs preview computed server-side (no live scheduler touched). */}
+          <div data-testid="schedule-field-preview">
+            {debouncedCron.trim() === "" ? (
+              <p className="text-small text-text-3">Set a schedule to preview.</p>
+            ) : preview.isError ? (
+              <p className="text-small text-danger" role="alert">
+                Invalid schedule.
+              </p>
+            ) : preview.data ? (
+              <ul className="space-y-1">
+                {preview.data.nextRuns.map((iso) => (
+                  <li key={iso} className="font-mono text-small text-text-2">
+                    {new Date(iso).toLocaleString()}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-small text-text-3">Computing…</p>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

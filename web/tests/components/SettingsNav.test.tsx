@@ -25,7 +25,6 @@ const mockedResume = api.getResume as jest.MockedFunction<typeof api.getResume>;
 
 const LABELS = [
   "Voice & tone",
-  "Run schedule",
   "Search profiles",
   "Evaluator provider",
   "Master resume",
@@ -33,9 +32,7 @@ const LABELS = [
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedSettings.mockResolvedValue(
-    makeSettings({ evaluatorProvider: "anthropic", scheduleCron: "0 8 * * 1-5" }),
-  );
+  mockedSettings.mockResolvedValue(makeSettings({ evaluatorProvider: "anthropic" }));
   mockedProfiles.mockResolvedValue([
     makeProfile({ id: 1, scoreThreshold: 75 }),
     makeProfile({ id: 2, name: "Platform" }),
@@ -54,10 +51,9 @@ describe("<SettingsNav>", () => {
   it("shows the live value for each section", async () => {
     renderWithClient(<SettingsNav active="voice" onSelect={jest.fn()} />);
 
-    // Tone (capitalized), the raw cron, the profile count, the provider label,
-    // and the active resume version.
+    // Tone (capitalized), the profile count, the provider label, and the active
+    // resume version. (Scheduling is per-profile now — no global schedule rail item.)
     await waitFor(() => expect(screen.getByText("Direct")).toBeInTheDocument());
-    expect(screen.getByText("0 8 * * 1-5")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("Anthropic")).toBeInTheDocument();
     expect(screen.getByText("v7")).toBeInTheDocument();
@@ -72,9 +68,9 @@ describe("<SettingsNav>", () => {
   });
 
   it("marks the active section and gives it the inset accent bar", () => {
-    renderWithClient(<SettingsNav active="schedule" onSelect={jest.fn()} />);
+    renderWithClient(<SettingsNav active="profiles" onSelect={jest.fn()} />);
 
-    const activeItem = screen.getByRole("button", { name: "Run schedule" });
+    const activeItem = screen.getByRole("button", { name: "Search profiles" });
     expect(activeItem).toHaveAttribute("aria-current", "page");
     expect(activeItem.className).toContain("shadow-[inset_2px_0_0_var(--accent)]");
 

@@ -116,7 +116,11 @@ export const api = {
     request<ProfileOut>(`/api/profiles/${id}`, { method: "PUT", body }),
   deleteProfile: (id: number) =>
     request<void>(`/api/profiles/${id}`, { method: "DELETE" }),
-  startRun: () => request<RunOut>("/api/runs", { method: "POST" }),
+  startRun: (profileId?: number) =>
+    request<RunOut>(
+      profileId === undefined ? "/api/runs" : `/api/runs?profile=${profileId}`,
+      { method: "POST" },
+    ),
   getRun: (id: string) => request<RunOut>(`/api/runs/${id}`),
   listRuns: () => request<RunOut[]>("/api/runs"),
 };
