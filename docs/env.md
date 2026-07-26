@@ -8,8 +8,9 @@ Never commit .env to Git. Copy .env.example to .env and replace
 all placeholder values with real credentials before running.
 
 **`.env` seeds the database, then the DB wins (W7, ADR-031).** On first run the
-operational settings (evaluator provider/model, cron, timezone, `ENRICHMENT_MODE`,
-voice) and the search profiles (`PROFILE_N_*` / legacy `SEARCH_QUERY`) are copied into
+operational settings (evaluator provider/model, `ENRICHMENT_MODE`, voice) and the
+search profiles (`PROFILE_N_*` / legacy `SEARCH_QUERY`, including each profile's
+schedule) are copied into
 the SQLite `settings` + `search_profiles` tables and are **authoritative thereafter** —
 edit them in the browser Settings screen, not `.env`. Editing `.env` after the first
 run no longer changes those values (the web UI shows a "differs from .env" indicator
@@ -119,28 +120,25 @@ Host and port are passed to uvicorn on the command line, not via env.
 
 ## Scheduler Settings
 
+Scheduling is **per-profile** (per-profile-scheduling feature, ADR-040). Each search
+profile owns its own `schedule_cron` / `schedule_timezone` / `schedule_enabled`, edited
+in the browser Settings screen — not `.env`. The web server always owns a
+`BackgroundScheduler` and registers one job per scheduled profile; there is **no global
+enable gate**.
+
+**Removed from the web path:** `SCHEDULE_ENABLED`, `SCHEDULE_CRON`, and
+`SCHEDULE_TIMEZONE` no longer configure the web scheduler. `SCHEDULE_ENABLED` is still
+read **only** by the CLI's transitional warning (`python -m src.main` runs once and
+exits regardless — ADR-039). Orphaned `SCHEDULE_CRON` / `SCHEDULE_TIMEZONE` values in an
+upgraded DB or `.env` are harmless and ignored.
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| SCHEDULE_ENABLED | No | `false` | Set to `true` to enable APScheduler mode. App runs indefinitely on SCHEDULE_CRON schedule. Set to `false` for immediate run mode. |
-| SCHEDULE_CRON | Only when SCHEDULE_ENABLED=true | `0 8 * * 1-5` | Cron expression for schedule. Default runs weekdays at 8am. Standard cron format: `minute hour day month weekday`. |
-| SCHEDULE_TIMEZONE | No | `America/New_York` | Timezone for scheduler. Uses IANA timezone names. |
+| SCHEDULER_MISFIRE_GRACE_SECONDS | No | `3600` | Grace window (seconds) for a per-profile fire delayed while the single worker is busy. Generous by design: APScheduler's 1s default would *silently skip* an overlapping fire (`coalesce` collapses a backlog into one). The single-flight guard makes double-*runs* impossible regardless; this only prevents silent *skips*. |
 
-### SCHEDULE_CRON Examples
-
-| Expression | Meaning |
-|---|---|
-| `0 8 * * 1-5` | Weekdays at 8am |
-| `0 */6 * * *` | Every 6 hours |
-| `0 9,17 * * *` | 9am and 5pm daily |
-
-### SCHEDULE_TIMEZONE Examples
-
-```
-America/New_York
-America/Chicago
-America/Los_Angeles
-America/Denver
-```
+Existing profiles come up **unscheduled** after upgrade (no-seed) — turn each on in the
+UI. A deployment that previously web-scheduled via `SCHEDULE_ENABLED=true` will run
+nothing scheduled until its profiles are enabled individually.
 
 ---
 
@@ -211,9 +209,9 @@ Copy this file to .env and replace all placeholder values:
 
 ```
 # ── Scheduler ─────────────────────────────────────────────────────────────────
-SCHEDULE_ENABLED=false
-SCHEDULE_CRON=0 8 * * 1-5
-SCHEDULE_TIMEZONE=America/New_York
+# Scheduling is per-profile now (set each profile's schedule in the UI). Only the
+# misfire grace window is a global .env knob.
+SCHEDULER_MISFIRE_GRACE_SECONDS=3600
 
 # ── Search Profiles ───────────────────────────────────────────────────────────
 PROFILE_COUNT=2
