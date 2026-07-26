@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useCreateProfile } from "../hooks/useProfiles";
-import { useSettings } from "../hooks/useSettings";
 import { platformName } from "../lib/platforms";
 
 // New-profile modal (redesign Part G). Posts to POST /api/profiles via
@@ -21,7 +20,6 @@ interface Props {
 
 export function NewProfileModal({ onClose }: Props) {
   const create = useCreateProfile();
-  const { data: settings } = useSettings();
 
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
@@ -85,12 +83,16 @@ export function NewProfileModal({ onClose }: Props) {
         query: query.trim(),
         location: location.trim() || null,
         activeScrapers: platforms,
-        // Fields the modal doesn't expose — send the schema defaults.
+        // Fields the modal doesn't expose — send the schema defaults. New profiles start
+        // unscheduled; scheduling is set later in the profile editor (per-profile-scheduling).
         workTypes: null,
         datePosted: "3days",
         scoreThreshold: DEFAULT_THRESHOLD,
         topResults: null,
         enabled: true,
+        scheduleCron: "",
+        scheduleTimezone: "UTC",
+        scheduleEnabled: false,
       },
       { onSuccess: () => onClose() }, // never close on failure
     );
@@ -174,14 +176,8 @@ export function NewProfileModal({ onClose }: Props) {
         )}
 
         <p className="mt-5 text-caption text-text-3">
-          Runs on the global schedule
-          {settings?.scheduleCron ? (
-            <>
-              {" "}
-              (<span className="font-mono">{settings.scheduleCron}</span>)
-            </>
-          ) : null}{" "}
-          · threshold <span className="font-mono">{DEFAULT_THRESHOLD}</span>
+          Starts unscheduled — add a schedule later in the profile editor · threshold{" "}
+          <span className="font-mono">{DEFAULT_THRESHOLD}</span>
         </p>
 
         <div className="mt-4 flex justify-end gap-3">

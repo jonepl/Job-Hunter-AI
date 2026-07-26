@@ -1,23 +1,37 @@
-"""Scheduler — APScheduler-based in-process job scheduler for multi-profile runs."""
+"""Scheduler — APScheduler-based in-process per-profile job scheduler.
+
+Each ``SearchProfile`` owns its own schedule; the ``SchedulerManager`` keeps **one
+APScheduler job per scheduled profile** (``profile-run-{id}``), each firing a single-
+profile run on its own cron through the shared, guarded ``RunService`` lifecycle the
+manual runs use (per-profile-scheduling feature). The scheduler runs in the same
+process as uvicorn (ADR-032), so a profile edit reschedules it by a direct method call.
+"""
 
 import asyncio
 import logging
 import os
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import pytz
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.core.domain.run_report import RunReport
 from src.core.domain.search_profile import SearchProfile
-from src.core.exceptions import ModelNotFoundError
+from src.core.exceptions import ModelNotFoundError, NoProfilesError, RunInProgressError
 from src.core.services.settings_service import SettingsService
 from src.infra.cost_estimator import estimate_run_cost
 from src.infra.cost_tracker import CostTracker
 from src.infra.pricing import rates_for, show_cost_estimate
 
+if TYPE_CHECKING:
+    from src.core.services.run_service import RunService
+
 logger = logging.getLogger(__name__)
+
+_DEFAULT_MISFIRE_GRACE_SECONDS = 3600
 
 
 def _record_last_run(
@@ -149,87 +163,170 @@ async def run_all_profiles(
     return reports
 
 
-async def run_scheduled_cycle(service_factory: callable = None) -> None:
-    """Run one scheduled cycle: refresh config + profiles from the DB, then run all.
+def _misfire_grace_seconds() -> int:
+    """Read the (generous) misfire grace period from ``.env``.
 
-    Settings and profiles are re-read from the store on **every** fire (ADR-031), so a
-    cron edit, a provider/model change, or profile CRUD from the web Settings screen
-    takes effect on the next trigger without a restart. The env bridge (ADR-035) pushes
-    the current DB settings into ``os.environ`` so the evaluator, enrichment, and cost
-    factories read the live configuration unchanged.
-
-    Args:
-        service_factory: Callable that builds a JobSearchService per profile. Defaults
-            to ``service_factory.build_service`` (imported lazily to avoid a cycle).
+    APScheduler's default is **1 s**: if the scheduler loop is briefly delayed while
+    the single worker is busy on a long run, an overlapping fire would be *silently
+    skipped*. A generous window (default 1 hour) keeps ``coalesce`` collapsing a
+    backlog into one fire instead of dropping it (per-profile-scheduling residual risks).
     """
-    from src.orchestration.service_factory import build_service, build_settings_service
+    try:
+        return int(
+            os.getenv("SCHEDULER_MISFIRE_GRACE_SECONDS", str(_DEFAULT_MISFIRE_GRACE_SECONDS))
+        )
+    except ValueError:
+        return _DEFAULT_MISFIRE_GRACE_SECONDS
 
-    settings_service = build_settings_service()
-    settings_service.apply_to_environment()
-    profiles = settings_service.list_profiles()
-    if not profiles:
-        logger.warning("Scheduled cycle skipped — no search profiles configured")
-        return
-    await run_all_profiles(profiles, service_factory or build_service, settings_service)
+
+def _job_id(profile_id: int) -> str:
+    """The APScheduler job id for a profile's schedule."""
+    return f"{SchedulerManager._JOB_PREFIX}{profile_id}"
+
+
+def _profile_id_from_job_id(job_id: str) -> int | None:
+    """Parse a profile id back out of a ``profile-run-{id}`` job id, or None."""
+    if not job_id.startswith(SchedulerManager._JOB_PREFIX):
+        return None
+    try:
+        return int(job_id[len(SchedulerManager._JOB_PREFIX) :])
+    except ValueError:
+        return None
 
 
 class SchedulerManager:
-    """The in-process ``BackgroundScheduler`` the web server owns and reschedules live.
+    """The in-process ``BackgroundScheduler`` the web server owns, one job per profile.
 
     ADR-032: uvicorn runs in the foreground and the scheduler runs in the **same
-    process** as a ``BackgroundScheduler``, so a cron edit in the Settings screen
-    reschedules the run job by a direct method call — no cross-process signalling,
-    DB polling, or container restart. This is the **only** scheduler; the CLI
+    process** as a ``BackgroundScheduler``, so a profile edit in the Settings screen
+    reconciles the jobs by a direct :meth:`sync` call — no cross-process signalling, DB
+    polling, or container restart. This is the **only** scheduler; the CLI
     (``python -m src.main``) has no scheduled mode and always runs once and exits.
+
+    **Sequential-run guarantee (two layers).** The ``BackgroundScheduler`` uses a
+    single-worker ``ThreadPoolExecutor`` so two profiles scheduled at the same instant
+    queue and serialize rather than flooding the scrapers/LLM concurrently. The shared
+    ``RunService`` single-flight guard is the second layer — it also covers scheduled-
+    vs-manual, since a manual run executes on uvicorn's loop, not the scheduler's
+    executor (per-profile-scheduling §Key constraint).
     """
 
-    _JOB_ID = "scheduled-run"
+    _JOB_PREFIX = "profile-run-"
 
-    def __init__(self) -> None:
-        """Create an unstarted manager; call :meth:`start` to register the job."""
+    def __init__(self, run_service: "RunService") -> None:
+        """Create an unstarted manager bound to the shared RunService.
+
+        Args:
+            run_service: The **same** RunService instance the API's ``POST /runs`` uses
+                (injected by the lifespan), so scheduled and manual runs share one
+                single-flight guard (per-profile-scheduling §Resolved #3).
+        """
+        self._run_service = run_service
         self._scheduler: BackgroundScheduler | None = None
 
     @property
     def running(self) -> bool:
-        """Whether the scheduler is started and holds the run job."""
+        """Whether the underlying scheduler is started."""
         return self._scheduler is not None and self._scheduler.running
 
-    def start(self, cron: str, timezone: str) -> None:
-        """Start the scheduler and register the run job on the given cron/timezone.
+    def start(self) -> None:
+        """Start an empty scheduler configured for serialized, single-worker runs.
 
-        Args:
-            cron: A 5-field crontab expression.
-            timezone: IANA timezone name.
+        Registers no jobs — call :meth:`sync` with the current profiles to populate it.
+        Idempotent: a second call while running is a no-op.
         """
-        tz = pytz.timezone(timezone)
-        self._scheduler = BackgroundScheduler(timezone=tz)
-        self._scheduler.add_job(
-            self._run,
-            CronTrigger.from_crontab(cron, timezone=tz),
-            id=self._JOB_ID,
+        if self.running:
+            return
+        self._scheduler = BackgroundScheduler(
+            executors={"default": ThreadPoolExecutor(max_workers=1)},
+            job_defaults={
+                "coalesce": True,
+                "max_instances": 1,
+                "misfire_grace_time": _misfire_grace_seconds(),
+            },
         )
         self._scheduler.start()
-        logger.info("In-process scheduler started — cron: %s | timezone: %s", cron, timezone)
+        logger.info("In-process scheduler started (per-profile jobs)")
 
-    def reschedule(self, cron: str, timezone: str) -> None:
-        """Re-point the run job at a new cron/timezone — the live-edit path.
+    def sync(self, profiles: list[SearchProfile]) -> None:
+        """Reconcile the scheduled jobs to match the given profiles (idempotent).
 
-        A no-op when the scheduler is not running.
+        Adds/reschedules a ``profile-run-{id}`` job for every profile that is
+        ``enabled AND schedule_enabled`` with a non-empty cron; removes the jobs of
+        profiles that are now unscheduled, paused, or deleted. Safe to call after any
+        profile CRUD. A no-op when the scheduler has not been started.
 
         Args:
-            cron: The new 5-field crontab expression.
-            timezone: The new IANA timezone name.
-
-        Raises:
-            ValueError: When the cron expression or timezone is invalid.
+            profiles: The current set of profiles to reconcile against.
         """
-        if self._scheduler is None or not self._scheduler.running:
+        if self._scheduler is None:
             return
-        tz = pytz.timezone(timezone)
-        self._scheduler.reschedule_job(
-            self._JOB_ID, trigger=CronTrigger.from_crontab(cron, timezone=tz)
-        )
-        logger.info("Scheduler rescheduled — cron: %s | timezone: %s", cron, timezone)
+
+        wanted = {
+            p.profile_id: p
+            for p in profiles
+            if p.enabled and p.schedule_enabled and p.schedule_cron
+        }
+
+        # Remove jobs whose profile is no longer scheduled (or was deleted).
+        for job in self._scheduler.get_jobs():
+            pid = _profile_id_from_job_id(job.id)
+            if pid is not None and pid not in wanted:
+                self._scheduler.remove_job(job.id)
+                logger.info("Unscheduled profile %d", pid)
+
+        # Add or re-point a job for every wanted profile.
+        for pid, profile in wanted.items():
+            try:
+                tz = pytz.timezone(profile.schedule_timezone)
+                trigger = CronTrigger.from_crontab(profile.schedule_cron, timezone=tz)
+            except Exception as exc:  # noqa: BLE001 — a bad cron/tz skips one job, not all
+                logger.warning(
+                    "Skipping schedule for profile %d — invalid cron/timezone: %s", pid, exc
+                )
+                continue
+            self._scheduler.add_job(
+                self._fire,
+                trigger,
+                id=_job_id(pid),
+                args=[pid],
+                replace_existing=True,
+            )
+            logger.info(
+                "Scheduled profile %d — cron: %s | timezone: %s",
+                pid,
+                profile.schedule_cron,
+                profile.schedule_timezone,
+            )
+
+    def _fire(self, profile_id: int) -> None:
+        """The per-profile job callback — run one profile through the guarded lifecycle.
+
+        Re-checks the profile is still scheduled (guarding the tiny race where it is
+        unscheduled between :meth:`sync` and this fire), then routes through the shared
+        ``RunService`` guard. A blocked fire (a run already in progress, or the profile
+        gone/paused) is logged once at INFO and skipped — never an error that would
+        leave the trigger in a bad state (per-profile-scheduling §Resolved #5).
+
+        Args:
+            profile_id: The profile whose single-profile run to start.
+        """
+        if not self._profile_still_scheduled(profile_id):
+            logger.info("Scheduled fire for profile %d skipped — no longer scheduled", profile_id)
+            return
+        try:
+            run = self._run_service.start_run(profile_id=profile_id, trigger="scheduled")
+        except (RunInProgressError, NoProfilesError) as exc:
+            logger.info("Scheduled run skipped for profile %d: %s", profile_id, exc)
+            return
+        asyncio.run(self._run_service.execute_run(run.id, profile_id=profile_id))
+
+    def _profile_still_scheduled(self, profile_id: int) -> bool:
+        """Return whether ``profile_id`` is still enabled + schedule_enabled (fresh read)."""
+        for profile in self._run_service.settings_service.list_profiles():
+            if profile.profile_id == profile_id:
+                return bool(profile.enabled and profile.schedule_enabled and profile.schedule_cron)
+        return False
 
     def shutdown(self) -> None:
         """Stop the scheduler (on app/process shutdown). Idempotent."""
@@ -237,11 +334,6 @@ class SchedulerManager:
             self._scheduler.shutdown(wait=False)
             logger.info("In-process scheduler stopped")
         self._scheduler = None
-
-    @staticmethod
-    def _run() -> None:
-        """Trigger entry point — run one cycle in a fresh event loop."""
-        asyncio.run(run_scheduled_cycle())
 
 
 _MANAGER: "SchedulerManager | None" = None

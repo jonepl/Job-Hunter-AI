@@ -186,7 +186,7 @@ job-search-agent/
 │   ├── orchestration/                   ← composition + run layer (imports both adapters/ and core/)
 │   │   ├── bootstrap.py                 ← profile loading
 │   │   ├── runner.py                    ← immediate run logic
-│   │   ├── scheduler.py                 ← APScheduler — in-process Background scheduler (web-owned), live reschedule
+│   │   ├── scheduler.py                 ← APScheduler — in-process scheduler (web-owned), one job per scheduled profile
 │   │   └── service_factory.py           ← Builds JobSearchService + build_resume/generation/run_service()
 │   │
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
@@ -336,7 +336,7 @@ tests/
 │   ├── orchestration/                       ← mirrors src/orchestration/
 │   │   ├── test_bootstrap.py                ← tests for load_profiles()
 │   │   ├── test_runner.py                   ← tests for run_immediate()
-│   │   ├── test_scheduler.py                ← tests for run_all_profiles()
+│   │   ├── test_scheduler.py                ← tests for run_all_profiles() + SchedulerManager sync/_fire
 │   │   └── test_service_factory.py          ← tests for build_service() wiring
 │   ├── api/
 │   │   └── test_jobs_router.py              ← tests for GET/PATCH /api/jobs[/{id}] (FastAPI TestClient)
@@ -992,12 +992,13 @@ class OutputPort(ABC):
 `JobSearchService` is the central orchestrator. It accepts port interfaces as constructor arguments (**dependency injection**) and coordinates the full pipeline.
 
 ```
-Scheduler — web only (SCHEDULE_ENABLED=true)
-    → On cron trigger
-    → For each SearchProfile
+Scheduler — web only (per-profile, one job per scheduled profile; ADR-040)
+    → On a profile's cron trigger (profile-run-{id})
+    → RunService.start_run(profile_id, trigger="scheduled")  [shared single-flight guard]
+    → RunService.execute_run(run_id, profile_id)
     → build_service(profile)
     → service.run(profile params)
-    → RunReport delivered per profile
+    → RunReport delivered for that profile (+ a RunRecord in /runs)
 
 Immediate mode (CLI — python -m src.main always runs once)
     → Load all profiles
@@ -1132,17 +1133,20 @@ The agent supports two trigger modes:
 | Mode | Mechanism | How To Use |
 |---|---|---|
 | **Immediate (CLI)** | Run all profiles once and exit; no scheduled mode | `python -m src.main` |
-| **Scheduled (web)** | `BackgroundScheduler` co-located with uvicorn in one process | `docker compose up` / `uvicorn src.api.main:app` (SCHEDULE_ENABLED=true) |
+| **Scheduled (web)** | `BackgroundScheduler` co-located with uvicorn, one job per scheduled profile | `docker compose up` / `uvicorn src.api.main:app` |
 
 Immediate mode is used for local testing and manual runs. The CLI always runs once
 and exits; it has no scheduled mode (a `SCHEDULE_ENABLED=true` `.env` only logs a
-WARNING and still runs once). Scheduled mode runs on SCHEDULE_CRON with no host cron
-dependency. The **web deployment** (the shipped container CMD) runs uvicorn in the
-foreground with an in-process `BackgroundScheduler` started on FastAPI's `lifespan`
-(`SchedulerManager`, ADR-032); because the API and scheduler share a process, editing
-the cron in the Settings screen reschedules the running job by a direct method call
-(`PUT /api/settings` → `SchedulerManager.reschedule`), no restart. Each fire re-reads
-settings + profiles from the DB (`run_scheduled_cycle`).
+WARNING and still runs once). The **web deployment** (the shipped container CMD) runs
+uvicorn in the foreground with an in-process `BackgroundScheduler` started on FastAPI's
+`lifespan` (`SchedulerManager`, ADR-032/040). Scheduling is **per-profile** (ADR-040):
+each `SearchProfile` carries its own `schedule_cron`/`schedule_timezone`/
+`schedule_enabled`, and the manager keeps one `profile-run-{id}` job per scheduled
+profile, reconciled by `sync()` on every profile CRUD — **no global `SCHEDULE_ENABLED`
+gate**. Each fire routes through the shared, guarded `RunService` (`start_run` +
+`execute_run`, re-reading settings + profiles from the DB per fire), so scheduled and
+manual runs share one single-flight guard and scheduled runs appear in `/runs` as
+`trigger='scheduled'`. A single-worker executor + the shared lock keep runs sequential.
 
 **Technical Terms:** `Immediate Mode`, `APScheduler`, `BackgroundScheduler`,
 `SchedulerManager`, `CronTrigger`, `lifespan`
@@ -1369,7 +1373,7 @@ calls a real external API.
 ### Phase 1 — Local Docker (Current)
 - Linear async Python pipeline
 - Single Docker container
-- Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED controls which mode runs.
+- Immediate CLI mode and web per-profile APScheduler scheduling both supported (ADR-040) — the CLI runs once and exits; the web server schedules each profile on its own cron.
 - Multi-profile search via PROFILE_N_ variables in .env
 - CSV file + Gmail SMTP output per profile
 - All four platform scrapers

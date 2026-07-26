@@ -20,17 +20,28 @@
 
 ## Scheduling
 
-- The CLI has no scheduled mode; `python -m src.main` always runs all profiles
-  once and exits (`src/orchestration/runner.py`). `SCHEDULE_ENABLED=true` (`.env`
-  only — never a CLI flag) is honored only by the web server's `SchedulerManager`;
-  the CLI logs a WARNING and still runs once if it sees `SCHEDULE_ENABLED=true`.
-- `SCHEDULE_CRON` and `SCHEDULE_TIMEZONE` configure that schedule.
-- Each `SearchProfile` (`src/core/domain/search_profile.py`) gets its own service
-  instance via `orchestration/service_factory.build_service()`.
-- Profiles run **sequentially, not concurrently** — prevents API flooding.
+- **Scheduling is per-profile (ADR-040).** Each `SearchProfile`
+  (`src/core/domain/search_profile.py`) carries its own `schedule_cron`,
+  `schedule_timezone`, and `schedule_enabled`. The web `SchedulerManager`
+  (`src/orchestration/scheduler.py`) keeps **one APScheduler job per scheduled
+  profile** (`profile-run-{id}`); the lifespan builds it **unconditionally** (no global
+  enable gate) and `sync()` reconciles the jobs on every profile CRUD.
+- **`SCHEDULE_ENABLED` is gone from the web path.** It is read **only** by the CLI's
+  transitional warning; `python -m src.main` always runs all profiles once and exits
+  (`src/orchestration/runner.py`, ADR-039). `SCHEDULE_CRON` / `SCHEDULE_TIMEZONE` no
+  longer configure anything web-side.
+- A trigger is registered only when `enabled AND schedule_enabled` — `enabled` (pause)
+  and `schedule_enabled` are **distinct**; a paused profile never fires, and a manual
+  "Run now" can run an *unscheduled* (but enabled) profile.
+- **Each scheduled fire routes through the shared `RunService` single-flight guard**
+  (the same instance the manual/API runs use, lifespan-injected). A scheduled fire and a
+  manual `POST /runs` can never overlap; a scheduled fire creates a `RunRecord` with
+  `trigger='scheduled'` (visible in the `/runs` feed).
+- Profiles run **sequentially, not concurrently** — guaranteed by **two** layers: a
+  single-worker `ThreadPoolExecutor` on the scheduler, **and** the shared class-level
+  single-flight lock in `RunService` (which alone also covers scheduled-vs-manual).
 - Profile failures are caught and logged — a failing profile never stops the
-  remaining ones.
-- When CLI args are provided they override all profiles (use for testing only).
+  remaining ones. When CLI args are provided they override all profiles (testing only).
 
 ## Multi-profile config
 

@@ -1,4 +1,4 @@
-"""Unit tests for scheduler.run_all_profiles()."""
+"""Unit tests for the per-profile scheduler (per-profile-scheduling feature)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,12 +7,13 @@ import pytest
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
-from src.core.exceptions import ModelNotFoundError
+from src.core.exceptions import ModelNotFoundError, NoProfilesError, RunInProgressError
 from src.orchestration.scheduler import (
     SchedulerManager,
+    _job_id,
+    _profile_id_from_job_id,
     get_scheduler_manager,
     run_all_profiles,
-    run_scheduled_cycle,
     set_scheduler_manager,
 )
 
@@ -22,6 +23,9 @@ def _make_profile(
     query: str = "Engineer",
     location: str = "Remote",
     enabled: bool = True,
+    schedule_cron: str = "",
+    schedule_timezone: str = "UTC",
+    schedule_enabled: bool = False,
 ) -> SearchProfile:
     """Build a minimal SearchProfile for testing."""
     return SearchProfile(
@@ -32,11 +36,14 @@ def _make_profile(
         score_threshold=75,
         date_posted=DatePosted.DAYS3,
         enabled=enabled,
+        schedule_cron=schedule_cron,
+        schedule_timezone=schedule_timezone,
+        schedule_enabled=schedule_enabled,
     )
 
 
 class TestRunAllProfiles:
-    """Tests for run_all_profiles()."""
+    """Tests for run_all_profiles() — still the sequential multi-profile runner."""
 
     @pytest.mark.asyncio
     async def test_run_all_profiles_runs_each_profile(self):
@@ -142,103 +149,175 @@ class TestRunAllProfiles:
         statuses = [c.args[1] for c in settings_service.set_profile_last_run.call_args_list]
         assert statuses == ["running", "failed"]
 
-    @pytest.mark.asyncio
-    async def test_run_all_profiles_logs_profile_details(self, caplog):
-        """run_all_profiles() logs INFO messages with profile query and location."""
-        import logging
 
-        profiles = [_make_profile(1, query="Senior Engineer", location="United States")]
+class TestJobIdHelpers:
+    """The profile ↔ job-id mapping used by sync/remove."""
 
-        mock_service = MagicMock()
-        mock_service.run = AsyncMock(return_value=MagicMock())
-        mock_factory = MagicMock(return_value=mock_service)
+    def test_job_id_round_trips(self):
+        """A profile id maps to a job id and back."""
+        assert _job_id(7) == "profile-run-7"
+        assert _profile_id_from_job_id("profile-run-7") == 7
 
-        with caplog.at_level(logging.INFO, logger="src.orchestration.scheduler"):
-            await run_all_profiles(profiles, mock_factory)
-
-        log_text = " ".join(caplog.messages)
-        assert "Senior Engineer" in log_text
-        assert "United States" in log_text
+    def test_unrelated_job_id_is_ignored(self):
+        """A job id from another subsystem parses to None (never removed by sync)."""
+        assert _profile_id_from_job_id("some-other-job") is None
+        assert _profile_id_from_job_id("profile-run-abc") is None
 
 
-class TestRunScheduledCycle:
-    """Tests for run_scheduled_cycle() — the per-fire refresh + run."""
+class TestSchedulerManagerStart:
+    """start() builds a single-worker BackgroundScheduler configured to serialize."""
 
-    @pytest.mark.asyncio
-    async def test_reloads_settings_and_profiles_then_runs(self):
-        """The cycle applies DB settings and runs the freshly loaded profiles."""
-        profiles = [_make_profile(1), _make_profile(2)]
-        settings_service = MagicMock()
-        settings_service.list_profiles.return_value = profiles
-
-        factory = MagicMock()
-        with (
-            patch(
-                "src.orchestration.service_factory.build_settings_service",
-                return_value=settings_service,
-            ),
-            patch("src.orchestration.scheduler.run_all_profiles", new=AsyncMock()) as mock_run,
-        ):
-            await run_scheduled_cycle(factory)
-
-        settings_service.apply_to_environment.assert_called_once()
-        mock_run.assert_awaited_once_with(profiles, factory, settings_service)
-
-    @pytest.mark.asyncio
-    async def test_skips_when_no_profiles(self):
-        """With no configured profiles the cycle returns without running."""
-        settings_service = MagicMock()
-        settings_service.list_profiles.return_value = []
-
-        with (
-            patch(
-                "src.orchestration.service_factory.build_settings_service",
-                return_value=settings_service,
-            ),
-            patch("src.orchestration.scheduler.run_all_profiles", new=AsyncMock()) as mock_run,
-        ):
-            await run_scheduled_cycle(MagicMock())
-
-        mock_run.assert_not_awaited()
-
-
-class TestSchedulerManager:
-    """Tests for the in-process BackgroundScheduler wrapper (ADR-032)."""
-
-    def test_start_registers_job_and_starts(self):
-        """start() builds a BackgroundScheduler, adds the job, and starts it."""
+    def test_start_configures_single_worker_and_job_defaults(self):
+        """The scheduler uses a 1-worker executor + coalesce/max_instances/misfire grace."""
         fake = MagicMock()
-        with patch("src.orchestration.scheduler.BackgroundScheduler", return_value=fake):
-            manager = SchedulerManager()
-            manager.start("0 8 * * 1-5", "UTC")
+        with patch("src.orchestration.scheduler.BackgroundScheduler", return_value=fake) as ctor:
+            manager = SchedulerManager(MagicMock())
+            manager.start()
 
-        fake.add_job.assert_called_once()
-        assert fake.add_job.call_args.kwargs["id"] == SchedulerManager._JOB_ID
+        kwargs = ctor.call_args.kwargs
+        assert "default" in kwargs["executors"]  # single ThreadPoolExecutor(1)
+        assert kwargs["job_defaults"]["coalesce"] is True
+        assert kwargs["job_defaults"]["max_instances"] == 1
+        assert "misfire_grace_time" in kwargs["job_defaults"]
         fake.start.assert_called_once()
 
-    def test_reschedule_repoints_the_job(self):
-        """reschedule() calls reschedule_job with a new trigger when running."""
+    def test_start_is_idempotent_while_running(self):
+        """A second start() while running does not build a second scheduler."""
         fake = MagicMock()
         fake.running = True
+        with patch("src.orchestration.scheduler.BackgroundScheduler", return_value=fake) as ctor:
+            manager = SchedulerManager(MagicMock())
+            manager.start()
+            manager.start()
+        ctor.assert_called_once()
+
+
+class TestSchedulerManagerSync:
+    """sync() reconciles one job per scheduled profile."""
+
+    def _manager_with_fake_scheduler(self, existing_job_ids: list[str]):
+        """Return a started manager whose scheduler is a MagicMock with given jobs."""
+        fake = MagicMock()
+        fake.running = True
+        fake.get_jobs.return_value = [MagicMock(id=j) for j in existing_job_ids]
+        manager = SchedulerManager(MagicMock())
         with patch("src.orchestration.scheduler.BackgroundScheduler", return_value=fake):
-            manager = SchedulerManager()
-            manager.start("0 8 * * 1-5", "UTC")
-            manager.reschedule("30 6 * * *", "America/New_York")
+            manager.start()
+        return manager, fake
 
-        fake.reschedule_job.assert_called_once()
-        assert fake.reschedule_job.call_args.args[0] == SchedulerManager._JOB_ID
+    def test_sync_adds_job_for_scheduled_profile_only(self):
+        """Only an enabled + schedule_enabled profile with a cron gets a job."""
+        manager, fake = self._manager_with_fake_scheduler([])
+        profiles = [
+            # scheduled: enabled + schedule_enabled + cron
+            _make_profile(1, schedule_cron="0 8 * * *", schedule_enabled=True),
+            # schedule not enabled
+            _make_profile(2, schedule_cron="0 8 * * *", schedule_enabled=False),
+            # paused (enabled=False)
+            _make_profile(3, enabled=False, schedule_cron="0 8 * * *", schedule_enabled=True),
+            # scheduled flag on but empty cron
+            _make_profile(4, schedule_enabled=True),
+        ]
 
-    def test_reschedule_before_start_is_noop(self):
-        """reschedule() on an unstarted manager does nothing and does not raise."""
-        SchedulerManager().reschedule("0 8 * * 1-5", "UTC")
+        manager.sync(profiles)
+
+        added_ids = {c.kwargs["id"] for c in fake.add_job.call_args_list}
+        assert added_ids == {"profile-run-1"}
+
+    def test_sync_removes_job_for_unscheduled_profile(self):
+        """A previously-scheduled profile that is now unscheduled has its job removed."""
+        manager, fake = self._manager_with_fake_scheduler(["profile-run-9"])
+        manager.sync([_make_profile(9, schedule_enabled=False)])
+        fake.remove_job.assert_called_once_with("profile-run-9")
+
+    def test_sync_leaves_foreign_jobs_untouched(self):
+        """sync never removes a job that isn't a profile-run job."""
+        manager, fake = self._manager_with_fake_scheduler(["some-other-job"])
+        manager.sync([])
+        fake.remove_job.assert_not_called()
+
+    def test_sync_skips_invalid_cron_without_failing_others(self):
+        """A profile with a bad cron is skipped; a valid sibling is still scheduled."""
+        manager, fake = self._manager_with_fake_scheduler([])
+        profiles = [
+            _make_profile(1, schedule_cron="not a cron", schedule_enabled=True),
+            _make_profile(2, schedule_cron="0 8 * * *", schedule_enabled=True),
+        ]
+        manager.sync(profiles)
+        added_ids = {c.kwargs["id"] for c in fake.add_job.call_args_list}
+        assert added_ids == {"profile-run-2"}
+
+    def test_sync_is_noop_before_start(self):
+        """sync() on an unstarted manager does nothing and does not raise."""
+        SchedulerManager(MagicMock()).sync([_make_profile(1, schedule_enabled=True)])
+
+
+class TestSchedulerManagerFire:
+    """_fire() routes a scheduled fire through the shared guarded RunService."""
+
+    def _manager(self, *, scheduled: bool = True):
+        """Return a manager whose run_service reports the profile scheduled or not."""
+        run_service = MagicMock()
+        profile = _make_profile(1, schedule_cron="0 8 * * *", schedule_enabled=scheduled)
+        run_service.settings_service.list_profiles.return_value = [profile]
+        run_service.start_run.return_value = MagicMock(id="run-1")
+        run_service.execute_run = MagicMock()  # asyncio.run is patched, so any return is fine
+        return SchedulerManager(run_service), run_service
+
+    def test_fire_starts_scheduled_run_and_executes(self):
+        """A live scheduled fire starts a scheduled-trigger run and executes it."""
+        manager, run_service = self._manager(scheduled=True)
+        with patch("src.orchestration.scheduler.asyncio.run") as run:
+            manager._fire(1)
+
+        run_service.start_run.assert_called_once_with(profile_id=1, trigger="scheduled")
+        run_service.execute_run.assert_called_once_with("run-1", profile_id=1)
+        run.assert_called_once()
+
+    def test_fire_skips_when_no_longer_scheduled(self):
+        """A profile unscheduled between sync and fire is skipped (fresh re-check)."""
+        manager, run_service = self._manager(scheduled=False)
+        with patch("src.orchestration.scheduler.asyncio.run") as run:
+            manager._fire(1)
+
+        run_service.start_run.assert_not_called()
+        run.assert_not_called()
+
+    def test_fire_logs_and_skips_when_run_in_progress(self, caplog):
+        """A blocked fire (run already active) logs once at INFO and never errors."""
+        import logging
+
+        manager, run_service = self._manager(scheduled=True)
+        run_service.start_run.side_effect = RunInProgressError("A run (x) is already in progress.")
+
+        with (
+            patch("src.orchestration.scheduler.asyncio.run") as run,
+            caplog.at_level(logging.INFO, logger="src.orchestration.scheduler"),
+        ):
+            manager._fire(1)  # must not raise
+
+        run.assert_not_called()
+        assert "skipped" in " ".join(caplog.messages).lower()
+
+    def test_fire_logs_and_skips_on_no_profiles(self):
+        """A NoProfilesError (profile deleted mid-flight) is swallowed cleanly."""
+        manager, run_service = self._manager(scheduled=True)
+        run_service.start_run.side_effect = NoProfilesError("gone")
+        with patch("src.orchestration.scheduler.asyncio.run") as run:
+            manager._fire(1)  # must not raise
+        run.assert_not_called()
+
+
+class TestSchedulerManagerShutdown:
+    """shutdown() stops a running scheduler and clears it."""
 
     def test_shutdown_stops_and_clears(self):
         """shutdown() stops a running scheduler and leaves the manager not running."""
         fake = MagicMock()
         fake.running = True
         with patch("src.orchestration.scheduler.BackgroundScheduler", return_value=fake):
-            manager = SchedulerManager()
-            manager.start("0 8 * * 1-5", "UTC")
+            manager = SchedulerManager(MagicMock())
+            manager.start()
             manager.shutdown()
 
         fake.shutdown.assert_called_once()
@@ -251,7 +330,7 @@ class TestSchedulerManagerSingleton:
     def test_set_get_and_clear(self):
         """set/get expose the singleton; clearing returns it to None."""
         assert get_scheduler_manager() is None
-        manager = SchedulerManager()
+        manager = SchedulerManager(MagicMock())
         set_scheduler_manager(manager)
         try:
             assert get_scheduler_manager() is manager

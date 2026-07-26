@@ -12,12 +12,29 @@ from datetime import datetime, timedelta
 import pytest
 
 from src.adapters.repository.sqlite_run_repository import SQLiteRunRepository
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.run_record import RunRecord
 from src.core.domain.run_report import RunReport
+from src.core.domain.scraper_name import ScraperName
+from src.core.domain.search_profile import SearchProfile
 from src.core.exceptions import NoProfilesError, RunInProgressError
 from src.core.services.run_service import RunService
+
+
+def _real_profile(profile_id: int, *, enabled: bool = True) -> SearchProfile:
+    """Return a real SearchProfile (needed for profile_id-based filtering)."""
+    return SearchProfile(
+        profile_id=profile_id,
+        query="SWE",
+        location="Remote",
+        active_scrapers=[ScraperName.LINKEDIN],
+        score_threshold=75,
+        date_posted=DatePosted.DAYS3,
+        enabled=enabled,
+    )
+
 
 _NOW = datetime(2026, 7, 19, 9, 0, 0)
 
@@ -212,6 +229,84 @@ def test_get_run_flips_timed_out_running_row_to_failed():
     assert healed.error == "TimeoutError"
     # And it frees the single-flight guard for a new run.
     assert service.start_run().status == "running"
+
+
+def test_start_run_records_scheduled_trigger():
+    """A scheduled fire stamps trigger='scheduled' on the run record."""
+    service, _ = _service(profiles=[_real_profile(1)])
+    run = service.start_run(profile_id=1, trigger="scheduled")
+    assert run.trigger == "scheduled"
+    assert run.status == "running"
+
+
+def test_start_run_with_profile_id_rejects_missing_profile():
+    """A run for a profile id that isn't present is a NoProfilesError."""
+    service, _ = _service(profiles=[_real_profile(1)])
+    with pytest.raises(NoProfilesError):
+        service.start_run(profile_id=999)
+
+
+def test_start_run_with_profile_id_rejects_paused_profile():
+    """A run for a paused profile id is rejected (exists but not enabled)."""
+    service, _ = _service(profiles=[_real_profile(1, enabled=False)])
+    with pytest.raises(NoProfilesError):
+        service.start_run(profile_id=1)
+
+
+def test_start_run_with_profile_id_allows_enabled_unscheduled_profile():
+    """A manual per-profile run works on an enabled but unscheduled profile."""
+    # schedule_enabled defaults False — start_run must NOT require it.
+    service, _ = _service(profiles=[_real_profile(1)])
+    run = service.start_run(profile_id=1)
+    assert run.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_execute_run_filters_to_single_profile():
+    """execute_run(profile_id=X) runs only that profile through run_all_profiles."""
+    repo = SQLiteRunRepository(db_path=":memory:")
+    seen: list = []
+
+    async def capturing_run_all(profs, factory, settings_service=None):
+        seen.append(list(profs))
+        return []
+
+    service = RunService(
+        run_repo=repo,
+        settings_service=_FakeSettingsService([_real_profile(1), _real_profile(2)]),
+        service_factory=lambda p: None,
+        run_all_profiles=capturing_run_all,
+    )
+    run = service.start_run(profile_id=2)
+    await service.execute_run(run.id, profile_id=2)
+
+    assert len(seen) == 1
+    assert [p.profile_id for p in seen[0]] == [2]
+
+
+def test_shared_class_level_lock_rejects_cross_instance_second_run():
+    """Two RunService instances over one repo share the guard — the second run is rejected.
+
+    Models the scheduled-vs-manual footgun: a manual run and a scheduled fire live on
+    different threads/instances but must never both start (per-profile-scheduling §1–3).
+    """
+    repo = SQLiteRunRepository(db_path=":memory:")
+
+    async def noop_run_all(profs, factory, settings_service=None):
+        return []
+
+    def _svc() -> RunService:
+        return RunService(
+            run_repo=repo,
+            settings_service=_FakeSettingsService([_real_profile(1)]),
+            service_factory=lambda p: None,
+            run_all_profiles=noop_run_all,
+        )
+
+    manual, scheduled = _svc(), _svc()
+    manual.start_run()  # a manual run is now active (running row persisted)
+    with pytest.raises(RunInProgressError):
+        scheduled.start_run(profile_id=1, trigger="scheduled")
 
 
 def test_recent_runs_returns_newest_first():

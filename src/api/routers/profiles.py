@@ -11,8 +11,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from src.api.deps import get_settings_service
 from src.api.schemas import ProfileIn, ProfileOut
 from src.core.services.settings_service import SettingsService
+from src.orchestration.scheduler import get_scheduler_manager
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
+
+
+def _sync_scheduler(service: SettingsService) -> None:
+    """Reconcile the live scheduler to the current profiles after a CRUD change.
+
+    A no-op when no scheduler is running (dev / API-only / tests that don't enter the
+    lifespan). This is where a profile's schedule edit takes effect live — the settings
+    router no longer touches the scheduler (per-profile-scheduling §C).
+    """
+    manager = get_scheduler_manager()
+    if manager is not None:
+        manager.sync(service.list_profiles())
 
 
 @router.get("", response_model=list[ProfileOut])
@@ -34,6 +47,7 @@ def create_profile(
         HTTPException: 400 on an invalid location/work-type combination or enum value.
     """
     profile = service.create_profile(_to_profile_or_400(body))
+    _sync_scheduler(service)
     return ProfileOut.from_profile(profile)
 
 
@@ -51,6 +65,7 @@ def update_profile(
     if service.get_profile(profile_id) is None:
         raise HTTPException(status_code=404, detail=f"No profile {profile_id}")
     profile = service.update_profile(_to_profile_or_400(body, profile_id))
+    _sync_scheduler(service)
     return ProfileOut.from_profile(profile)
 
 
@@ -70,6 +85,7 @@ def delete_profile(
     if service.profile_count() <= 1:
         raise HTTPException(status_code=409, detail="Cannot delete the last remaining profile.")
     service.delete_profile(profile_id)
+    _sync_scheduler(service)
 
 
 def _to_profile_or_400(body: ProfileIn, profile_id: int = 0):

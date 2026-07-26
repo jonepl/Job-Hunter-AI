@@ -20,9 +20,6 @@ jest.mock("../../src/api/client", () => ({
 jest.mock("../../src/components/settings/VoiceSettings", () => ({
   VoiceSettings: () => <div data-testid="panel-voice" />,
 }));
-jest.mock("../../src/components/settings/ScheduleSettings", () => ({
-  ScheduleSettings: () => <div data-testid="panel-schedule" />,
-}));
 jest.mock("../../src/components/settings/ProfileSettings", () => ({
   ProfileSettings: () => <div data-testid="panel-profiles" />,
 }));
@@ -45,7 +42,6 @@ describe("<Settings>", () => {
     await renderWithRouter(<Settings />, { initialEntries: ["/settings/voice"] });
     for (const label of [
       "Voice & tone",
-      "Run schedule",
       "Search profiles",
       "Evaluator provider",
       "Master resume",

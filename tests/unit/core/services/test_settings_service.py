@@ -36,13 +36,13 @@ def _profile(**overrides) -> SearchProfile:
 def test_get_settings_seeds_globals_from_env(monkeypatch):
     """First read seeds the global settings from .env."""
     monkeypatch.setenv("EVALUATOR_PROVIDER", "anthropic")
-    monkeypatch.setenv("SCHEDULE_CRON", "0 9 * * *")
+    monkeypatch.setenv("ENRICHMENT_MODE", "enforce")
     monkeypatch.delenv("PROFILE_COUNT", raising=False)
     monkeypatch.delenv("SEARCH_QUERY", raising=False)
 
     settings = _service().get_settings()
     assert settings.evaluator_provider == "anthropic"
-    assert settings.schedule_cron == "0 9 * * *"
+    assert settings.enrichment_mode == "enforce"
 
 
 def test_seed_runs_once(monkeypatch):

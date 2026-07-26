@@ -24,33 +24,37 @@ router = APIRouter(tags=["runs"])
 @router.post("/runs", response_model=RunOut, status_code=202)
 async def start_run(
     background_tasks: BackgroundTasks,
+    profile: int | None = Query(default=None),
     service: RunService = Depends(get_run_service),
 ) -> RunOut:
     """Start a background pipeline run and return its ``running`` record.
 
-    Preconditions (no run already in progress, at least one profile) are checked
-    synchronously so a user-fixable problem is a clear 4xx rather than a silently
-    failed background run.
+    Runs every enabled profile by default, or a single profile when ``?profile=id`` is
+    given (the per-profile "Run now" — an *unscheduled* profile may still be run this
+    way). Preconditions (no run already in progress, at least one runnable profile) are
+    checked synchronously so a user-fixable problem is a clear 4xx rather than a
+    silently failed background run. Both paths share the single-flight guard.
 
     Args:
         background_tasks: FastAPI's post-response task runner.
+        profile: Optional profile id to run alone; None runs all enabled profiles.
         service: The shared RunService (injected).
 
     Returns:
         The ``running`` RunOut (poll it via ``GET /runs/{id}``).
 
     Raises:
-        HTTPException: 409 when a run is already in progress; 400 when no search
-            profiles are configured.
+        HTTPException: 409 when a run is already in progress; 400 when no runnable
+            profile matches (none configured, all paused, or the id is missing/paused).
     """
     try:
-        run = service.start_run()
+        run = service.start_run(profile_id=profile)
     except RunInProgressError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except NoProfilesError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    background_tasks.add_task(service.execute_run, run.id)
+    background_tasks.add_task(service.execute_run, run.id, profile)
     return RunOut.from_run(run)
 
 

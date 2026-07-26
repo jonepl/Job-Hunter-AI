@@ -21,12 +21,6 @@ class AppSettings(BaseModel):
     evaluator_model: str | None = None
     """Optional model override; None means the provider's default model."""
 
-    schedule_cron: str = ""
-    """The APScheduler cron expression for scheduled runs (empty when unset)."""
-
-    schedule_timezone: str = "UTC"
-    """The timezone the cron expression is evaluated in."""
-
     enrichment_mode: str = "shadow"
     """The Gemini pre-filter mode — ``shadow`` (measure only) or ``enforce``."""
 

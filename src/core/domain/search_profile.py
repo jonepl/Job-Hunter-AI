@@ -47,6 +47,16 @@ class SearchProfile(BaseModel):
     enabled: bool = True
     """Whether the run pipeline executes this profile. Paused profiles are skipped."""
 
+    schedule_cron: str = ""
+    """This profile's own APScheduler cron expression (empty when unscheduled)."""
+
+    schedule_timezone: str = "UTC"
+    """The IANA timezone the profile's cron expression is evaluated in."""
+
+    schedule_enabled: bool = False
+    """Whether this profile fires on its schedule. Distinct from ``enabled`` (pause):
+    a trigger is registered only when ``enabled AND schedule_enabled``."""
+
     last_run_at: str | None = None
     """ISO timestamp of this profile's most recent run start (pipeline-owned)."""
 

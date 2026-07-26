@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 
 import { ProfileSettings } from "../../../src/components/settings/ProfileSettings";
 import { api } from "../../../src/api/client";
-import { makeProfile, makeSettings, renderWithClient } from "../../helpers";
+import { makeProfile, makeRun, makeSettings, renderWithClient } from "../../helpers";
 
 jest.mock("../../../src/api/client", () => ({
   api: {
@@ -12,6 +12,8 @@ jest.mock("../../../src/api/client", () => ({
     updateProfile: jest.fn(),
     deleteProfile: jest.fn(),
     getSettings: jest.fn(),
+    getSchedulePreview: jest.fn(),
+    startRun: jest.fn(),
   },
 }));
 
@@ -20,6 +22,8 @@ const mockedCreate = api.createProfile as jest.MockedFunction<typeof api.createP
 const mockedUpdate = api.updateProfile as jest.MockedFunction<typeof api.updateProfile>;
 const mockedDelete = api.deleteProfile as jest.MockedFunction<typeof api.deleteProfile>;
 const mockedGetSettings = api.getSettings as jest.MockedFunction<typeof api.getSettings>;
+const mockedPreview = api.getSchedulePreview as jest.MockedFunction<typeof api.getSchedulePreview>;
+const mockedStartRun = api.startRun as jest.MockedFunction<typeof api.startRun>;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -31,6 +35,8 @@ beforeEach(() => {
   mockedUpdate.mockResolvedValue(makeProfile({ id: 1, name: "Backend" }));
   mockedDelete.mockResolvedValue(undefined);
   mockedGetSettings.mockResolvedValue(makeSettings());
+  mockedPreview.mockResolvedValue({ nextRuns: ["2026-07-27T08:00:00"] });
+  mockedStartRun.mockResolvedValue(makeRun({ trigger: "web" }));
 });
 
 describe("<ProfileSettings>", () => {
@@ -138,5 +144,56 @@ describe("<ProfileSettings>", () => {
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     // Profile threshold 70, band 15 → floor 55, top threshold − 1 = 69.
     expect(await screen.findByText("55–69")).toBeInTheDocument();
+  });
+
+  it("shows the per-profile schedule status line", async () => {
+    mockedList.mockResolvedValue([
+      makeProfile({ id: 1, name: "Backend", scheduleEnabled: true, scheduleCron: "0 8 * * 1-5" }),
+      makeProfile({ id: 2, name: "Frontend", scheduleEnabled: false }),
+    ]);
+    renderWithClient(<ProfileSettings />);
+    const list = await screen.findByTestId("profile-list");
+
+    expect(within(list).getByText("Scheduled — Weekdays at 08:00")).toBeInTheDocument();
+    expect(within(list).getByText("Not scheduled")).toBeInTheDocument();
+  });
+
+  it("enabling the schedule seeds a builder cron and saves it", async () => {
+    mockedList.mockResolvedValue([makeProfile({ id: 1, name: "Backend" })]);
+    renderWithClient(<ProfileSettings />);
+    await screen.findByTestId("profile-list");
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Run on a schedule" }));
+    // Default seed is weekdays at 08:00 → 0 8 * * 1-5.
+    expect(await screen.findByTestId("generated-cron")).toHaveTextContent("0 8 * * 1-5");
+
+    await userEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalled());
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ scheduleEnabled: true, scheduleCron: "0 8 * * 1-5" }),
+    );
+  });
+
+  it("round-trips a raw cron through the Advanced escape hatch", async () => {
+    // A non-builder-representable cron opens the editor in Advanced (raw) mode.
+    mockedList.mockResolvedValue([
+      makeProfile({ id: 1, name: "Backend", scheduleEnabled: true, scheduleCron: "*/15 * * * *" }),
+    ]);
+    renderWithClient(<ProfileSettings />);
+    await screen.findByTestId("profile-list");
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByLabelText("Cron expression")).toHaveValue("*/15 * * * *");
+  });
+
+  it("runs a single profile now via the per-profile Run now button", async () => {
+    mockedList.mockResolvedValue([makeProfile({ id: 7, name: "Backend" })]);
+    renderWithClient(<ProfileSettings />);
+    await screen.findByTestId("profile-list");
+
+    await userEvent.click(screen.getByRole("button", { name: "Run Backend now" }));
+    await waitFor(() => expect(mockedStartRun).toHaveBeenCalledWith(7));
   });
 });

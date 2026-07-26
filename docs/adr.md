@@ -770,3 +770,45 @@ code is marked inferred.
   the web layer uses, so it is a debugging harness, **not** a web-outage fallback. The
   residual scheduled-vs-manual double-run race (a web scheduled fire overlapping a manual
   `POST /runs`) is out of scope here and tracked for the per-profile-scheduling work.
+
+## ADR-040: Scheduling is per-profile; global schedule + `SCHEDULE_ENABLED` removed
+
+- **Status:** Accepted (refines ADR-032; revises ADR-039's "sole scheduler")
+- **Context:** ADR-032 gave the web server a single `BackgroundScheduler` driven by one
+  global cron (`AppSettings.schedule_cron/timezone`) gated on `SCHEDULE_ENABLED`, running
+  `run_scheduled_cycle` which reloaded **all** profiles and ran them sequentially in one
+  job — and, notably, created **no `RunRecord`**, so scheduled runs were invisible and
+  never touched the single-flight guard. A global cron can't express "Senior SWE every
+  weekday 8am, Data Eng weekly Monday," raw cron is a usability wall, and post-scalpel
+  (ADR-039) `SCHEDULE_ENABLED`'s only remaining web consumer was the boot gate. ADR-039
+  also left a tracked scheduled-vs-manual double-run race.
+- **Decision:** Move scheduling to **per-profile**. Each `SearchProfile` carries
+  `schedule_cron` / `schedule_timezone` / `schedule_enabled` (migration 10, no backfill —
+  existing profiles come up unscheduled). `SchedulerManager` reconciles **one APScheduler
+  job per scheduled profile** (`profile-run-{id}`) via `sync()`, called from the profiles
+  router on every CRUD; the lifespan builds it **unconditionally** (no `SCHEDULE_ENABLED`
+  gate) and injects the API's **shared** `RunService` instance. Each fire routes through
+  the same guarded `RunService.start_run(profile_id, trigger="scheduled")` +
+  `execute_run` the manual runs use, so scheduled fires create `RunRecord`s (visible in
+  `/runs`) and share single-flight. The global `schedule_cron/timezone` is dropped from
+  `AppSettings`, the settings service, and the schemas; the stateless
+  `/api/settings/schedule/preview` endpoint stays, reused per-profile. Add a per-profile
+  `POST /runs?profile=id` ("Run now"). An intuitive builder UI (frequency + time + days)
+  generates/parses the stored cron, with a raw-cron escape hatch.
+- **Concurrency (two layers, both required).** The sequential-run guarantee (ADR/rules)
+  was free when one job looped over profiles; independent per-profile triggers could fire
+  concurrently. Layer 1: a **single-worker `ThreadPoolExecutor`** (+ `coalesce`,
+  `max_instances=1`, a generous env `SCHEDULER_MISFIRE_GRACE_SECONDS` since APScheduler's
+  1s default would *silently skip* an overlapping fire). Layer 2: a **class-level
+  `threading.Lock`** in `RunService` making the check-then-act `start_run` atomic across
+  threads — closing the cross-thread TOCTOU between the APScheduler worker and uvicorn's
+  loop, and covering scheduled-vs-manual (the manual run isn't on the executor). This
+  closes the ADR-039 double-run footgun.
+- **Consequences:** Profiles schedule independently and scheduled runs are finally
+  observable (`trigger='scheduled'`). No-seed upgrade leaves every profile unscheduled
+  until enabled in the UI (a deployment on `SCHEDULE_ENABLED=true` runs nothing scheduled
+  until then — release note). `_fire` re-checks `schedule_enabled` freshly and
+  logs-and-skips a blocked fire rather than erroring the trigger. Residual, accepted:
+  `misfire_grace_time` only prevents silent *skips* (the guard makes double-*runs*
+  impossible regardless); the 1800s run self-heal vs a genuinely long run is pre-existing;
+  the `runs` table grows unpruned at higher scheduled volume.

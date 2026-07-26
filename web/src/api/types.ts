@@ -792,6 +792,21 @@ export interface components {
              * @default true
              */
             enabled: boolean;
+            /**
+             * Schedulecron
+             * @default
+             */
+            scheduleCron: string;
+            /**
+             * Scheduletimezone
+             * @default UTC
+             */
+            scheduleTimezone: string;
+            /**
+             * Scheduleenabled
+             * @default false
+             */
+            scheduleEnabled: boolean;
         };
         /**
          * ProfileOut
@@ -818,6 +833,12 @@ export interface components {
             topResults: number | null;
             /** Enabled */
             enabled: boolean;
+            /** Schedulecron */
+            scheduleCron: string;
+            /** Scheduletimezone */
+            scheduleTimezone: string;
+            /** Scheduleenabled */
+            scheduleEnabled: boolean;
             /** Lastrunat */
             lastRunAt: string | null;
             /** Lastrunstatus */
@@ -975,10 +996,6 @@ export interface components {
             evaluatorProvider: string;
             /** Evaluatormodel */
             evaluatorModel: string | null;
-            /** Schedulecron */
-            scheduleCron: string;
-            /** Scheduletimezone */
-            scheduleTimezone: string;
             /** Enrichmentmode */
             enrichmentMode: string;
             voice: components["schemas"]["VoiceIn"];
@@ -996,10 +1013,6 @@ export interface components {
             evaluatorProvider: string;
             /** Evaluatormodel */
             evaluatorModel: string | null;
-            /** Schedulecron */
-            scheduleCron: string;
-            /** Scheduletimezone */
-            scheduleTimezone: string;
             /** Enrichmentmode */
             enrichmentMode: string;
             voice: components["schemas"]["VoiceIn"];
@@ -1022,16 +1035,6 @@ export interface components {
             evaluatorProvider: "openai" | "anthropic";
             /** Evaluatormodel */
             evaluatorModel?: string | null;
-            /**
-             * Schedulecron
-             * @default
-             */
-            scheduleCron: string;
-            /**
-             * Scheduletimezone
-             * @default UTC
-             */
-            scheduleTimezone: string;
             /**
              * Enrichmentmode
              * @default shadow
@@ -1756,7 +1759,9 @@ export interface operations {
     };
     start_run_api_runs_post: {
         parameters: {
-            query?: never;
+            query?: {
+                profile?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1770,6 +1775,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
