@@ -122,7 +122,10 @@ export const api = {
       { method: "POST" },
     ),
   getRun: (id: string) => request<RunOut>(`/api/runs/${id}`),
-  listRuns: () => request<RunOut[]>("/api/runs"),
+  listRuns: (profileId?: number) =>
+    request<RunOut[]>(
+      profileId === undefined ? "/api/runs" : `/api/runs?profile=${profileId}`,
+    ),
 };
 
 /**

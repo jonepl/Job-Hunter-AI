@@ -31,3 +31,26 @@ export function relativeTime(iso: string | null): string | null {
 
   return plural(Math.floor(days / 365), "year");
 }
+
+/** Midnight of the day the given time falls on (local), as an epoch. */
+function startOfDay(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * A friendly future timestamp for the "Next scheduled run" strip:
+ * "today 8:00 AM" · "tomorrow 8:00 AM" · "Monday 8:00 AM" · "Aug 3, 8:00 AM".
+ * Returns null for a null/unparseable input so the caller can hide the strip.
+ */
+export function describeNextRun(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const dayDiff = Math.round((startOfDay(d) - startOfDay(new Date())) / 86_400_000);
+  if (dayDiff <= 0) return `today ${time}`;
+  if (dayDiff === 1) return `tomorrow ${time}`;
+  if (dayDiff < 7) return `${d.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+}

@@ -1,10 +1,16 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 import { api } from "../../src/api/client";
 import { jobsQueryKey } from "../../src/hooks/useJobs";
-import { isRunDone, useRun, useStartRun } from "../../src/hooks/useRuns";
+import {
+  isRunDone,
+  useRun,
+  useRunProfilesSequentially,
+  useRuns,
+  useStartRun,
+} from "../../src/hooks/useRuns";
 import { makeRun } from "../helpers";
 
 jest.mock("../../src/api/client", () => ({
@@ -17,6 +23,7 @@ jest.mock("../../src/api/client", () => ({
 
 const mockedStart = api.startRun as jest.MockedFunction<typeof api.startRun>;
 const mockedGet = api.getRun as jest.MockedFunction<typeof api.getRun>;
+const mockedList = api.listRuns as jest.MockedFunction<typeof api.listRuns>;
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -51,6 +58,61 @@ describe("useStartRun", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.id).toBe("r1");
+  });
+});
+
+describe("useRuns", () => {
+  it("fetches the global list by default and a scoped list per profile", async () => {
+    const { wrapper } = makeWrapper();
+    mockedList.mockResolvedValue([]);
+
+    const global = renderHook(() => useRuns(), { wrapper });
+    const scoped = renderHook(() => useRuns(7), { wrapper });
+
+    await waitFor(() => expect(global.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(scoped.result.current.isSuccess).toBe(true));
+
+    expect(mockedList).toHaveBeenCalledWith(undefined);
+    expect(mockedList).toHaveBeenCalledWith(7);
+  });
+});
+
+describe("useRunProfilesSequentially", () => {
+  it("runs profiles one at a time, in order, and reports completion", async () => {
+    const { wrapper } = makeWrapper();
+    // Each run starts already-terminal so the poll loop returns without waiting.
+    mockedStart.mockImplementation(async (id) =>
+      makeRun({ id: `run-${id}`, status: "succeeded", profileId: id }),
+    );
+
+    const { result } = renderHook(() => useRunProfilesSequentially(0), { wrapper });
+    await act(async () => {
+      await result.current.start([1, 2, 3]);
+    });
+
+    await waitFor(() => expect(result.current.running).toBe(false));
+    expect(mockedStart.mock.calls.map((c) => c[0])).toEqual([1, 2, 3]);
+    expect(result.current.current).toBe(3);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("halts the batch when a run fails and surfaces its error", async () => {
+    const { wrapper } = makeWrapper();
+    mockedStart.mockImplementation(async (id) =>
+      id === 2
+        ? makeRun({ id: "run-2", status: "failed", error: "TimeoutError", profileId: 2 })
+        : makeRun({ id: `run-${id}`, status: "succeeded", profileId: id }),
+    );
+
+    const { result } = renderHook(() => useRunProfilesSequentially(0), { wrapper });
+    await act(async () => {
+      await result.current.start([1, 2, 3]);
+    });
+
+    await waitFor(() => expect(result.current.running).toBe(false));
+    // Stopped after the second profile — the third never started.
+    expect(mockedStart.mock.calls.map((c) => c[0])).toEqual([1, 2]);
+    expect(result.current.error).toBe("TimeoutError");
   });
 });
 
