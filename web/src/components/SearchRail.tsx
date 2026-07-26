@@ -298,27 +298,27 @@ function ProfileRow({
         aria-current={active ? "page" : undefined}
         className="flex min-w-0 flex-1 flex-col gap-1 rounded-control py-[11px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
       >
-        <span className="flex items-center justify-between gap-2">
-          <span className="truncate font-semibold text-text">{name}</span>
+        <span className="flex min-w-0 items-center justify-between gap-2">
+          <span className="min-w-0 flex-1 truncate font-semibold text-text">{name}</span>
           {active && (
             <span className="shrink-0 rounded-pill bg-accent-soft px-2 font-mono text-tick uppercase tracking-[0.08em] text-accent">
               Active
             </span>
           )}
         </span>
-        <span className="flex items-center gap-1.5 font-mono text-caption text-text-3">
+        <span className="flex min-w-0 items-center gap-1.5 font-mono text-caption text-text-3">
           <span
             className={`h-[6px] w-[6px] shrink-0 rounded-pill ${PROFILE_DOT_BG[status.dot]}`}
             aria-hidden="true"
           />
-          <span className="truncate">{status.text}</span>
+          <span className="min-w-0 flex-1 truncate">{status.text}</span>
         </span>
       </button>
       <button
         type="button"
         onClick={onConfigure}
         aria-label={`Configure ${name}`}
-        className="shrink-0 self-stretch rounded-control px-1.5 text-text-3 transition-colors duration-fast hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control text-body leading-none text-text-3 transition-colors duration-fast hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
       >
         <span aria-hidden="true">⚙</span>
       </button>
