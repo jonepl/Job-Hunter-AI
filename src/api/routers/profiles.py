@@ -6,10 +6,13 @@ Routes contain no business logic (ADR-026): they map request/response shapes and
 never has nothing to do.
 """
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.deps import get_settings_service
 from src.api.schemas import ProfileIn, ProfileOut
+from src.core.domain.search_profile import SearchProfile
 from src.core.services.settings_service import SettingsService
 from src.orchestration.scheduler import get_scheduler_manager
 
@@ -28,12 +31,34 @@ def _sync_scheduler(service: SettingsService) -> None:
         manager.sync(service.list_profiles())
 
 
+def _next_run_at(service: SettingsService, profile: SearchProfile) -> datetime | None:
+    """The profile's next scheduled fire time, or None when it won't fire.
+
+    Only a profile that is both enabled and schedule-enabled with a cron has a next run
+    (mirrors the scheduler's trigger gate). The cron is computed off the live scheduler
+    via ``next_run_times`` (search v2 §D — the top-bar "Next scheduled run" strip). Any
+    parse error degrades to None rather than 500-ing the whole profile list.
+    """
+    if not (profile.enabled and profile.schedule_enabled and profile.schedule_cron):
+        return None
+    try:
+        times = service.next_run_times(profile.schedule_cron, profile.schedule_timezone, n=1)
+    except (ValueError, KeyError):
+        return None
+    return times[0] if times else None
+
+
+def _to_out(service: SettingsService, profile: SearchProfile) -> ProfileOut:
+    """Shape one profile for the API, computing its next scheduled run."""
+    return ProfileOut.from_profile(profile, next_run_at=_next_run_at(service, profile))
+
+
 @router.get("", response_model=list[ProfileOut])
 def list_profiles(
     service: SettingsService = Depends(get_settings_service),
 ) -> list[ProfileOut]:
     """List every stored search profile, ordered by position."""
-    return [ProfileOut.from_profile(p) for p in service.list_profiles()]
+    return [_to_out(service, p) for p in service.list_profiles()]
 
 
 @router.post("", response_model=ProfileOut, status_code=201)
@@ -48,7 +73,7 @@ def create_profile(
     """
     profile = service.create_profile(_to_profile_or_400(body))
     _sync_scheduler(service)
-    return ProfileOut.from_profile(profile)
+    return _to_out(service, profile)
 
 
 @router.put("/{profile_id}", response_model=ProfileOut)
@@ -66,7 +91,7 @@ def update_profile(
         raise HTTPException(status_code=404, detail=f"No profile {profile_id}")
     profile = service.update_profile(_to_profile_or_400(body, profile_id))
     _sync_scheduler(service)
-    return ProfileOut.from_profile(profile)
+    return _to_out(service, profile)
 
 
 @router.delete("/{profile_id}", status_code=204)

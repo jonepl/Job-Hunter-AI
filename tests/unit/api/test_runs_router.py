@@ -157,6 +157,35 @@ def test_list_runs_returns_history_newest_first():
     assert ids[:2] == ["new", "old"]
 
 
+def test_post_run_with_profile_param_tags_the_record():
+    """A per-profile run carries its profileId in the response (search v2 §A)."""
+    service, _ = _service(profiles=[_real_profile(1), _real_profile(2)])
+    body = _client(service).post("/api/runs", params={"profile": 2}).json()
+    assert body["profileId"] == 2
+
+
+def test_post_run_batch_has_null_profile_id():
+    """A global 'run all' batch reports profileId null."""
+    service, _ = _service(profiles=["p1"])
+    body = _client(service).post("/api/runs").json()
+    assert body["profileId"] is None
+
+
+def test_list_runs_scoped_by_profile_excludes_batches():
+    """GET /runs?profile=id returns only that profile's runs, not global batches."""
+    service, repo = _service(profiles=[_real_profile(1)])
+    repo.save(RunRecord(id="batch", status="succeeded", started_at=_NOW - timedelta(hours=1)))
+    repo.save(
+        RunRecord(id="p1a", status="succeeded", started_at=_NOW, profile_id=1),
+    )
+
+    resp = _client(service).get("/api/runs", params={"profile": 1})
+
+    assert resp.status_code == 200
+    ids = [r["id"] for r in resp.json()]
+    assert ids == ["p1a"]
+
+
 def test_failed_run_response_carries_type_name_only():
     """A failed run surfaces the exception type, never a raw message (CLAUDE.md #2)."""
     service, _ = _service(profiles=["p1"], fail=True)

@@ -134,6 +134,7 @@ class RunService:
                 id=uuid4().hex,
                 status="running",
                 trigger=trigger,
+                profile_id=profile_id,
                 started_at=datetime.now(),
             )
             logger.info("Started run %s (trigger=%s, profile=%s)", run.id, trigger, profile_id)
@@ -214,16 +215,18 @@ class RunService:
         """
         return self._heal(self._run_repo.get(run_id))
 
-    def recent_runs(self, limit: int = 20) -> list[RunRecord]:
+    def recent_runs(self, limit: int = 20, profile_id: int | None = None) -> list[RunRecord]:
         """Return the most recent runs, newest first, healing any timed-out row.
 
         Args:
             limit: Maximum number of runs to return.
+            profile_id: When set, return only runs that targeted this profile (the
+                rail's per-profile history); None returns every run (search v2 §A).
 
         Returns:
             Up to ``limit`` runs ordered newest first (possibly empty).
         """
-        return [self._heal(run) for run in self._run_repo.list_recent(limit)]
+        return [self._heal(run) for run in self._run_repo.list_recent(limit, profile_id)]
 
     def _active_run(self) -> RunRecord | None:
         """Return the in-progress run, or None — healing a timed-out row first."""

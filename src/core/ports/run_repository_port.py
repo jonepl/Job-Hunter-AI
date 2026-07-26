@@ -53,11 +53,13 @@ class RunRepositoryPort(ABC):
         ...
 
     @abstractmethod
-    def list_recent(self, limit: int = 20) -> list[RunRecord]:
+    def list_recent(self, limit: int = 20, profile_id: int | None = None) -> list[RunRecord]:
         """Return the most recent runs, newest first.
 
         Args:
             limit: Maximum number of runs to return.
+            profile_id: When set, return only runs that targeted this profile
+                (global "run all" batches are excluded); None returns every run.
 
         Returns:
             Up to ``limit`` runs ordered newest first (possibly empty).

@@ -18,9 +18,9 @@ def _repo() -> SQLiteRunRepository:
     return SQLiteRunRepository(db_path=":memory:")
 
 
-def _running(run_id: str, started_at: datetime = _NOW) -> RunRecord:
+def _running(run_id: str, started_at: datetime = _NOW, profile_id: int | None = None) -> RunRecord:
     """Build a minimal ``running`` run record."""
-    return RunRecord(id=run_id, status="running", started_at=started_at)
+    return RunRecord(id=run_id, status="running", started_at=started_at, profile_id=profile_id)
 
 
 def test_save_then_get_round_trips_a_running_run():
@@ -39,6 +39,16 @@ def test_save_then_get_round_trips_a_running_run():
 def test_get_unknown_id_returns_none():
     """An unknown id yields None, not an error."""
     assert _repo().get("missing") is None
+
+
+def test_save_round_trips_profile_id():
+    """A per-profile run's ``profile_id`` survives the round-trip; a batch stays None."""
+    repo = _repo()
+    repo.save(_running("scoped", profile_id=7))
+    repo.save(_running("batch", started_at=_NOW + timedelta(minutes=1)))
+
+    assert repo.get("scoped").profile_id == 7
+    assert repo.get("batch").profile_id is None
 
 
 def test_update_persists_terminal_status_and_summary():
@@ -103,3 +113,23 @@ def test_list_recent_is_newest_first_and_limited():
 
     recent = repo.list_recent(limit=2)
     assert [r.id for r in recent] == ["run2", "run1"]
+
+
+def test_list_recent_filters_by_profile_id_excluding_global_batches():
+    """A ``profile_id`` filter returns only that profile's runs, never NULL batches."""
+    repo = _repo()
+    # A global batch, a run for profile 5, and a run for profile 9 — all terminal but the
+    # last so the single-flight invariant (one running row) holds.
+    repo.save(_running("batch").model_copy(update={"status": "succeeded"}))
+    repo.save(
+        _running("p5", started_at=_NOW + timedelta(minutes=1), profile_id=5).model_copy(
+            update={"status": "succeeded"}
+        )
+    )
+    repo.save(_running("p9", started_at=_NOW + timedelta(minutes=2), profile_id=9))
+
+    scoped = repo.list_recent(profile_id=5)
+    assert [r.id for r in scoped] == ["p5"]
+
+    # No filter still returns everything, newest first.
+    assert [r.id for r in repo.list_recent()] == ["p9", "p5", "batch"]

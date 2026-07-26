@@ -37,6 +37,11 @@ class RunRecord(BaseModel):
     """What started the run. ``web`` today; the column is future-proofed for the
     scheduled and CLI paths to record their runs here too."""
 
+    profile_id: int | None = None
+    """The single profile this run targeted, or None for a "run all enabled profiles"
+    batch (today's default). Set when a per-profile "Run now" or a scheduled fire runs
+    exactly one profile; it scopes the rail's per-profile run history (search v2)."""
+
     profiles_run: int = 0
     """How many search profiles this run executed (0 until the run finishes)."""
 

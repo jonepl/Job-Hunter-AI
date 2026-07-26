@@ -319,3 +319,28 @@ def test_recent_runs_returns_newest_first():
     ids = [r.id for r in service.recent_runs()]
     assert ids[0] == second.id
     assert first.id in ids
+
+
+def test_start_run_stamps_profile_id_on_the_record():
+    """A per-profile run records the profile it targeted; a batch records None."""
+    service, _ = _service(profiles=[_real_profile(3)])
+    scoped = service.start_run(profile_id=3)
+    assert scoped.profile_id == 3
+
+
+def test_start_run_batch_leaves_profile_id_none():
+    """A global 'run all' batch has no profile_id."""
+    service, _ = _service(profiles=[_real_profile(1)])
+    assert service.start_run().profile_id is None
+
+
+def test_recent_runs_scopes_to_a_profile():
+    """recent_runs(profile_id) returns only that profile's runs, excluding batches."""
+    service, repo = _service(profiles=[_real_profile(1), _real_profile(2)])
+    batch = service.start_run()
+    repo.update(batch.model_copy(update={"status": "succeeded"}))
+    scoped = service.start_run(profile_id=2)
+
+    ids = [r.id for r in service.recent_runs(profile_id=2)]
+    assert ids == [scoped.id]
+    assert batch.id not in ids

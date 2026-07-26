@@ -537,12 +537,22 @@ class ProfileOut(BaseModel):
     schedule_cron: str
     schedule_timezone: str
     schedule_enabled: bool
+    next_run_at: datetime | None
     last_run_at: str | None
     last_run_status: str | None
 
     @classmethod
-    def from_profile(cls, profile: SearchProfile) -> "ProfileOut":
-        """Build the response model from a stored SearchProfile."""
+    def from_profile(
+        cls, profile: SearchProfile, next_run_at: datetime | None = None
+    ) -> "ProfileOut":
+        """Build the response model from a stored SearchProfile.
+
+        Args:
+            profile: The stored profile.
+            next_run_at: The profile's next scheduled fire time (computed by the router
+                from its cron), or None when it is unscheduled/paused or the cron is
+                unparseable. Feeds the Search top-bar "Next scheduled run" strip.
+        """
         return cls(
             id=profile.profile_id,
             name=profile.name,
@@ -557,6 +567,7 @@ class ProfileOut(BaseModel):
             schedule_cron=profile.schedule_cron,
             schedule_timezone=profile.schedule_timezone,
             schedule_enabled=profile.schedule_enabled,
+            next_run_at=next_run_at,
             last_run_at=profile.last_run_at,
             last_run_status=profile.last_run_status,
         )
@@ -629,6 +640,7 @@ class RunOut(BaseModel):
     id: str
     status: RunStatus
     trigger: RunTrigger
+    profile_id: int | None
     profiles_run: int
     jobs_found: int
     new_jobs: int
@@ -644,6 +656,7 @@ class RunOut(BaseModel):
             id=run.id,
             status=run.status,
             trigger=run.trigger,
+            profile_id=run.profile_id,
             profiles_run=run.profiles_run,
             jobs_found=run.jobs_found,
             new_jobs=run.new_jobs,

@@ -51,13 +51,14 @@ class SQLiteRunRepository(RunRepositoryPort):
         """Persist a new run record and return it."""
         self._conn.execute(
             "INSERT INTO runs ("
-            "id, status, trigger, profiles_run, jobs_found, new_jobs, "
+            "id, status, trigger, profile_id, profiles_run, jobs_found, new_jobs, "
             "qualifying, error, started_at, finished_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run.id,
                 run.status,
                 run.trigger,
+                run.profile_id,
                 run.profiles_run,
                 run.jobs_found,
                 run.new_jobs,
@@ -98,11 +99,22 @@ class SQLiteRunRepository(RunRepositoryPort):
         row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         return self._row_to_run(row) if row is not None else None
 
-    def list_recent(self, limit: int = 20) -> list[RunRecord]:
-        """Return up to ``limit`` runs, newest first."""
-        rows = self._conn.execute(
-            "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+    def list_recent(self, limit: int = 20, profile_id: int | None = None) -> list[RunRecord]:
+        """Return up to ``limit`` runs, newest first.
+
+        When ``profile_id`` is given, return only that profile's runs — global
+        "run all" batches (``profile_id`` NULL) are deliberately excluded so the rail's
+        per-profile history shows exactly the runs that targeted it (search v2 §A).
+        """
+        if profile_id is not None:
+            rows = self._conn.execute(
+                "SELECT * FROM runs WHERE profile_id = ? ORDER BY started_at DESC LIMIT ?",
+                (profile_id, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [self._row_to_run(row) for row in rows]
 
     def active(self) -> RunRecord | None:
@@ -123,6 +135,7 @@ class SQLiteRunRepository(RunRepositoryPort):
             id=row["id"],
             status=row["status"],
             trigger=row["trigger"],
+            profile_id=row["profile_id"],
             profiles_run=row["profiles_run"],
             jobs_found=row["jobs_found"],
             new_jobs=row["new_jobs"],

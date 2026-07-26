@@ -247,6 +247,20 @@ ALTER TABLE search_profiles ADD COLUMN schedule_timezone TEXT NOT NULL DEFAULT '
 ALTER TABLE search_profiles ADD COLUMN schedule_enabled INTEGER NOT NULL DEFAULT 0;
 """
 
+# Migration 11 — attribute a run to a single profile (search-page-redesign-v2).
+#
+# A run now targets one profile (per-profile "Run now" or a scheduled fire) or every
+# enabled profile (the "run all" batch). ``profile_id`` is NULL for a batch — every
+# existing row is honestly a global batch, so there is no backfill. It scopes the rail's
+# per-profile run history (``GET /runs?profile=id`` excludes NULL/global rows). Nullable
+# with no FK: a run record outlives the profile it ran (a deleted profile keeps its history
+# rows, which simply stop matching any live profile).
+_MIGRATION_11 = """
+ALTER TABLE runs ADD COLUMN profile_id INTEGER;
+
+CREATE INDEX IF NOT EXISTS idx_runs_profile ON runs (profile_id);
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -260,6 +274,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (8, _MIGRATION_8),
     (9, _MIGRATION_9),
     (10, _MIGRATION_10),
+    (11, _MIGRATION_11),
 ]
 
 
