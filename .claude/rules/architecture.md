@@ -35,20 +35,21 @@ diagram and `docs/adr.md` for the reasoning behind these choices.
 
 ## Entrypoint architecture
 
-- `src/main.py` is a **thin entrypoint** — wires and dispatches only, no logic.
-  Never add logic directly to `main.py`. It stays at `src/` root because
-  `python -m src.main` is the public entrypoint contract.
+- `src/main.py` is a **thin entrypoint** — wires and runs a single immediate
+  pipeline run, no logic. The CLI is **immediate-run only**: it has no scheduled
+  mode and no ops subcommands (those moved to the web API). Never add logic
+  directly to `main.py`. It stays at `src/` root because `python -m src.main` is
+  the public entrypoint contract.
 - CLI concerns → `src/cli/` (`args.py`, `overrides.py`).
 - Logging config → `src/infra/logging.py`.
 - The **composition / run layer** → `src/orchestration/`: `bootstrap.py`
-  (profile loading), `runner.py` (immediate run), `scheduler.py` (scheduled
-  run), `service_factory.py` (the composition root / DI wiring), and the
-  `mark_runner.py` / `resume_runner.py` / `generation_runner.py` command
-  backends. This is the only layer allowed to import both `adapters/` and
-  `core/` — it assembles the hexagon.
-- `orchestration/bootstrap.py`, `runner.py`, and the `*_runner.py` backends have
-  **no CLI/argparse dependency** — they accept plain Python objects so the API
-  entrypoint reuses them.
+  (profile loading), `runner.py` (immediate run), `scheduler.py` (the web-owned
+  `SchedulerManager`), and `service_factory.py` (the composition root / DI
+  wiring). This is the only layer allowed to import both `adapters/` and `core/`
+  — it assembles the hexagon.
+- `orchestration/bootstrap.py` and `runner.py` have **no CLI/argparse
+  dependency** — they accept plain Python objects so the API entrypoint reuses
+  them.
 - `src/api/` is the **FastAPI entrypoint** (`main.py`, `deps.py`, `schemas.py`,
   `routers/`) serving the `web/` UI. It drives the pipeline through the services
   rather than duplicating run logic. `src/evaluator/`, `src/scraper/`,

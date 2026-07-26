@@ -69,27 +69,26 @@ seen job is not re-scored, and its cross-provider sightings are remembered.
 ## Master Resume Settings
 
 The resume is parsed once and cached in the same SQLite database with version
-history, so runs stop re-parsing the PDF every time (ADR-028). Manage it with the
-`resume` CLI (`upload` / `list` / `activate`); a first run auto-seeds the cache
-from `RESUME_PATH`.
+history, so runs stop re-parsing the PDF every time (ADR-028). Manage it from the
+web Settings screen (`GET`/`POST /api/resume` + activate); a first run auto-seeds the
+cache from `RESUME_PATH`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
 | RESUME_PATH | Path to the master resume PDF used to **auto-seed** the cache on a first run (when no version has been uploaded yet). Once cached, runs read the stored version and never re-open this file. Persists via the `./docs/resume` volume mount. | `docs/resume/resume.pdf` |
-| RESUME_MAX_SIZE_BYTES | Upper size limit (in bytes) for an ingested resume. An upload over this is rejected with a clear error before parsing. Enforced for both the CLI and the browser upload (`POST /api/resume`, W5), which also accepts `.docx` as well as `.pdf`. | `5000000` |
+| RESUME_MAX_SIZE_BYTES | Upper size limit (in bytes) for an ingested resume. An upload over this is rejected with a clear error before parsing. Enforced on the browser upload (`POST /api/resume`, W5), which accepts `.docx` as well as `.pdf`. | `5000000` |
 
 ---
 
 ## Document Generation Settings
 
-Turn a stored, evaluated job into a tailored resume or cover-letter `.docx` with the
-`generate` CLI (`generate resume <job_id>` / `generate cover-letter <job_id>`). The
-generation provider is a **hard allowlist** — only `openai` or `anthropic` — and an
-invalid provider fails at startup (ADR-022/029). A deterministic formatter enforces
-the hard formatting rules; the document content is written to disk only and never
-printed, logged, or emailed (ADR-028/029). Voice is a structured descriptor (ADR-030);
-the CLI voice flags override these `.env` seeds, and W7 later moves voice into the
-`settings` table.
+Turn a stored, evaluated job into a tailored resume or cover-letter `.docx` via the
+web Jobs screen (`POST /api/jobs/{id}/generate`). The generation provider is a **hard
+allowlist** — only `openai` or `anthropic` — and an invalid provider fails at startup
+(ADR-022/029). A deterministic formatter enforces the hard formatting rules; the
+document content is written to disk only and never printed, logged, or emailed
+(ADR-028/029). Voice is a structured descriptor (ADR-030); these `.env` values are the
+seeds, and W7 moves voice into the `settings` table.
 
 | Variable | Description | Default |
 | --- | --- | --- |
@@ -270,11 +269,12 @@ NEAR_MISS_BAND=15
 
 # ── Master resume (parsed once, cached with version history) ──────────────────
 # A first run auto-seeds the cache from RESUME_PATH; thereafter runs read the
-# stored version. Manage versions with the `resume` CLI (ADR-028).
+# stored version. Manage versions from the web Settings screen (POST /api/resume,
+# ADR-028).
 RESUME_PATH=docs/resume/resume.pdf
 RESUME_MAX_SIZE_BYTES=5000000
 
-# ── Document generation (tailored resume + cover letter, via `generate` CLI) ──
+# ── Document generation (tailored resume + cover letter, via POST /api/jobs/{id}/generate) ──
 # Provider is a HARD allowlist: openai or anthropic only (ADR-022/029). A
 # deterministic formatter enforces the hard rules; content is written to disk
 # only, never printed or logged (ADR-028/029). Voice is descriptor-only (ADR-030).

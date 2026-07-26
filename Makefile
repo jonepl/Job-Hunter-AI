@@ -1,13 +1,11 @@
 # Job Hunter AI — Makefile
 #
-# Thin wrappers around the src/ entrypoints (search, mark, resume, generate),
+# Thin wrappers around the src/ entrypoints (an immediate-run search CLI),
 # the FastAPI backend, the web SPA, tests, and Docker. Run `make help` for a
 # categorized list. Pass arguments through the ARGS/VAR knobs documented per
 # target, e.g.:
 #
 #   make run QUERY="Senior Software Engineer" WORK_TYPE=remote
-#   make mark JOB_ID=42 STATUS=applied
-#   make generate-cover-letter JOB_ID=42 TONE=warm
 #   make test-path P=tests/unit/adapters/scrapers/test_jsearch.py
 
 # --- Interpreter -------------------------------------------------------------
@@ -71,46 +69,11 @@ run-remote: ## Run a remote search (QUERY required; location defaults to US)
 	$(MAIN) --query "$(QUERY)" --work-type remote $(if $(DATE_POSTED),--date-posted $(DATE_POSTED))
 
 # =============================================================================
-# Job lifecycle (src.main mark)
+# Job lifecycle, master resume, and document generation
 # =============================================================================
-# Required: JOB_ID. One of STATUS / SAVE / UNSAVE. Optional: NOTE.
-#   STATUS: applied started interviewing offer rejected not_interested
-.PHONY: mark
-mark: ## Mark a stored job. JOB_ID=<id> STATUS=<s> [NOTE=".."] [SAVE=1|UNSAVE=1]
-	$(MAIN) mark --job-id $(JOB_ID) \
-		$(if $(STATUS),--status $(STATUS)) \
-		$(if $(NOTE),--note "$(NOTE)") \
-		$(if $(SAVE),--save) \
-		$(if $(UNSAVE),--unsave)
-
-# =============================================================================
-# Master resume management (src.main resume)
-# =============================================================================
-.PHONY: resume-upload
-resume-upload: ## Parse & cache a resume as the active version. RESUME=<file.pdf>
-	$(MAIN) resume upload "$(RESUME)"
-
-.PHONY: resume-list
-resume-list: ## List stored resume versions (active one marked)
-	$(MAIN) resume list
-
-.PHONY: resume-activate
-resume-activate: ## Restore an earlier resume version. VERSION=<n>
-	$(MAIN) resume activate $(VERSION)
-
-# =============================================================================
-# Document generation (src.main generate)
-# =============================================================================
-.PHONY: generate-resume
-generate-resume: ## Generate a tailored resume .docx for a job. JOB_ID=<id>
-	$(MAIN) generate resume $(JOB_ID)
-
-.PHONY: generate-cover-letter
-generate-cover-letter: ## Generate a cover letter. JOB_ID=<id> [TONE= PERSON= STYLE_NOTES=]
-	$(MAIN) generate cover-letter $(JOB_ID) \
-		$(if $(TONE),--tone $(TONE)) \
-		$(if $(PERSON),--person $(PERSON)) \
-		$(if $(STYLE_NOTES),--style-notes "$(STYLE_NOTES)")
+# These ops moved from the CLI to the web API (the CLI is immediate-run only).
+# Use the running server: PATCH /api/jobs/{id}/status|saved, GET/POST /api/resume
+# (+ activate), POST /api/jobs/{id}/generate — or the Settings/Jobs screens.
 
 # =============================================================================
 # API backend (src.api) + web SPA (web/)

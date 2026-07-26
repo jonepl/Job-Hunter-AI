@@ -529,10 +529,9 @@ code is marked inferred.
   `lifespan` when `SCHEDULE_ENABLED=true`, and a cron/timezone edit in the Settings
   screen reschedules it by a direct `reschedule_job` call (`PUT /api/settings`). Each
   fire re-reads settings + profiles from the DB (`run_scheduled_cycle`), closing the
-  two W7 deferrals (live cron reschedule + per-run DB re-reads). The standalone
-  `BlockingScheduler` (`start_scheduler`) remains for the CLI `python -m src.main`
-  scheduled mode, which never boots the web server and cannot be rescheduled live.
-  (Extends ADR-008 and revises ADR-018.)
+  two W7 deferrals (live cron reschedule + per-run DB re-reads). The `SchedulerManager`
+  is the **sole** scheduler; the CLI (`python -m src.main`) has no scheduled mode and
+  always runs once. (Extends ADR-008 and revises ADR-018.)
 - **Context:** ADR-008 ships one all-in-one container. Adding a React frontend
   introduces a Node build step, and the web server must coexist with APScheduler.
   ADR-018 used a `BlockingScheduler`, which cannot share a process with uvicorn.
@@ -719,7 +718,10 @@ code is marked inferred.
 
 ## ADR-038: Composition/run modules collected into `src/orchestration/`
 
-- **Status:** Accepted (refines ADR-020)
+- **Status:** Accepted (refines ADR-020). The `mark_runner.py` / `resume_runner.py` /
+  `generation_runner.py` command backends this ADR relocated were later **removed** by
+  ADR-039 (the CLI scalpel); the package now holds `bootstrap.py`, `runner.py`,
+  `scheduler.py`, and `service_factory.py`.
 - **Context:** ADR-020 broke `main.py` into focused modules, but those modules
   (`bootstrap.py`, `runner.py`, `scheduler.py`, `service_factory.py`, and later the
   `mark_runner.py` / `resume_runner.py` / `generation_runner.py` command backends)
@@ -742,3 +744,29 @@ code is marked inferred.
   patch targets in tests shifted accordingly. The convention going forward: new
   composition/run/wiring modules belong in `src/orchestration/`, not the `src/`
   root; only the thin entrypoint lives at the root.
+
+## ADR-039: CLI reduced to immediate-run only (the scalpel)
+
+- **Status:** Accepted (refines ADR-020/025/028/029; revises ADR-018 and ADR-032)
+- **Context:** `python -m src.main` had grown four modes: the default immediate
+  search, a CLI `BlockingScheduler` (`SCHEDULE_ENABLED=true`), and three ops
+  subcommands (`mark` / `resume` / `generate`). But the container deploys via uvicorn
+  (`CMD ["uvicorn", "src.api.main:app", …]`), so the CLI is not the deployment path:
+  the CLI scheduler was a dead double-run footgun, and every ops subcommand already had
+  a live web equivalent (`PATCH /api/jobs/{id}/status|saved`, `GET`/`POST /api/resume` +
+  activate, `POST /api/jobs/{id}/generate`). The one thing the API cannot do is an
+  ad-hoc parameterized run in a single process — the irreplaceable value of a CLI as a
+  breakpoint-friendly pipeline harness.
+- **Decision:** Keep a thin `python -m src.main [--query …]` **immediate-run** CLI as an
+  in-process pipeline harness, and delete everything else: the CLI `BlockingScheduler`
+  (`start_scheduler`) and the `mark` / `resume` / `generate` subcommands with their
+  `mark_runner.py` / `resume_runner.py` / `generation_runner.py` backends. The web
+  `SchedulerManager` (ADR-032) is now the sole scheduler; the ops move to the web API.
+  The CLI ignores `SCHEDULE_ENABLED` entirely and always runs once, logging one WARNING
+  when it is `true`.
+- **Consequences:** The CLI's blast radius shrank to `main.py`'s immediate path, with no
+  API entanglement. Ops now require a running server (accepted friction — the app has no
+  deployments). The immediate CLI still reads the same DB-backed settings/profile store
+  the web layer uses, so it is a debugging harness, **not** a web-outage fallback. The
+  residual scheduled-vs-manual double-run race (a web scheduled fire overlapping a manual
+  `POST /runs`) is out of scope here and tracked for the per-profile-scheduling work.
