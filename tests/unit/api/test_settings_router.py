@@ -5,8 +5,6 @@ TestClient against a real SettingsService over in-memory repositories, injected 
 a dependency override. Asserts secrets are never returned in the clear.
 """
 
-from unittest.mock import MagicMock
-
 from fastapi.testclient import TestClient
 
 from src.adapters.repository.sqlite_profile_repository import (
@@ -18,7 +16,6 @@ from src.adapters.repository.sqlite_settings_repository import (
 from src.api.deps import get_settings_service
 from src.api.main import create_app
 from src.core.services.settings_service import SettingsService
-from src.orchestration.scheduler import set_scheduler_manager
 
 
 def _client(monkeypatch) -> TestClient:
@@ -69,8 +66,6 @@ def test_put_settings_ignores_pricing(monkeypatch):
         "/api/settings",
         json={
             "evaluatorProvider": "openai",
-            "scheduleCron": "0 8 * * 1-5",
-            "scheduleTimezone": "UTC",
             "voice": {},
             "pricing": {
                 "showCostEstimate": True,
@@ -92,8 +87,6 @@ def test_put_settings_persists(monkeypatch):
         json={
             "evaluatorProvider": "anthropic",
             "evaluatorModel": "claude-sonnet-4-5",
-            "scheduleCron": "0 8 * * 1-5",
-            "scheduleTimezone": "UTC",
             "enrichmentMode": "enforce",
             "voice": {"tone": "warm", "person": "implied", "styleNotes": "Be brief."},
         },
@@ -103,42 +96,6 @@ def test_put_settings_persists(monkeypatch):
     assert body["evaluatorProvider"] == "anthropic"
     assert body["enrichmentMode"] == "enforce"
     assert body["voice"]["tone"] == "warm"
-
-
-def test_put_settings_reschedules_running_scheduler(monkeypatch):
-    """A saved cron/timezone reschedules the in-process scheduler live (ADR-032)."""
-    client = _client(monkeypatch)
-    manager = MagicMock()
-    manager.running = True
-    set_scheduler_manager(manager)
-    try:
-        resp = client.put(
-            "/api/settings",
-            json={
-                "evaluatorProvider": "openai",
-                "scheduleCron": "30 6 * * *",
-                "scheduleTimezone": "UTC",
-                "voice": {},
-            },
-        )
-    finally:
-        set_scheduler_manager(None)
-    assert resp.status_code == 200
-    manager.reschedule.assert_called_once_with("30 6 * * *", "UTC")
-
-
-def test_put_settings_skips_reschedule_when_no_scheduler(monkeypatch):
-    """With no running scheduler the save still succeeds (idle process)."""
-    resp = _client(monkeypatch).put(
-        "/api/settings",
-        json={
-            "evaluatorProvider": "openai",
-            "scheduleCron": "30 6 * * *",
-            "scheduleTimezone": "UTC",
-            "voice": {},
-        },
-    )
-    assert resp.status_code == 200
 
 
 def test_put_settings_rejects_bad_provider(monkeypatch):

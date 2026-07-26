@@ -77,8 +77,9 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
         cursor = self._conn.execute(
             "INSERT INTO search_profiles ("
             "name, query, location, work_types, date_posted, active_scrapers, "
-            "score_threshold, top_results, enabled, position, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "score_threshold, top_results, enabled, schedule_cron, schedule_timezone, "
+            "schedule_enabled, position, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 profile.name,
                 profile.query,
@@ -89,6 +90,9 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
                 profile.score_threshold,
                 profile.top_results,
                 int(profile.enabled),
+                profile.schedule_cron,
+                profile.schedule_timezone,
+                int(profile.schedule_enabled),
                 next_position,
                 datetime.now().isoformat(),
             ),
@@ -106,7 +110,8 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
         self._conn.execute(
             "UPDATE search_profiles SET "
             "name = ?, query = ?, location = ?, work_types = ?, date_posted = ?, "
-            "active_scrapers = ?, score_threshold = ?, top_results = ?, enabled = ? "
+            "active_scrapers = ?, score_threshold = ?, top_results = ?, enabled = ?, "
+            "schedule_cron = ?, schedule_timezone = ?, schedule_enabled = ? "
             "WHERE id = ?",
             (
                 profile.name,
@@ -118,6 +123,9 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
                 profile.score_threshold,
                 profile.top_results,
                 int(profile.enabled),
+                profile.schedule_cron,
+                profile.schedule_timezone,
+                int(profile.schedule_enabled),
                 profile.profile_id,
             ),
         )
@@ -172,6 +180,9 @@ class SQLiteProfileRepository(ProfileRepositoryPort):
             score_threshold=row["score_threshold"],
             top_results=row["top_results"],
             enabled=bool(row["enabled"]),
+            schedule_cron=row["schedule_cron"],
+            schedule_timezone=row["schedule_timezone"],
+            schedule_enabled=bool(row["schedule_enabled"]),
             last_run_at=row["last_run_at"],
             last_run_status=row["last_run_status"],
         )

@@ -87,7 +87,7 @@ def build_run_service() -> RunService:
         A ready RunService.
     """
     # Imported here (not at module top) to avoid a scheduler ↔ service_factory
-    # import cycle: run_scheduled_cycle imports build_service from this module lazily.
+    # import cycle: the scheduler imports build_service from this module lazily.
     from src.orchestration.scheduler import run_all_profiles
 
     return RunService(

@@ -6,8 +6,6 @@ secret value** — only masked status (a last-4 suffix + configured/overridden f
 The cron preview computes fire times without touching any live scheduler.
 """
 
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.deps import get_settings_service
@@ -19,9 +17,6 @@ from src.api.schemas import (
     SettingsUpdate,
 )
 from src.core.services.settings_service import SECRET_NAMES, SettingsService
-from src.orchestration.scheduler import get_scheduler_manager
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -45,18 +40,11 @@ def update_settings(
 ) -> SettingsOut:
     """Persist the editable global settings (provider allowlist enforced by the schema).
 
-    When the in-process scheduler is running, a saved cron/timezone reschedules it live
-    by a direct method call (ADR-032) — no restart. An invalid cron never fails the save
-    (the preview endpoint is where cron is validated); it is logged and left unscheduled.
+    Scheduling is per-profile now (per-profile-scheduling feature): there is no global
+    cron here to reschedule, so a settings save never touches the scheduler. Profile
+    schedule edits reconcile the scheduler from the profiles router.
     """
     service.update_settings(body.to_settings())
-    manager = get_scheduler_manager()
-    if manager is not None and manager.running:
-        current = service.get_settings()
-        try:
-            manager.reschedule(current.schedule_cron, current.schedule_timezone)
-        except ValueError as exc:
-            logger.warning("Kept saved settings but could not reschedule: %s", exc)
     return SettingsOut.build(
         service.get_settings(),
         service.env_defaults(),

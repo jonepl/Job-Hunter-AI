@@ -39,8 +39,6 @@ _SEEDED_KEY = "_seeded"
 _GLOBAL_ENV = {
     "evaluator_provider": "EVALUATOR_PROVIDER",
     "evaluator_model": "EVALUATOR_MODEL",
-    "schedule_cron": "SCHEDULE_CRON",
-    "schedule_timezone": "SCHEDULE_TIMEZONE",
     "enrichment_mode": "ENRICHMENT_MODE",
     "voice_tone": "VOICE_TONE",
     "voice_person": "VOICE_PERSON",
@@ -58,8 +56,6 @@ _SECRET_ENV = {
 _DEFAULTS = {
     "evaluator_provider": "openai",
     "evaluator_model": "",
-    "schedule_cron": "",
-    "schedule_timezone": "UTC",
     "enrichment_mode": "shadow",
     "voice_tone": "direct",
     "voice_person": "first_person",
@@ -259,8 +255,6 @@ def _to_settings(values: dict) -> AppSettings:
     return AppSettings(
         evaluator_provider=values.get("evaluator_provider") or "openai",
         evaluator_model=(values.get("evaluator_model") or None),
-        schedule_cron=values.get("schedule_cron", ""),
-        schedule_timezone=values.get("schedule_timezone") or "UTC",
         enrichment_mode=values.get("enrichment_mode") or "shadow",
         voice=VoiceDescriptor(
             tone=values.get("voice_tone") or "direct",
@@ -275,8 +269,6 @@ def _from_settings(settings: AppSettings) -> dict[str, str]:
     return {
         "evaluator_provider": settings.evaluator_provider,
         "evaluator_model": settings.evaluator_model or "",
-        "schedule_cron": settings.schedule_cron,
-        "schedule_timezone": settings.schedule_timezone,
         "enrichment_mode": settings.enrichment_mode,
         "voice_tone": settings.voice.tone,
         "voice_person": settings.voice.person,

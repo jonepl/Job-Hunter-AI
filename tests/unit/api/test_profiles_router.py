@@ -4,6 +4,8 @@ Drives the profile CRUD endpoints in-process via FastAPI's TestClient against a 
 SettingsService over in-memory repositories, injected through a dependency override.
 """
 
+from unittest.mock import MagicMock
+
 from fastapi.testclient import TestClient
 
 from src.adapters.repository.sqlite_profile_repository import (
@@ -15,6 +17,7 @@ from src.adapters.repository.sqlite_settings_repository import (
 from src.api.deps import get_settings_service
 from src.api.main import create_app
 from src.core.services.settings_service import SettingsService
+from src.orchestration.scheduler import set_scheduler_manager
 
 
 def _client(monkeypatch) -> TestClient:
@@ -128,3 +131,50 @@ def test_profile_in_ignores_read_only_last_run_fields(monkeypatch):
     ).json()
     assert body["lastRunStatus"] is None
     assert body["lastRunAt"] is None
+
+
+def test_new_profile_is_unscheduled_by_default(monkeypatch):
+    """A newly created profile carries the unscheduled schedule defaults."""
+    body = _client(monkeypatch).post("/api/profiles", json=_REMOTE_PROFILE).json()
+    assert body["scheduleEnabled"] is False
+    assert body["scheduleCron"] == ""
+    assert body["scheduleTimezone"] == "UTC"
+
+
+def test_put_can_set_a_profile_schedule(monkeypatch):
+    """PUT round-trips the per-profile schedule fields."""
+    client = _client(monkeypatch)
+    pid = client.post("/api/profiles", json=_REMOTE_PROFILE).json()["id"]
+    resp = client.put(
+        f"/api/profiles/{pid}",
+        json={
+            **_REMOTE_PROFILE,
+            "scheduleCron": "0 8 * * 1-5",
+            "scheduleTimezone": "America/New_York",
+            "scheduleEnabled": True,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["scheduleCron"] == "0 8 * * 1-5"
+    assert body["scheduleTimezone"] == "America/New_York"
+    assert body["scheduleEnabled"] is True
+
+
+def test_crud_reconciles_the_live_scheduler(monkeypatch):
+    """Create / update / delete each call manager.sync() when a scheduler is registered."""
+    manager = MagicMock()
+    set_scheduler_manager(manager)
+    try:
+        client = _client(monkeypatch)
+        a = client.post("/api/profiles", json={**_REMOTE_PROFILE, "name": "A"}).json()
+        client.post("/api/profiles", json={**_REMOTE_PROFILE, "name": "B"})
+        assert manager.sync.call_count == 2  # one per create
+
+        client.put(f"/api/profiles/{a['id']}", json={**_REMOTE_PROFILE, "name": "A2"})
+        assert manager.sync.call_count == 3  # update reconciles too
+
+        client.delete(f"/api/profiles/{a['id']}")
+        assert manager.sync.call_count == 4  # delete reconciles too
+    finally:
+        set_scheduler_manager(None)

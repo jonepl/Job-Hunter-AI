@@ -21,11 +21,12 @@ only; no job content ever reaches it (CLAUDE.md #2) — the pipeline writes jobs
 """
 
 import logging
+import threading
 from collections.abc import Callable
 from datetime import datetime
 from uuid import uuid4
 
-from src.core.domain.run_record import RunRecord
+from src.core.domain.run_record import RunRecord, RunTrigger
 from src.core.domain.run_report import RunReport
 from src.core.domain.search_profile import SearchProfile
 from src.core.exceptions import NoProfilesError, RunInProgressError
@@ -40,6 +41,13 @@ _DEFAULT_RUN_TIMEOUT_SECONDS = 1800.0
 
 class RunService:
     """Coordinate the settings bridge, profile loading, the pipeline, and run storage."""
+
+    # Class-level so the single-flight guard is shared no matter which RunService
+    # instance holds it. This closes a cross-thread TOCTOU: the manual runs execute on
+    # uvicorn's event loop while a scheduled fire runs on the APScheduler worker thread,
+    # and both call the check-then-act ``start_run`` — without a shared lock both could
+    # read ``active() is None`` and both start (per-profile-scheduling §Resolved #1).
+    _guard = threading.Lock()
 
     def __init__(
         self,
@@ -66,50 +74,86 @@ class RunService:
         self._run_all_profiles = run_all_profiles
         self._run_timeout_seconds = run_timeout_seconds
 
-    def start_run(self) -> RunRecord:
+    @property
+    def settings_service(self) -> SettingsService:
+        """The DB-backed config layer this run reads (shared with the scheduler).
+
+        Exposed so the scheduler — which shares this exact RunService instance
+        (per-profile-scheduling §Resolved #3) — can re-read the live profiles for its
+        freshness check without building a second settings service.
+        """
+        return self._settings_service
+
+    def start_run(self, profile_id: int | None = None, trigger: RunTrigger = "web") -> RunRecord:
         """Create and store a ``running`` record, or raise if a run can't start.
 
         Preconditions are checked **synchronously** so a user-fixable problem is a
-        clear error at request time rather than a silently failed background task.
+        clear error at request time rather than a silently failed background task. The
+        check + insert run under a shared class-level lock so a manual run and a
+        scheduled fire on different threads can never both pass the single-flight
+        check (per-profile-scheduling §Resolved #1–2).
+
+        Args:
+            profile_id: When set, validate and run only that one profile (manual
+                "Run now" or a scheduled fire); when None, run every enabled profile.
+            trigger: What started the run — ``web`` for manual/API, ``scheduled`` for
+                a scheduler fire. Recorded on the row so the feed can label it.
 
         Returns:
             The persisted ``running`` RunRecord (the poll handle).
 
         Raises:
             RunInProgressError: When a run is already in progress.
-            NoProfilesError: When no search profiles are configured.
+            NoProfilesError: When no runnable profile matches (none configured, all
+                paused, or the requested ``profile_id`` is missing/paused).
         """
-        active = self._active_run()
-        if active is not None:
-            raise RunInProgressError(f"A run ({active.id}) is already in progress.")
-        profiles = self._settings_service.list_profiles()
-        if not profiles:
-            raise NoProfilesError("No search profiles configured — add one in Settings first.")
-        # ``getattr`` keeps this robust for test doubles that model profiles as bare
-        # strings; real SearchProfiles always carry ``enabled``.
-        if not any(getattr(p, "enabled", True) for p in profiles):
-            raise NoProfilesError("All search profiles are paused — resume one in Settings first.")
-        run = RunRecord(
-            id=uuid4().hex,
-            status="running",
-            trigger="web",
-            started_at=datetime.now(),
-        )
-        logger.info("Started run %s", run.id)
-        return self._run_repo.save(run)
+        with self._guard:
+            active = self._active_run()
+            if active is not None:
+                raise RunInProgressError(f"A run ({active.id}) is already in progress.")
+            profiles = self._settings_service.list_profiles()
+            if not profiles:
+                raise NoProfilesError("No search profiles configured — add one in Settings first.")
+            if profile_id is not None:
+                # A single-profile run (manual "Run now" or a scheduled fire) validates
+                # the profile exists and is enabled — deliberately NOT schedule_enabled,
+                # so a manual run can fire an unscheduled profile (§Resolved #5).
+                target = _find_profile(profiles, profile_id)
+                if target is None or not getattr(target, "enabled", True):
+                    raise NoProfilesError(
+                        f"Profile {profile_id} is not available to run — "
+                        "it may have been deleted or paused."
+                    )
+            # ``getattr`` keeps this robust for test doubles that model profiles as bare
+            # strings; real SearchProfiles always carry ``enabled``.
+            elif not any(getattr(p, "enabled", True) for p in profiles):
+                raise NoProfilesError(
+                    "All search profiles are paused — resume one in Settings first."
+                )
+            run = RunRecord(
+                id=uuid4().hex,
+                status="running",
+                trigger=trigger,
+                started_at=datetime.now(),
+            )
+            logger.info("Started run %s (trigger=%s, profile=%s)", run.id, trigger, profile_id)
+            return self._run_repo.save(run)
 
-    async def execute_run(self, run_id: str) -> None:
+    async def execute_run(self, run_id: str, profile_id: int | None = None) -> None:
         """Run the pipeline for ``run_id`` to completion, updating its row (W8 task).
 
         Applies the DB settings to the environment (ADR-035), re-reads the profiles
-        (ADR-031), runs them all, aggregates a summary, and marks the row
-        ``succeeded`` — or ``failed`` on an unrecoverable error. **Never raises** —
-        a background task has no caller to catch it, and the failure is recorded on
-        the row for the poll to report. Only the exception *type* is stored/logged;
-        a raw message can carry scraped or model text (CLAUDE.md #2).
+        (ADR-031), runs them (all, or just ``profile_id`` when set), aggregates a
+        summary, and marks the row ``succeeded`` — or ``failed`` on an unrecoverable
+        error. **Never raises** — a background task has no caller to catch it, and the
+        failure is recorded on the row for the poll to report. Only the exception
+        *type* is stored/logged; a raw message can carry scraped or model text
+        (CLAUDE.md #2).
 
         Args:
             run_id: The id of the ``running`` row to fulfil.
+            profile_id: When set, run only that one profile (mirrors ``start_run``);
+                when None, run every enabled profile.
         """
         run = self._run_repo.get(run_id)
         if run is None or run.status != "running":
@@ -118,6 +162,8 @@ class RunService:
         try:
             self._settings_service.apply_to_environment()
             profiles = self._settings_service.list_profiles()
+            if profile_id is not None:
+                profiles = [p for p in profiles if _profile_id_of(p) == profile_id]
             reports = await self._run_all_profiles(
                 profiles, self._service_factory, self._settings_service
             )
@@ -200,6 +246,16 @@ class RunService:
                 }
             )
         )
+
+
+def _profile_id_of(profile: object) -> object:
+    """Return a profile's id, tolerating test doubles that lack the attribute."""
+    return getattr(profile, "profile_id", None)
+
+
+def _find_profile(profiles: list, profile_id: int) -> object | None:
+    """Return the profile with ``profile_id`` from a loaded list, or None."""
+    return next((p for p in profiles if _profile_id_of(p) == profile_id), None)
 
 
 def _summarize(reports: list[RunReport]) -> dict[str, int]:

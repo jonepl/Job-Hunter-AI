@@ -25,34 +25,28 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_DEV_ORIGIN = "http://localhost:5173"
 _DEFAULT_SPA_DIST = "web/dist"
-_DEFAULT_CRON = "0 8 * * 1-5"
-_DEFAULT_TIMEZONE = "America/New_York"
 
 
-def _maybe_start_scheduler() -> SchedulerManager | None:
-    """Start the in-process scheduler when ``SCHEDULE_ENABLED=true`` (ADR-032).
+def _start_scheduler() -> SchedulerManager:
+    """Build and start the per-profile scheduler, reconciled to the stored profiles.
 
-    The web server co-locates uvicorn and a ``BackgroundScheduler`` in one process so
-    a cron edit can reschedule it live. When scheduling is disabled this is a no-op, so
-    the app boots identically for API-only / CLI-immediate use.
+    Unconditional — there is no global enable gate (``SCHEDULE_ENABLED`` is gone from
+    the web path); each profile opts in individually via its own ``schedule_enabled``,
+    so an all-unscheduled deployment simply registers no jobs. The scheduler shares the
+    API's single ``RunService`` instance so scheduled and manual runs enforce one
+    single-flight guard (per-profile-scheduling §Resolved #3).
 
     Returns:
-        The started manager (registered as the process singleton), or None.
+        The started manager (registered as the process singleton).
     """
-    if os.getenv("SCHEDULE_ENABLED", "false").lower() != "true":
-        logger.info("SCHEDULE_ENABLED is not true — no in-process scheduler")
-        return None
+    from src.api.deps import get_run_service, get_settings_service
 
-    from src.orchestration.service_factory import build_settings_service
+    settings_service = get_settings_service()
+    settings_service.apply_to_environment()
 
-    service = build_settings_service()
-    service.apply_to_environment()
-    app_settings = service.get_settings()
-    cron = app_settings.schedule_cron or os.getenv("SCHEDULE_CRON", _DEFAULT_CRON)
-    tz = app_settings.schedule_timezone or os.getenv("SCHEDULE_TIMEZONE", _DEFAULT_TIMEZONE)
-
-    manager = SchedulerManager()
-    manager.start(cron, tz)
+    manager = SchedulerManager(get_run_service())
+    manager.start()
+    manager.sync(settings_service.list_profiles())
     set_scheduler_manager(manager)
     return manager
 
@@ -60,13 +54,12 @@ def _maybe_start_scheduler() -> SchedulerManager | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Own the in-process scheduler's lifecycle alongside the web server (ADR-032)."""
-    manager = _maybe_start_scheduler()
+    manager = _start_scheduler()
     try:
         yield
     finally:
-        if manager is not None:
-            manager.shutdown()
-            set_scheduler_manager(None)
+        manager.shutdown()
+        set_scheduler_manager(None)
 
 
 def create_app() -> FastAPI:

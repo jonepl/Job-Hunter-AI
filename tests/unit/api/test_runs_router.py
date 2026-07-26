@@ -14,10 +14,25 @@ from fastapi.testclient import TestClient
 from src.adapters.repository.sqlite_run_repository import SQLiteRunRepository
 from src.api.deps import get_run_service
 from src.api.main import create_app
+from src.core.domain.date_posted import DatePosted
 from src.core.domain.run_record import RunRecord
+from src.core.domain.scraper_name import ScraperName
+from src.core.domain.search_profile import SearchProfile
 from src.core.services.run_service import RunService
 
 _NOW = datetime(2026, 7, 19, 9, 0, 0)
+
+
+def _real_profile(profile_id: int) -> SearchProfile:
+    """Return a real SearchProfile so profile_id filtering resolves."""
+    return SearchProfile(
+        profile_id=profile_id,
+        query="SWE",
+        location="Remote",
+        active_scrapers=[ScraperName.LINKEDIN],
+        score_threshold=75,
+        date_posted=DatePosted.DAYS3,
+    )
 
 
 class _FakeSettingsService:
@@ -82,6 +97,26 @@ def test_post_run_then_poll_shows_succeeded():
 
     assert poll.status_code == 200
     assert poll.json()["status"] == "succeeded"
+
+
+def test_post_run_with_profile_param_runs_single_profile():
+    """POST /runs?profile=id starts a single-profile run (202) and it succeeds."""
+    service, _ = _service(profiles=[_real_profile(1), _real_profile(2)])
+    client = _client(service)
+
+    resp = client.post("/api/runs", params={"profile": 1})
+    assert resp.status_code == 202
+    run_id = resp.json()["id"]
+
+    poll = client.get(f"/api/runs/{run_id}")
+    assert poll.json()["status"] == "succeeded"
+
+
+def test_post_run_with_unknown_profile_returns_400():
+    """POST /runs?profile=id for a missing profile is a 400 (nothing runnable)."""
+    service, _ = _service(profiles=[_real_profile(1)])
+    resp = _client(service).post("/api/runs", params={"profile": 999})
+    assert resp.status_code == 400
 
 
 def test_post_run_returns_400_when_no_profiles():

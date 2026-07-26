@@ -94,6 +94,41 @@ def test_enabled_defaults_true_and_round_trips():
     assert repo.get_profile(created.profile_id).enabled is False
 
 
+def test_schedule_fields_default_unscheduled_and_round_trip():
+    """New profiles are unscheduled; a schedule round-trips through create/update (migration 10)."""
+    repo = _repo()
+    created = repo.create_profile(_profile())
+    fetched = repo.get_profile(created.profile_id)
+    assert fetched.schedule_enabled is False
+    assert fetched.schedule_cron == ""
+    assert fetched.schedule_timezone == "UTC"
+
+    repo.update_profile(
+        created.model_copy(
+            update={
+                "schedule_cron": "0 8 * * 1-5",
+                "schedule_timezone": "America/New_York",
+                "schedule_enabled": True,
+            }
+        )
+    )
+    updated = repo.get_profile(created.profile_id)
+    assert updated.schedule_cron == "0 8 * * 1-5"
+    assert updated.schedule_timezone == "America/New_York"
+    assert updated.schedule_enabled is True
+
+
+def test_create_persists_schedule_fields():
+    """A profile created already scheduled round-trips its schedule."""
+    repo = _repo()
+    created = repo.create_profile(
+        _profile(schedule_cron="30 6 * * *", schedule_timezone="UTC", schedule_enabled=True)
+    )
+    fetched = repo.get_profile(created.profile_id)
+    assert fetched.schedule_cron == "30 6 * * *"
+    assert fetched.schedule_enabled is True
+
+
 def test_set_last_run_writes_status_and_timestamp():
     """set_last_run records the status + timestamp without disturbing other columns."""
     repo = _repo()

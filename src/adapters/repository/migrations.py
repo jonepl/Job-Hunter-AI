@@ -234,6 +234,19 @@ ALTER TABLE jobs ADD COLUMN employment_type  TEXT;
 ALTER TABLE jobs ADD COLUMN posted_at        TEXT;
 """
 
+# Migration 10 — per-profile scheduling (per-profile-scheduling feature).
+#
+# Each profile owns its own schedule, replacing the single global cron. A trigger is
+# registered only when ``enabled AND schedule_enabled`` (default unscheduled → every
+# existing row comes up unscheduled after upgrade, the deliberate no-seed consequence).
+# ``schedule_cron`` is the stored source of truth APScheduler consumes; the builder UI
+# only generates and parses it. No backfill.
+_MIGRATION_10 = """
+ALTER TABLE search_profiles ADD COLUMN schedule_cron TEXT NOT NULL DEFAULT '';
+ALTER TABLE search_profiles ADD COLUMN schedule_timezone TEXT NOT NULL DEFAULT 'UTC';
+ALTER TABLE search_profiles ADD COLUMN schedule_enabled INTEGER NOT NULL DEFAULT 0;
+"""
+
 # (version, sql) in ascending order. Append new migrations; never edit or
 # renumber an applied one.
 MIGRATIONS: list[tuple[int, str]] = [
@@ -246,6 +259,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (7, _MIGRATION_7),
     (8, _MIGRATION_8),
     (9, _MIGRATION_9),
+    (10, _MIGRATION_10),
 ]
 
 

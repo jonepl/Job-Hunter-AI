@@ -411,8 +411,6 @@ class SettingsOut(BaseModel):
 
     evaluator_provider: str
     evaluator_model: str | None
-    schedule_cron: str
-    schedule_timezone: str
     enrichment_mode: str
     voice: VoiceIn
     near_miss_band: int
@@ -433,8 +431,6 @@ class SettingsOut(BaseModel):
         return cls(
             evaluator_provider=settings.evaluator_provider,
             evaluator_model=settings.evaluator_model,
-            schedule_cron=settings.schedule_cron,
-            schedule_timezone=settings.schedule_timezone,
             enrichment_mode=settings.enrichment_mode,
             voice=VoiceIn(
                 tone=settings.voice.tone,
@@ -460,8 +456,6 @@ class SettingsDefaults(BaseModel):
 
     evaluator_provider: str
     evaluator_model: str | None
-    schedule_cron: str
-    schedule_timezone: str
     enrichment_mode: str
     voice: VoiceIn
 
@@ -471,8 +465,6 @@ class SettingsDefaults(BaseModel):
         return cls(
             evaluator_provider=settings.evaluator_provider,
             evaluator_model=settings.evaluator_model,
-            schedule_cron=settings.schedule_cron,
-            schedule_timezone=settings.schedule_timezone,
             enrichment_mode=settings.enrichment_mode,
             voice=VoiceIn(
                 tone=settings.voice.tone,
@@ -489,8 +481,6 @@ class SettingsUpdate(BaseModel):
 
     evaluator_provider: Literal["openai", "anthropic"]
     evaluator_model: str | None = None
-    schedule_cron: str = ""
-    schedule_timezone: str = "UTC"
     enrichment_mode: Literal["shadow", "enforce"] = "shadow"
     voice: VoiceIn = VoiceIn()
 
@@ -499,8 +489,6 @@ class SettingsUpdate(BaseModel):
         return AppSettings(
             evaluator_provider=self.evaluator_provider,
             evaluator_model=self.evaluator_model or None,
-            schedule_cron=self.schedule_cron,
-            schedule_timezone=self.schedule_timezone,
             enrichment_mode=self.enrichment_mode,
             voice=self.voice.to_descriptor(),
         )
@@ -546,6 +534,9 @@ class ProfileOut(BaseModel):
     score_threshold: int
     top_results: int | None
     enabled: bool
+    schedule_cron: str
+    schedule_timezone: str
+    schedule_enabled: bool
     last_run_at: str | None
     last_run_status: str | None
 
@@ -563,6 +554,9 @@ class ProfileOut(BaseModel):
             score_threshold=profile.score_threshold,
             top_results=profile.top_results,
             enabled=profile.enabled,
+            schedule_cron=profile.schedule_cron,
+            schedule_timezone=profile.schedule_timezone,
+            schedule_enabled=profile.schedule_enabled,
             last_run_at=profile.last_run_at,
             last_run_status=profile.last_run_status,
         )
@@ -582,6 +576,9 @@ class ProfileIn(BaseModel):
     score_threshold: int = 75
     top_results: int | None = None
     enabled: bool = True
+    schedule_cron: str = ""
+    schedule_timezone: str = "UTC"
+    schedule_enabled: bool = False
 
     def to_profile(self, profile_id: int = 0) -> SearchProfile:
         """Map the request to a SearchProfile, applying the location-resolution rule.
@@ -608,6 +605,9 @@ class ProfileIn(BaseModel):
             score_threshold=self.score_threshold,
             top_results=self.top_results,
             enabled=self.enabled,
+            schedule_cron=self.schedule_cron,
+            schedule_timezone=self.schedule_timezone,
+            schedule_enabled=self.schedule_enabled,
         )
 
 
