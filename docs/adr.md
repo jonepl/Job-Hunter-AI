@@ -812,3 +812,36 @@ code is marked inferred.
   `misfire_grace_time` only prevents silent *skips* (the guard makes double-*runs*
   impossible regardless); the 1800s run self-heal vs a genuinely long run is pre-existing;
   the `runs` table grows unpruned at higher scheduled volume.
+
+## ADR-041: Runs are attributable to one profile; per-profile history + multi-select batch runs
+
+- **Status:** Accepted (builds on ADR-040; delivers `search-page-redesign-v2`)
+- **Context:** The completed Search redesign deferred two things: per-profile run history
+  and a run that targets a single profile. The `runs` table was global (no `profile_id`),
+  so history could only be shown across all profiles, and the rail's "Delivered · N
+  matches" / Ad-hoc-vs-Scheduled per-profile surfaces had nothing to read. ADR-040 already
+  factored the single-profile run path (`start_run(profile_id, trigger)` + `POST
+  /runs?profile=id`); this feature *consumes* it. The v2 mock also wants a "Run N selected"
+  multi-select and a top-bar "Next scheduled run" strip.
+- **Decision:** Attribute each run to a profile. `RunRecord.profile_id` (migration 11,
+  `ALTER TABLE runs ADD COLUMN profile_id INTEGER`, no backfill — existing rows are
+  honestly global NULL batches) records the single profile a run targeted, or NULL for a
+  "run all enabled" batch. `RunService.start_run` stamps it; `list_recent(limit,
+  profile_id)` and `GET /runs?profile=id` scope history to one profile, **excluding** NULL
+  batches. `RunOut` gains `profileId`; the rail maps `trigger` to an Ad-hoc/Scheduled
+  badge (no schema change — the column already existed). Multi-select "Run N selected" is
+  **client-orchestrated and sequential** (`useRunProfilesSequentially`): the browser fires
+  one `POST /runs?profile=id` at a time, polling each to terminal before the next, reusing
+  the ADR-040 single-flight guard instead of adding a server-side queue. The top-bar strip
+  reads a computed `ProfileOut.next_run_at` (derived per request from the profile's own
+  cron via `SettingsService.next_run_times`, off the live scheduler; NULL unless
+  `enabled AND schedule_enabled` with a parseable cron). Inline profile editing (name /
+  query / location / platforms) reuses `PUT /api/profiles/{id}` via a `ConfigureProfileModal`.
+- **Consequences:** A profile's history shows exactly the runs that targeted it; a deleted
+  profile's run rows survive (nullable, no FK) and simply stop matching a live profile.
+  Multi-select gains no new concurrency surface — the sequential guarantee is the existing
+  guard, so a batch and a scheduled fire still cannot overlap. `next_run_at` is never
+  persisted, so it can't drift; a bad raw cron degrades it to NULL rather than 500-ing the
+  profile list. Deferred (carry-forward): the pre-filter "N skipped" reveal (needs
+  per-job enrichment-skip persistence) and click-a-run-to-filter-jobs (jobs carry no
+  `run_id`) remain out of scope, unchanged from the completed redesign.
