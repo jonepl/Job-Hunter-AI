@@ -1006,14 +1006,14 @@ class OutputPort(ABC):
 `JobSearchService` is the central orchestrator. It accepts port interfaces as constructor arguments (**dependency injection**) and coordinates the full pipeline.
 
 ```
-Scheduler (if SCHEDULE_ENABLED=true)
+Scheduler — web only (SCHEDULE_ENABLED=true)
     → On cron trigger
     → For each SearchProfile
     → build_service(profile)
     → service.run(profile params)
     → RunReport delivered per profile
 
-Immediate mode (SCHEDULE_ENABLED=false)
+Immediate mode (CLI — python -m src.main always runs once)
     → Load all profiles
     → For each SearchProfile
     → build_service(profile)
@@ -1145,22 +1145,21 @@ The agent supports two trigger modes:
 
 | Mode | Mechanism | How To Use |
 |---|---|---|
-| **Immediate** | Run once and exit | `python -m src.main` (SCHEDULE_ENABLED=false or not set) |
+| **Immediate (CLI)** | Run all profiles once and exit; no scheduled mode | `python -m src.main` |
 | **Scheduled (web)** | `BackgroundScheduler` co-located with uvicorn in one process | `docker compose up` / `uvicorn src.api.main:app` (SCHEDULE_ENABLED=true) |
-| **Scheduled (CLI)** | Standalone `BlockingScheduler`, no web server | `python -m src.main` (SCHEDULE_ENABLED=true) |
 
-Immediate mode is used for local testing and manual runs. Scheduled mode runs on
-SCHEDULE_CRON with no host cron dependency. The **web deployment** (the shipped
-container CMD) runs uvicorn in the foreground with an in-process
-`BackgroundScheduler` started on FastAPI's `lifespan` (`SchedulerManager`, ADR-032);
-because the API and scheduler share a process, editing the cron in the Settings
-screen reschedules the running job by a direct method call (`PUT /api/settings` →
-`SchedulerManager.reschedule`), no restart. Each fire re-reads settings + profiles
-from the DB (`run_scheduled_cycle`). The standalone `BlockingScheduler`
-(`start_scheduler`) remains for the CLI scheduled mode, which never boots the server.
+Immediate mode is used for local testing and manual runs. The CLI always runs once
+and exits; it has no scheduled mode (a `SCHEDULE_ENABLED=true` `.env` only logs a
+WARNING and still runs once). Scheduled mode runs on SCHEDULE_CRON with no host cron
+dependency. The **web deployment** (the shipped container CMD) runs uvicorn in the
+foreground with an in-process `BackgroundScheduler` started on FastAPI's `lifespan`
+(`SchedulerManager`, ADR-032); because the API and scheduler share a process, editing
+the cron in the Settings screen reschedules the running job by a direct method call
+(`PUT /api/settings` → `SchedulerManager.reschedule`), no restart. Each fire re-reads
+settings + profiles from the DB (`run_scheduled_cycle`).
 
 **Technical Terms:** `Immediate Mode`, `APScheduler`, `BackgroundScheduler`,
-`BlockingScheduler`, `SchedulerManager`, `CronTrigger`, `lifespan`
+`SchedulerManager`, `CronTrigger`, `lifespan`
 
 ---
 

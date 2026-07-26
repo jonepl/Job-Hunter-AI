@@ -7,7 +7,6 @@ from datetime import datetime
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.core.domain.run_report import RunReport
@@ -174,57 +173,14 @@ async def run_scheduled_cycle(service_factory: callable = None) -> None:
     await run_all_profiles(profiles, service_factory or build_service, settings_service)
 
 
-def start_scheduler(
-    profiles: list[SearchProfile],
-    service_factory: callable,
-    cron_expression: str,
-    timezone: str,
-) -> None:
-    """Start a standalone ``BlockingScheduler`` for the CLI scheduled mode.
-
-    This is the ``python -m src.main`` (no web server) path. The web deployment uses
-    the in-process :class:`SchedulerManager` on FastAPI's lifespan instead (ADR-032);
-    only that path can be rescheduled live. Runs indefinitely until the process stops.
-
-    Args:
-        profiles: Search profiles (used only for the startup log; each trigger reloads
-            profiles from the DB via :func:`run_scheduled_cycle`).
-        service_factory: Callable that builds a JobSearchService per profile.
-        cron_expression: Standard cron expression (e.g. "0 8 * * 1-5").
-        timezone: IANA timezone name (e.g. "America/New_York").
-    """
-    tz = pytz.timezone(timezone)
-    scheduler = BlockingScheduler(timezone=tz)
-
-    def job() -> None:
-        """Execute one cycle synchronously inside the scheduler trigger."""
-        asyncio.run(run_scheduled_cycle(service_factory))
-
-    scheduler.add_job(
-        job,
-        CronTrigger.from_crontab(cron_expression, timezone=tz),
-    )
-
-    logger.info(
-        "Scheduler started — cron: %s | timezone: %s",
-        cron_expression,
-        timezone,
-    )
-    logger.info("Running %d profile(s) per schedule", len(profiles))
-
-    try:
-        scheduler.start()
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Scheduler stopped")
-
-
 class SchedulerManager:
     """The in-process ``BackgroundScheduler`` the web server owns and reschedules live.
 
     ADR-032: uvicorn runs in the foreground and the scheduler runs in the **same
-    process** as a ``BackgroundScheduler`` (not the standalone ``BlockingScheduler``),
-    so a cron edit in the Settings screen reschedules the run job by a direct method
-    call — no cross-process signalling, DB polling, or container restart.
+    process** as a ``BackgroundScheduler``, so a cron edit in the Settings screen
+    reschedules the run job by a direct method call — no cross-process signalling,
+    DB polling, or container restart. This is the **only** scheduler; the CLI
+    (``python -m src.main``) has no scheduled mode and always runs once and exits.
     """
 
     _JOB_ID = "scheduled-run"

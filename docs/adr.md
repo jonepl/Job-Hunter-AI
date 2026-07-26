@@ -529,10 +529,9 @@ code is marked inferred.
   `lifespan` when `SCHEDULE_ENABLED=true`, and a cron/timezone edit in the Settings
   screen reschedules it by a direct `reschedule_job` call (`PUT /api/settings`). Each
   fire re-reads settings + profiles from the DB (`run_scheduled_cycle`), closing the
-  two W7 deferrals (live cron reschedule + per-run DB re-reads). The standalone
-  `BlockingScheduler` (`start_scheduler`) remains for the CLI `python -m src.main`
-  scheduled mode, which never boots the web server and cannot be rescheduled live.
-  (Extends ADR-008 and revises ADR-018.)
+  two W7 deferrals (live cron reschedule + per-run DB re-reads). The `SchedulerManager`
+  is the **sole** scheduler; the CLI (`python -m src.main`) has no scheduled mode and
+  always runs once. (Extends ADR-008 and revises ADR-018.)
 - **Context:** ADR-008 ships one all-in-one container. Adding a React frontend
   introduces a Node build step, and the web server must coexist with APScheduler.
   ADR-018 used a `BlockingScheduler`, which cannot share a process with uvicorn.
