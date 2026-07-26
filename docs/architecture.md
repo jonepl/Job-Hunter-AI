@@ -73,22 +73,14 @@ reimplements no business logic; a route is a second way in, not a new brain. The
 React SPA under `web/` is an HTTP client of that API. In production FastAPI serves
 the built SPA at `/` and the JSON API under `/api` from the same origin.
 
-The CLI has four modes: the default (no-subcommand) invocation runs a search; the
-`mark` subcommand moves a stored job through its lifecycle
-(`python -m src.main mark --job-id 7 --status applied --note "referred"`, plus
-`--save` / `--unsave`); the `resume` subcommand manages the cached master resume
-(`resume upload <path>` / `resume list` / `resume activate <version>`); the
-`generate` subcommand produces a document for a stored job
-(`generate resume <job_id>` / `generate cover-letter <job_id>` with `--tone` /
-`--person` / `--style-notes`). Each dispatches to an argparse-free runner
-(`src/orchestration/mark_runner.py`, `src/orchestration/resume_runner.py`,
-`src/orchestration/generation_runner.py`) so the API
-can reuse the same paths (the resume runner shares the `ResumeService` the browser
-`POST /api/resume` upload now drives, W5; the generation runner shares the
-`GenerationService` the browser now drives asynchronously, W6). Only the six **human-set** statuses
-are selectable via `mark` — machine states are never user-assignable (ADR-025). The
-`generate` CLI prints only the file path and provenance, never document content
-(ADR-028/029).
+The CLI is **immediate-run only**: `python -m src.main` runs a single, in-process
+search→enrich→evaluate→output run with optional `--query` / `--location` /
+`--work-type` / `--date-posted` / `--scrapers` / `--evaluator-model` overrides, then
+exits. It has no scheduled mode and no ops subcommands. The job-lifecycle, master-resume,
+and document-generation ops that once lived behind `mark` / `resume` / `generate`
+subcommands are now web-API operations (`PATCH /api/jobs/{id}/status|saved`,
+`GET`/`POST /api/resume` + activate, `POST /api/jobs/{id}/generate`), sharing the same
+`ResumeService` (W5) and `GenerationService` (W6) the pipeline uses (ADR-025/028/029).
 
 **API surface (as of W7).** All routes under `/api`, no business logic in the
 router (ADR-026):
@@ -190,14 +182,11 @@ job-search-agent/
 │       └── resume.pdf                   ← Candidate resume (volume mounted)
 │
 ├── src/
-│   ├── main.py                          ← thin CLI entrypoint (search + mark + resume dispatch)
+│   ├── main.py                          ← thin CLI entrypoint (immediate run only)
 │   ├── orchestration/                   ← composition + run layer (imports both adapters/ and core/)
 │   │   ├── bootstrap.py                 ← profile loading
 │   │   ├── runner.py                    ← immediate run logic
-│   │   ├── mark_runner.py               ← run_mark() — mark CLI backend (no argparse dep)
-│   │   ├── resume_runner.py             ← resume upload/list/activate — resume CLI backend
-│   │   ├── generation_runner.py         ← generate resume/cover-letter — generation CLI backend
-│   │   ├── scheduler.py                 ← APScheduler — Blocking (CLI) + in-process Background (web) schedulers, live reschedule
+│   │   ├── scheduler.py                 ← APScheduler — in-process Background scheduler (web-owned), live reschedule
 │   │   └── service_factory.py           ← Builds JobSearchService + build_resume/generation/run_service()
 │   │
 │   ├── api/                             ← FastAPI driving adapter (serves API + SPA)
@@ -347,9 +336,6 @@ tests/
 │   ├── orchestration/                       ← mirrors src/orchestration/
 │   │   ├── test_bootstrap.py                ← tests for load_profiles()
 │   │   ├── test_runner.py                   ← tests for run_immediate()
-│   │   ├── test_mark_runner.py              ← tests for run_mark() (mark CLI backend)
-│   │   ├── test_resume_runner.py            ← tests for the resume CLI backend
-│   │   ├── test_generation_runner.py        ← tests for the generate CLI backend
 │   │   ├── test_scheduler.py                ← tests for run_all_profiles()
 │   │   └── test_service_factory.py          ← tests for build_service() wiring
 │   ├── api/
@@ -677,8 +663,8 @@ class StoredJob(BaseModel):
 The nine-state job lifecycle (ADR-025), a `str` enum in
 `src/core/domain/job_status.py`. Three **machine-set** states are assigned by the
 pipeline (`new`, `evaluated`, `pre_filtered`); six **human-set** states are assigned
-via the `mark` CLI (`applied`, `started`, `interviewing`, `offer`, `rejected`,
-`not_interested`). `MACHINE_STATUSES` / `HUMAN_STATUSES` frozensets and
+from the web Jobs screen (`PATCH /api/jobs/{id}/status`) — `applied`, `started`,
+`interviewing`, `offer`, `rejected`, `not_interested`. `MACHINE_STATUSES` / `HUMAN_STATUSES` frozensets and
 `is_human_set(status)` classify a state — the classification the no-clobber rule and
 the pipeline's suppression step both read.
 
@@ -902,7 +888,7 @@ class ResumeRepositoryPort(ABC):
 hashes the bytes, short-circuits an identical re-upload to a reactivation, enforces
 `RESUME_MAX_SIZE_BYTES`, estimates skill/role counts, and stores a new version. The
 pipeline reads the active version via this service and auto-seeds it on a first run;
-the `resume` CLI and the future `POST /resume` (W5) route through the same service.
+the browser `GET`/`POST /api/resume` routes (W5) route through the same service.
 
 **Schema (migration 4 — F).** Adds `generations` (`id` opaque PK, `job_id` FK →
 `jobs`, `kind`, `outcome`, `file_path`, `provider`, `model`, `repair_note`,
@@ -979,7 +965,7 @@ active resume (E1) + the stored job (B1), call the generation port, run the form
 perform **exactly one** corrective retry when it flags an ambiguous hyphen (ADR-029),
 write the `.docx` for **every** outcome, and record the provenance-only `Generation`.
 Generation is user-triggered, so this service is not wired into `JobSearchService`; the
-`generate` CLI and W6's async task route through it. Document content lives only in the
+browser `POST /api/jobs/{id}/generate` route (W6, async task) routes through it. Document content lives only in the
 `.docx` file — never a return value, a log line, or the `Generation` row (CLAUDE.md #2).
 
 ### `OutputPort`

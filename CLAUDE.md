@@ -61,10 +61,11 @@ Adapters → Ports ← Core Domain     (all dependencies point inward)
   `orchestration/runner.py` / `orchestration/scheduler.py` →
   `orchestration/service_factory.py` (builds a `JobSearchService` per `SearchProfile`).
 - `src/orchestration/` — the composition/run layer that assembles the hexagon:
-  `bootstrap.py`, `runner.py`, `scheduler.py`, `service_factory.py`, and the
-  `mark_runner.py` / `resume_runner.py` / `generation_runner.py` command backends.
-  It is the one layer allowed to import both `adapters/` and `core/`. `main.py`
-  stays at `src/` root (the `python -m src.main` entrypoint).
+  `bootstrap.py`, `runner.py`, `scheduler.py`, `service_factory.py`. It is the one
+  layer allowed to import both `adapters/` and `core/`. `main.py` stays at `src/`
+  root (the `python -m src.main` entrypoint) and is **immediate-run only** — no
+  scheduled mode, no `mark`/`resume`/`generate` subcommands (those moved to the
+  web API; scheduling to the web `SchedulerManager`).
 - `src/infra/` — `logging.py`, `cost_tracker.py`, `cost_estimator.py`.
 
 ## Non-obvious gotchas

@@ -21,15 +21,12 @@ Built on **Hexagonal Architecture (Ports and Adapters)**. Core domain logic is f
 
 ```
 src/
-├── main.py            ← thin CLI entrypoint (python -m src.main)
+├── main.py            ← thin CLI entrypoint (python -m src.main, immediate run only)
 ├── orchestration/     ← composition + run layer (assembles the hexagon)
 │   ├── bootstrap.py       ← profile loading
 │   ├── runner.py          ← immediate run logic
-│   ├── scheduler.py       ← APScheduler scheduled mode
-│   ├── service_factory.py ← composition root
-│   ├── mark_runner.py     ← mark CLI backend
-│   ├── resume_runner.py   ← resume CLI backend
-│   └── generation_runner.py ← generate CLI backend
+│   ├── scheduler.py       ← APScheduler scheduled mode (web-owned SchedulerManager)
+│   └── service_factory.py ← composition root
 ├── api/               ← FastAPI driving adapter (serves API + SPA)
 ├── cli/               ← argparse definitions and CLI overrides
 ├── infra/             ← logging configuration
@@ -266,12 +263,12 @@ View logs:
 docker-compose logs -f agent
 ```
 
-Immediate run (no scheduler):
+Immediate run (no scheduler) — `python -m src.main` always runs all profiles once
+and exits, regardless of `SCHEDULE_ENABLED` (it has no scheduled mode):
 ```bash
-# Set SCHEDULE_ENABLED=false in .env, then:
-docker-compose run agent
-# or
 python -m src.main
+# or, in a container:
+docker-compose run agent python -m src.main
 ```
 
 ---

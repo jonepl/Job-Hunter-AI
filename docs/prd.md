@@ -358,16 +358,15 @@ Immediate mode and APScheduler scheduled mode both supported. SCHEDULE_ENABLED c
   band and per-evaluation threshold are stored per job (ADR-033).
 - ~~No application/job-status tracking~~ **Superseded (Story C, ADR-025).** Each
   stored job now carries a nine-state lifecycle (`JobStatus`) and a `saved`
-  bookmark, with an append-only `status_history` audit trail. The `mark` CLI
-  (`python -m src.main mark --job-id N --status applied|…`, plus `--save`/`--unsave`)
-  moves a job through the six human-set states; transitions are permissive (any →
-  any) but the machine never clobbers a human-set status, and a job you have acted
-  on is suppressed from future run reports (still sighted). The web actions that
-  drive this (status dropdown, ★ save) arrive in W2/W3.
-- ~~No document generation~~ **Superseded (Story F, ADR-029/030).** A `generate`
-  CLI turns a stored, evaluated job into a **tailored resume** or **cover letter**
-  `.docx` (`python -m src.main generate resume N` / `generate cover-letter N`,
-  with `--tone`/`--person`/`--style-notes`). The LLM returns structured JSON; a
+  bookmark, with an append-only `status_history` audit trail. The web Jobs screen
+  (`PATCH /api/jobs/{id}/status|saved`) moves a job through the six human-set states;
+  transitions are permissive (any → any) but the machine never clobbers a human-set
+  status, and a job you have acted on is suppressed from future run reports (still
+  sighted).
+- ~~No document generation~~ **Superseded (Story F, ADR-029/030).** Document
+  generation (the web Jobs screen / `POST /api/jobs/{id}/generate`) turns a stored,
+  evaluated job into a **tailored resume** or **cover letter** `.docx` (with
+  tone/person/style-notes voice controls). The LLM returns structured JSON; a
   deterministic formatter enforces the hard formatting rules with three outcomes
   (clean / repaired / needs_review) and one corrective retry, never hard-failing to
   nothing and never silently rewriting a number or date. Voice is a structured
@@ -392,7 +391,7 @@ stale PRD section to refresh.
 
 | # | PRD requirement | Actual behavior | Location |
 |---|---|---|---|
-| C1 | "Cache extracted resume text — do not re-parse on every run" (§7, §8) | **Resolved (E1, ADR-028).** The resume is parsed once on upload and cached in SQLite with version history; runs read the active stored version (auto-seeding it from `RESUME_PATH` on a first run) instead of re-parsing the PDF. Manage versions with the `resume` CLI. The legacy per-run parse survives only as a fallback when no resume store is wired. | `ResumeService`, `SQLiteResumeRepository`, `JobSearchService._load_resume` |
+| C1 | "Cache extracted resume text — do not re-parse on every run" (§7, §8) | **Resolved (E1, ADR-028).** The resume is parsed once on upload and cached in SQLite with version history; runs read the active stored version (auto-seeding it from `RESUME_PATH` on a first run) instead of re-parsing the PDF. Manage versions from the web Settings screen (`POST /api/resume`). The legacy per-run parse survives only as a fallback when no resume store is wired. | `ResumeService`, `SQLiteResumeRepository`, `JobSearchService._load_resume` |
 | C2 | "Cap results at 50 listings per platform per run" / "No more than 50 results scraped per platform" (§7, §9) | Both scrapers default to `limit=25` and the service never overrides it, so the effective cap is **25/platform**. JSearch additionally fetches up to `JSEARCH_MAX_PAGES` (clamped 1–10 → up to 100 raw results) then discards down to 25, paying for pages it throws away. The number 50 appears nowhere in code. | `LinkedInScraper`, `JSearchScraper`, `JobSearchService` |
 | C3 | Default score threshold is `70` (§3, §7) | Real user-facing default is `75` (`SearchProfile.score_threshold` default and env default). The `run()` signature default of 70 is always overridden by profiles. | `SearchProfile` |
 
