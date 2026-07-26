@@ -91,7 +91,9 @@ describe("<SearchRail>", () => {
     await renderRail();
     const backend = await screen.findByRole("button", { name: "Backend" });
     expect(backend).toHaveAttribute("aria-current", "page");
-    expect(backend.className).toContain("shadow-[inset_2px_0_0_var(--accent)]");
+    // The active surface (accent bar) is the row container that holds the checkbox,
+    // the select button, and the ⚙ gear together.
+    expect(backend.parentElement?.className).toContain("shadow-[inset_2px_0_0_var(--accent)]");
   });
 
   it("selects a different profile on click", async () => {
