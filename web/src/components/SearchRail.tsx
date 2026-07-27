@@ -318,7 +318,7 @@ function ProfileRow({
         type="button"
         onClick={onConfigure}
         aria-label={`Configure ${name}`}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control text-body leading-none text-text-3 transition-colors duration-fast hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        className="flex h-8 shrink-0 items-center justify-center rounded-control px-1.5 text-body leading-none text-text-3 transition-colors duration-fast hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
       >
         <span aria-hidden="true">⚙</span>
       </button>

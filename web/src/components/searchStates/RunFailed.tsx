@@ -3,7 +3,7 @@ import { useTriggerRun } from "../../hooks/useRuns";
 
 // Run-failed panel (redesign Part F.2). Centred, danger heading, the run's bare
 // exception *type name* (never a prettified message — schemas.py), and a Retry that
-// calls the same run mutation as <RunButton>. No fabricated failure copy.
+// re-triggers a run via useTriggerRun. No fabricated failure copy.
 
 export function RunFailed({ run }: { run: RunOut }) {
   const trigger = useTriggerRun();

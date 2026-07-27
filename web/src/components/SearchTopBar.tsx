@@ -1,34 +1,18 @@
 import { useProfiles } from "../hooks/useProfiles";
 import { useRuns } from "../hooks/useRuns";
-import { useResolvedSelection, useViewedProfile } from "../lib/searchView";
+import { useViewedProfile } from "../lib/searchView";
 import { describeNextRun } from "../lib/time";
-import { RunButton } from "./RunButton";
 
-// The Search screen's top-bar pieces (redesign Part B.3 + v2 §D). The center pairs a
-// live "run strip" with the "Viewing" box (conflict #2 — labelled Viewing, not
-// "Active"), the run control inside the box. The right slot gains a threshold indicator
-// showing the VIEWED profile's per-profile threshold (ADR-033), rendered only when a
-// profile is loaded — never a zero.
+// The Search screen's top-bar pieces (v2 §D). Per the v2 design the center is *only* the
+// live run strip — the v1 "Viewing" box + global run button are gone (running now happens
+// through the rail's per-profile "Run now" / "Run N selected" and the empty state). The
+// right slot keeps the threshold indicator showing the VIEWED profile's per-profile
+// threshold (ADR-033), rendered only when a profile is loaded — never a zero.
 
 export function SearchTopBarCenter() {
-  const profile = useViewedProfile();
-  const selection = useResolvedSelection();
-  const label = profile
-    ? profile.name || profile.query
-    : selection.kind === "tracked"
-      ? "Tracked jobs"
-      : "—";
-
   return (
     <div className="flex flex-1 items-center gap-4">
       <SearchRunStrip />
-      <div className="flex max-w-[540px] flex-1 items-center gap-3 rounded-control border border-border-strong bg-bg p-[5px_6px_5px_16px]">
-        <div className="min-w-0 flex-1">
-          <p className="font-mono text-tick uppercase tracking-[0.08em] text-text-3">Viewing</p>
-          <p className="truncate text-control font-semibold text-text">{label}</p>
-        </div>
-        <RunButton />
-      </div>
     </div>
   );
 }

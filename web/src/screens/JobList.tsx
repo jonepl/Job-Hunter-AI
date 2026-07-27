@@ -18,7 +18,7 @@ import { isTracked, statusLabel } from "../lib/status";
 import { relativeTime } from "../lib/time";
 import type { JobSummary, ProfileOut, RunOut } from "../api/client";
 
-// The Search screen shell (redesign Part B): a 284px navigation rail, a 484px
+// The Search screen shell (redesign Part B): a 340px navigation rail, a 484px
 // results column, and a fluid detail pane, each scrolling independently under the
 // 66px TopBar. The rail collapses to a drawer below xl and the whole thing to a
 // single column below lg. Rail selection is shared React state (searchView.tsx).
@@ -54,7 +54,7 @@ export function JobList() {
 
   return (
     <div className="flex h-[calc(100vh-66px)]">
-      <aside className="hidden w-[284px] shrink-0 overflow-y-auto border-r border-border bg-surface p-5 px-[14px] as-scroll xl:block">
+      <aside className="hidden w-[340px] shrink-0 overflow-y-auto border-r border-border bg-surface p-5 px-[14px] as-scroll xl:block">
         <SearchRail
           onNewProfile={() => setModalOpen(true)}
           onConfigure={setConfigureProfile}
@@ -143,7 +143,7 @@ function RailDrawer({ children, onClose }: { children: React.ReactNode; onClose:
   return (
     <div className="fixed inset-0 z-40 flex xl:hidden" role="dialog" aria-label="Profiles">
       <div className="flex-1 bg-text/40" onClick={onClose} />
-      <aside className="ml-auto w-[284px] overflow-y-auto border-l border-border bg-surface p-5 px-[14px] as-scroll">
+      <aside className="ml-auto w-[340px] overflow-y-auto border-l border-border bg-surface p-5 px-[14px] as-scroll">
         {children}
       </aside>
     </div>

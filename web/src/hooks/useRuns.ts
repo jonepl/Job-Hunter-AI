@@ -62,8 +62,8 @@ export function useStartRun() {
 
 /**
  * Start a background run and refresh the recent-runs list. Used by the run-state
- * panels' "Retry run" — unlike <RunButton> it doesn't own a single-run poll; the
- * shared `useRuns()` list picks the new run up on its next tick.
+ * panels' "Retry run" — it doesn't own a single-run poll; the shared `useRuns()`
+ * list picks the new run up on its next tick.
  */
 export function useTriggerRun() {
   const qc = useQueryClient();
