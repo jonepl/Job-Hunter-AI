@@ -604,6 +604,26 @@ code is marked inferred.
      **short per-job commits** rather than one run-long transaction, and route all
      writes through the single `JobRepositoryPort` instance. Amends ADR-023's "no
      concurrent writers" line to "contention handled, not assumed away."
+
+     > **Correction (2026-07, handoff bug1) — `busy_timeout` was necessary but not
+     > sufficient.** The original design opened **six** connections to the one file
+     > (jobs, resume, generation, settings, profile, run), each with
+     > `check_same_thread=False`, and leaned on `busy_timeout` alone. But
+     > `busy_timeout` only arbitrates lock contention *between transactions* — it does
+     > **not** make a `sqlite3.Connection` safe for concurrent use by multiple OS
+     > threads, nor protect the shared WAL index (`-shm`) across several connections on
+     > the same file. During a web run the pipeline writes on the event-loop thread
+     > while the client polls reads (and a user action can write) on uvicorn threadpool
+     > threads; that race corrupted the WAL-index state and SQLite raised `file is not
+     > a database` on every connection until restart. **Fix:** all repositories on a
+     > file now share **one** `LockedConnection` (cached by absolute path in
+     > `src/adapters/repository/connection.py`), and a **single process-wide
+     > `threading.RLock` per file** serializes every `execute`/`commit`/`close` (rows
+     > are eager-fetched *inside* the lock, since sqlite cursors step lazily). A single
+     > shared connection also avoids the cross-connection WAL-writer deadlock that a
+     > per-file lock over *separate* connections would create. It is the **lock**, not
+     > `busy_timeout`, that makes cross-thread access safe; `busy_timeout` is retained
+     > only as belt-and-braces for a genuinely separate OS process.
   2. **Container binding.** Bind uvicorn to `0.0.0.0` **inside** the container (so port
      forwarding works) but **publish on host loopback only** — `127.0.0.1:8000:8000` in
      `docker-compose.yml`, never `8000:8000`. This keeps the "loopback-only, therefore

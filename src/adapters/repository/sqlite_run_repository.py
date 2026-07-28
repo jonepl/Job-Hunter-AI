@@ -7,11 +7,10 @@ per-operation commits. Only a summary is stored, never job content (CLAUDE.md #2
 """
 
 import logging
-import os
 import sqlite3
 from datetime import datetime
 
-from src.adapters.repository.migrations import apply_migrations
+from src.adapters.repository.connection import open_connection
 from src.core.domain.run_record import RunRecord
 from src.core.ports.run_repository_port import RunRepositoryPort
 
@@ -35,16 +34,9 @@ class SQLiteRunRepository(RunRepositoryPort):
             db_path: Path to the SQLite file. Parent directories are created.
             busy_timeout_ms: ``PRAGMA busy_timeout`` in milliseconds (ADR-034 §1).
         """
-        parent = os.path.dirname(db_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        apply_migrations(self._conn)
+        # Cross-thread safety comes from the per-file lock inside open_connection —
+        # the poll and the background run share this connection (ADR-034 §1, bug1).
+        self._conn = open_connection(db_path, busy_timeout_ms)
         logger.info("Run repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms)
 
     def save(self, run: RunRecord) -> RunRecord:
