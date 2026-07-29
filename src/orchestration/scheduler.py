@@ -46,7 +46,7 @@ async def run_all_profiles(
     profiles: list[SearchProfile],
     service_factory: callable,
     settings_service: SettingsService | None = None,
-) -> list[RunReport]:
+) -> tuple[list[RunReport], list[tuple[int, str]]]:
     """Run all enabled search profiles sequentially.
 
     Each profile gets its own JobSearchService instance and delivers
@@ -60,11 +60,13 @@ async def run_all_profiles(
             profile's last-run status is stamped ``running`` → ``succeeded``/``failed``.
 
     Returns:
-        The RunReport for each profile that completed. A profile skipped by a
-        transient failure contributes no report; a fatal ``ModelNotFoundError``
-        aborts the remaining profiles (see below). Callers that only deliver
-        reports per profile (the scheduler) may ignore this; W8 aggregates it
-        into a run summary.
+        A ``(reports, failures)`` tuple. ``reports`` holds the RunReport for each
+        profile that completed; ``failures`` holds ``(profile_id, error_type_name)``
+        for each profile whose pipeline raised. Batch-resilience is unchanged — a
+        transient failure is recorded and the run continues; a fatal
+        ``ModelNotFoundError`` is recorded and aborts the remaining profiles. The
+        caller (``RunService.execute_run``) derives the run status from ``failures``
+        so a failed run is never reported as a clean success (Bug 2).
     """
     enabled = [p for p in profiles if p.enabled]
     skipped = len(profiles) - len(enabled)
@@ -73,6 +75,7 @@ async def run_all_profiles(
     logger.info("Scheduler — starting run for %d profile(s)", len(enabled))
 
     reports: list[RunReport] = []
+    failures: list[tuple[int, str]] = []
 
     # Load cost tracking config once per scheduled run
     show_cost = show_cost_estimate()
@@ -149,18 +152,21 @@ async def run_all_profiles(
         except ModelNotFoundError as exc:
             # Fatal config shared by every profile — abort this trigger instead
             # of failing each profile identically. The daemon stays up so the
-            # next trigger can pick up a corrected .env.
+            # next trigger can pick up a corrected .env. Recorded as a failure so
+            # a single-profile run hitting it terminates as ``failed`` (Bug 2).
             _record_last_run(settings_service, profile.profile_id, "failed")
+            failures.append((profile.profile_id, "ModelNotFoundError"))
             logger.critical("%s", exc)
             logger.critical("Aborting this scheduled run; fix EVALUATOR_MODEL and restart.")
             break
         except Exception as e:
             _record_last_run(settings_service, profile.profile_id, "failed")
-            logger.error("Profile %d failed: %s", profile.profile_id, e)
+            failures.append((profile.profile_id, type(e).__name__))
+            logger.error("Profile %d failed: %s", profile.profile_id, type(e).__name__)
             continue
 
     logger.info("Scheduler — all profiles complete")
-    return reports
+    return reports, failures
 
 
 def _misfire_grace_seconds() -> int:

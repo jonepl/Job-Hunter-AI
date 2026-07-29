@@ -16,11 +16,25 @@ from src.api.deps import get_run_service
 from src.api.main import create_app
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.run_record import RunRecord
+from src.core.domain.run_report import RunReport
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
 from src.core.services.run_service import RunService
 
 _NOW = datetime(2026, 7, 19, 9, 0, 0)
+
+
+def _stub_report() -> RunReport:
+    """A minimal successful RunReport so a run models a completed profile."""
+    return RunReport(
+        qualifying_results=[],
+        near_miss_results=[],
+        total_evaluated=0,
+        score_threshold=75,
+        query="SWE",
+        location="Remote",
+        run_at=_NOW,
+    )
 
 
 def _real_profile(profile_id: int) -> SearchProfile:
@@ -55,7 +69,10 @@ def _service(*, profiles: list, fail: bool = False) -> tuple[RunService, SQLiteR
     async def fake_run_all(profs, factory, settings_service=None):
         if fail:
             raise RuntimeError("scraper exploded")
-        return []
+        # Model a successful run: one report per profile that ran. An empty report
+        # list now (correctly) reads as a failed run (Bug 2), so a happy-path fake
+        # must produce a report per profile.
+        return ([_stub_report() for _ in profs], [])
 
     service = RunService(
         run_repo=repo,
