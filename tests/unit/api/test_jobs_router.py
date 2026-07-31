@@ -5,6 +5,7 @@ SQLite repository injected through a dependency override — no network, no real
 files, consistent with the mock-all-externals rule (the store is our own).
 """
 
+import sqlite3
 from datetime import datetime
 
 from fastapi.testclient import TestClient
@@ -15,6 +16,7 @@ from src.api.main import create_app
 from src.core.domain.fingerprint import compute_fingerprint
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
+from src.core.exceptions import RepositoryError
 
 _NOW = datetime(2026, 7, 14, 9, 0, 0)
 
@@ -245,3 +247,42 @@ def test_patch_saved_unknown_id_returns_404():
         "/api/jobs/999/saved", json={"saved": True}
     )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Persistence-failure degradation — RepositoryError → clean 503 (bug3)
+# ---------------------------------------------------------------------------
+
+
+class _RaisingRepository:
+    """A repository double whose read fails at the storage boundary.
+
+    Mirrors what the SQLite adapter does on a real persistence failure: it raises
+    the technology-agnostic ``RepositoryError`` with the original ``sqlite3`` error
+    chained, so the router/handler never sees the raw persistence type.
+    """
+
+    def list_jobs(self):
+        """Fail the way the adapter does when the store is unreadable."""
+        raise RepositoryError("read failed") from sqlite3.DatabaseError("file is not a database")
+
+
+def _raising_client() -> TestClient:
+    """Return a TestClient whose jobs repository raises on read."""
+    app = create_app()
+    app.dependency_overrides[get_repository] = lambda: _RaisingRepository()
+    return TestClient(app)
+
+
+def test_list_jobs_repository_error_returns_clean_503():
+    """A repository read failure degrades to a 503 with a generic detail, not a 500."""
+    resp = _raising_client().get("/api/jobs")
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "A storage error occurred. Please try again."}
+
+
+def test_list_jobs_repository_error_leaks_no_internals():
+    """The response body exposes no traceback, sqlite type, or SQL/path detail."""
+    body = _raising_client().get("/api/jobs").text.lower()
+    for leaked in ("sqlite3", "databaseerror", "traceback", "file is not a database"):
+        assert leaked not in body, f"response leaked internal detail: {leaked!r}"

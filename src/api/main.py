@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from src.api.handlers import register_exception_handlers
 from src.api.routers import generations, jobs, profiles, resume, runs, settings
 from src.orchestration.scheduler import SchedulerManager, set_scheduler_manager
 
@@ -94,6 +95,10 @@ def create_app() -> FastAPI:
     app.include_router(settings.router, prefix="/api")
     app.include_router(profiles.router, prefix="/api")
     app.include_router(runs.router, prefix="/api")
+
+    # A persistence failure in any route degrades to a clean 503 instead of a raw
+    # sqlite3 traceback dumped to a 500 (bug3).
+    register_exception_handlers(app)
 
     # Serve the built SPA at / when present; skip in dev (Vite serves it) so the
     # app still boots without a frontend build.

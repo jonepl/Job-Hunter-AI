@@ -17,12 +17,16 @@ import sqlite3
 import threading
 from datetime import datetime
 
+import pytest
+
+from src.adapters.repository.connection import open_connection
 from src.adapters.repository.sqlite_repository import SQLiteJobRepository
 from src.adapters.repository.sqlite_run_repository import SQLiteRunRepository
 from src.core.domain.fingerprint import compute_fingerprint
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
 from src.core.domain.run_record import RunRecord
+from src.core.exceptions import RepositoryError
 
 _NOW = datetime(2026, 7, 14, 9, 0, 0)
 
@@ -168,3 +172,42 @@ def test_writers_across_repo_types_share_one_file_lock(tmp_path):
 
     assert errors == [], f"cross-repository writes raised: {errors!r}"
     assert not any(isinstance(e, sqlite3.DatabaseError) for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# Boundary translation — sqlite3.Error → RepositoryError (bug3)
+# ---------------------------------------------------------------------------
+
+
+def test_execute_translates_sqlite_error_to_repository_error(tmp_path):
+    """A failing statement surfaces as RepositoryError, never a raw sqlite3 type.
+
+    Guards the ports boundary: a use-time failure (here, a missing table) is caught
+    at the shared connection seam and re-raised as the technology-agnostic domain
+    error, with the original ``sqlite3.Error`` preserved on ``__cause__`` for the
+    server-side log.
+    """
+    conn = open_connection(str(tmp_path / "agent.db"), busy_timeout_ms=5000)
+    try:
+        with pytest.raises(RepositoryError) as excinfo:
+            conn.execute("SELECT * FROM table_that_does_not_exist")
+    finally:
+        conn.close()
+
+    assert isinstance(excinfo.value.__cause__, sqlite3.Error)
+
+
+def test_open_connection_translates_corrupt_file_at_open_time(tmp_path):
+    """Opening a non-database file surfaces as RepositoryError, not a raw traceback.
+
+    The open path (connect + pragmas + migrations) is a different call path than the
+    runtime mutators, so it is wrapped too — a corrupt/truncated file, a permissions
+    error, or a migration failure never escapes as a bare ``sqlite3`` error either.
+    """
+    corrupt = tmp_path / "agent.db"
+    corrupt.write_bytes(b"this is definitely not a sqlite database header")
+
+    with pytest.raises(RepositoryError) as excinfo:
+        open_connection(str(corrupt), busy_timeout_ms=5000)
+
+    assert isinstance(excinfo.value.__cause__, sqlite3.Error)

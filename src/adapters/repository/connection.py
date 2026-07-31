@@ -43,6 +43,7 @@ import sqlite3
 import threading
 
 from src.adapters.repository.migrations import apply_migrations
+from src.core.exceptions import RepositoryError
 
 logger = logging.getLogger(__name__)
 
@@ -139,21 +140,44 @@ class LockedConnection:
         Returns:
             A :class:`_Result` buffering the fetched rows plus ``lastrowid`` /
             ``rowcount`` — for writes the row list is simply empty.
+
+        Raises:
+            RepositoryError: If the underlying ``sqlite3`` call fails, so no raw
+                persistence type escapes the adapter (bug3). Chains the original.
         """
         with self._lock:
-            cursor = self._conn.execute(sql, params)
-            rows = cursor.fetchall()
+            try:
+                cursor = self._conn.execute(sql, params)
+                rows = cursor.fetchall()
+            except sqlite3.Error as exc:
+                raise RepositoryError("SQLite execute failed") from exc
             return _Result(rows, cursor.lastrowid, cursor.rowcount)
 
     def executescript(self, sql: str) -> None:
-        """Run a multi-statement script under the lock (used by migrations)."""
+        """Run a multi-statement script under the lock (used by migrations).
+
+        Raises:
+            RepositoryError: If the script fails, chaining the original ``sqlite3``
+                error (bug3).
+        """
         with self._lock:
-            self._conn.executescript(sql)
+            try:
+                self._conn.executescript(sql)
+            except sqlite3.Error as exc:
+                raise RepositoryError("SQLite executescript failed") from exc
 
     def commit(self) -> None:
-        """Commit the current transaction under the lock."""
+        """Commit the current transaction under the lock.
+
+        Raises:
+            RepositoryError: If the commit fails, chaining the original ``sqlite3``
+                error (bug3).
+        """
         with self._lock:
-            self._conn.commit()
+            try:
+                self._conn.commit()
+            except sqlite3.Error as exc:
+                raise RepositoryError("SQLite commit failed") from exc
 
     def close(self) -> None:
         """Close the underlying connection and evict it from the shared cache.
@@ -171,15 +195,25 @@ class LockedConnection:
 
 
 def _new_connection(db_path: str, busy_timeout_ms: int, cache_key: str | None) -> LockedConnection:
-    """Open a raw WAL connection, migrate it, and wrap it in a LockedConnection."""
+    """Open a raw WAL connection, migrate it, and wrap it in a LockedConnection.
+
+    Raises:
+        RepositoryError: If opening, configuring, or migrating the database fails
+            (a corrupt/truncated file, disk full, permissions, a migration error).
+            Translating here as well as in the runtime mutators means an open-time
+            failure never escapes as a raw ``sqlite3`` traceback either (bug3).
+    """
     lock = _lock_for(cache_key) if cache_key is not None else threading.RLock()
-    raw = sqlite3.connect(db_path, check_same_thread=False)
-    raw.row_factory = sqlite3.Row
-    raw.execute("PRAGMA journal_mode=WAL")
-    raw.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
-    raw.execute("PRAGMA foreign_keys=ON")
+    try:
+        raw = sqlite3.connect(db_path, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        raw.execute("PRAGMA journal_mode=WAL")
+        raw.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
+        raw.execute("PRAGMA foreign_keys=ON")
+    except sqlite3.Error as exc:
+        raise RepositoryError("SQLite connection open failed") from exc
     conn = LockedConnection(raw, lock, cache_key)
-    apply_migrations(conn)
+    apply_migrations(conn)  # already translates via LockedConnection.executescript
     return conn
 
 

@@ -242,7 +242,7 @@ function ResultsBody({
       <div className="rounded-card border border-border bg-surface p-8 text-center">
         <h2 className="font-display text-h3">Couldn’t load your jobs</h2>
         <p className="mx-auto mt-2 max-w-md text-small text-text-2">
-          The job service didn’t respond. Check that the API is running, then try again.
+          Something went wrong loading your jobs. Please try again in a moment.
         </p>
         <button
           type="button"
