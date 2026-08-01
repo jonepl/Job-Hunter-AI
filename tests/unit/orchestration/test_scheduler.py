@@ -105,6 +105,51 @@ class TestRunAllProfiles:
         second_service.run.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_run_all_profiles_reports_failures_to_caller(self):
+        """A failing profile is returned in `failures` (not just logged); others report.
+
+        This is the Bug 2 fix: the runner swallows per-profile errors for batch
+        resilience, but must hand them back so the run status can be derived.
+        """
+        profiles = [_make_profile(1), _make_profile(2)]
+
+        failing_service = MagicMock()
+        failing_service.run = AsyncMock(side_effect=RuntimeError("scraper failure"))
+        succeeding_service = MagicMock()
+        succeeding_service.run = AsyncMock(return_value=MagicMock())
+
+        services = [failing_service, succeeding_service]
+
+        def factory(profile: SearchProfile):
+            return services.pop(0)
+
+        reports, failures = await run_all_profiles(profiles, factory)
+
+        assert len(reports) == 1  # the successful profile still produced a report
+        assert failures == [(1, "RuntimeError")]
+
+    @pytest.mark.asyncio
+    async def test_run_all_profiles_reports_model_not_found_failure(self):
+        """A ModelNotFoundError is recorded in `failures` before aborting the trigger."""
+        profiles = [_make_profile(1), _make_profile(2)]
+
+        failing_service = MagicMock()
+        failing_service.run = AsyncMock(side_effect=ModelNotFoundError("model 'x' not found"))
+        second_service = MagicMock()
+        second_service.run = AsyncMock(return_value=MagicMock())
+
+        services = [failing_service, second_service]
+
+        def factory(profile: SearchProfile):
+            return services.pop(0)
+
+        reports, failures = await run_all_profiles(profiles, factory)
+
+        assert reports == []
+        assert failures == [(1, "ModelNotFoundError")]
+        second_service.run.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_run_all_profiles_skips_disabled_profiles(self, caplog):
         """A paused profile is never built or run, and the skip count is logged."""
         import logging

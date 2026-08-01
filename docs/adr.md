@@ -604,6 +604,26 @@ code is marked inferred.
      **short per-job commits** rather than one run-long transaction, and route all
      writes through the single `JobRepositoryPort` instance. Amends ADR-023's "no
      concurrent writers" line to "contention handled, not assumed away."
+
+     > **Correction (2026-07, handoff bug1) — `busy_timeout` was necessary but not
+     > sufficient.** The original design opened **six** connections to the one file
+     > (jobs, resume, generation, settings, profile, run), each with
+     > `check_same_thread=False`, and leaned on `busy_timeout` alone. But
+     > `busy_timeout` only arbitrates lock contention *between transactions* — it does
+     > **not** make a `sqlite3.Connection` safe for concurrent use by multiple OS
+     > threads, nor protect the shared WAL index (`-shm`) across several connections on
+     > the same file. During a web run the pipeline writes on the event-loop thread
+     > while the client polls reads (and a user action can write) on uvicorn threadpool
+     > threads; that race corrupted the WAL-index state and SQLite raised `file is not
+     > a database` on every connection until restart. **Fix:** all repositories on a
+     > file now share **one** `LockedConnection` (cached by absolute path in
+     > `src/adapters/repository/connection.py`), and a **single process-wide
+     > `threading.RLock` per file** serializes every `execute`/`commit`/`close` (rows
+     > are eager-fetched *inside* the lock, since sqlite cursors step lazily). A single
+     > shared connection also avoids the cross-connection WAL-writer deadlock that a
+     > per-file lock over *separate* connections would create. It is the **lock**, not
+     > `busy_timeout`, that makes cross-thread access safe; `busy_timeout` is retained
+     > only as belt-and-braces for a genuinely separate OS process.
   2. **Container binding.** Bind uvicorn to `0.0.0.0` **inside** the container (so port
      forwarding works) but **publish on host loopback only** — `127.0.0.1:8000:8000` in
      `docker-compose.yml`, never `8000:8000`. This keeps the "loopback-only, therefore
@@ -812,3 +832,36 @@ code is marked inferred.
   `misfire_grace_time` only prevents silent *skips* (the guard makes double-*runs*
   impossible regardless); the 1800s run self-heal vs a genuinely long run is pre-existing;
   the `runs` table grows unpruned at higher scheduled volume.
+
+## ADR-041: Runs are attributable to one profile; per-profile history + multi-select batch runs
+
+- **Status:** Accepted (builds on ADR-040; delivers `search-page-redesign-v2`)
+- **Context:** The completed Search redesign deferred two things: per-profile run history
+  and a run that targets a single profile. The `runs` table was global (no `profile_id`),
+  so history could only be shown across all profiles, and the rail's "Delivered · N
+  matches" / Ad-hoc-vs-Scheduled per-profile surfaces had nothing to read. ADR-040 already
+  factored the single-profile run path (`start_run(profile_id, trigger)` + `POST
+  /runs?profile=id`); this feature *consumes* it. The v2 mock also wants a "Run N selected"
+  multi-select and a top-bar "Next scheduled run" strip.
+- **Decision:** Attribute each run to a profile. `RunRecord.profile_id` (migration 11,
+  `ALTER TABLE runs ADD COLUMN profile_id INTEGER`, no backfill — existing rows are
+  honestly global NULL batches) records the single profile a run targeted, or NULL for a
+  "run all enabled" batch. `RunService.start_run` stamps it; `list_recent(limit,
+  profile_id)` and `GET /runs?profile=id` scope history to one profile, **excluding** NULL
+  batches. `RunOut` gains `profileId`; the rail maps `trigger` to an Ad-hoc/Scheduled
+  badge (no schema change — the column already existed). Multi-select "Run N selected" is
+  **client-orchestrated and sequential** (`useRunProfilesSequentially`): the browser fires
+  one `POST /runs?profile=id` at a time, polling each to terminal before the next, reusing
+  the ADR-040 single-flight guard instead of adding a server-side queue. The top-bar strip
+  reads a computed `ProfileOut.next_run_at` (derived per request from the profile's own
+  cron via `SettingsService.next_run_times`, off the live scheduler; NULL unless
+  `enabled AND schedule_enabled` with a parseable cron). Inline profile editing (name /
+  query / location / platforms) reuses `PUT /api/profiles/{id}` via a `ConfigureProfileModal`.
+- **Consequences:** A profile's history shows exactly the runs that targeted it; a deleted
+  profile's run rows survive (nullable, no FK) and simply stop matching a live profile.
+  Multi-select gains no new concurrency surface — the sequential guarantee is the existing
+  guard, so a batch and a scheduled fire still cannot overlap. `next_run_at` is never
+  persisted, so it can't drift; a bad raw cron degrades it to NULL rather than 500-ing the
+  profile list. Deferred (carry-forward): the pre-filter "N skipped" reveal (needs
+  per-job enrichment-skip persistence) and click-a-run-to-filter-jobs (jobs carry no
+  `run_id`) remain out of scope, unchanged from the completed redesign.

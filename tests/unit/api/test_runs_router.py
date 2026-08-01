@@ -16,11 +16,25 @@ from src.api.deps import get_run_service
 from src.api.main import create_app
 from src.core.domain.date_posted import DatePosted
 from src.core.domain.run_record import RunRecord
+from src.core.domain.run_report import RunReport
 from src.core.domain.scraper_name import ScraperName
 from src.core.domain.search_profile import SearchProfile
 from src.core.services.run_service import RunService
 
 _NOW = datetime(2026, 7, 19, 9, 0, 0)
+
+
+def _stub_report() -> RunReport:
+    """A minimal successful RunReport so a run models a completed profile."""
+    return RunReport(
+        qualifying_results=[],
+        near_miss_results=[],
+        total_evaluated=0,
+        score_threshold=75,
+        query="SWE",
+        location="Remote",
+        run_at=_NOW,
+    )
 
 
 def _real_profile(profile_id: int) -> SearchProfile:
@@ -55,7 +69,10 @@ def _service(*, profiles: list, fail: bool = False) -> tuple[RunService, SQLiteR
     async def fake_run_all(profs, factory, settings_service=None):
         if fail:
             raise RuntimeError("scraper exploded")
-        return []
+        # Model a successful run: one report per profile that ran. An empty report
+        # list now (correctly) reads as a failed run (Bug 2), so a happy-path fake
+        # must produce a report per profile.
+        return ([_stub_report() for _ in profs], [])
 
     service = RunService(
         run_repo=repo,
@@ -155,6 +172,35 @@ def test_list_runs_returns_history_newest_first():
     assert resp.status_code == 200
     ids = [r["id"] for r in resp.json()]
     assert ids[:2] == ["new", "old"]
+
+
+def test_post_run_with_profile_param_tags_the_record():
+    """A per-profile run carries its profileId in the response (search v2 §A)."""
+    service, _ = _service(profiles=[_real_profile(1), _real_profile(2)])
+    body = _client(service).post("/api/runs", params={"profile": 2}).json()
+    assert body["profileId"] == 2
+
+
+def test_post_run_batch_has_null_profile_id():
+    """A global 'run all' batch reports profileId null."""
+    service, _ = _service(profiles=["p1"])
+    body = _client(service).post("/api/runs").json()
+    assert body["profileId"] is None
+
+
+def test_list_runs_scoped_by_profile_excludes_batches():
+    """GET /runs?profile=id returns only that profile's runs, not global batches."""
+    service, repo = _service(profiles=[_real_profile(1)])
+    repo.save(RunRecord(id="batch", status="succeeded", started_at=_NOW - timedelta(hours=1)))
+    repo.save(
+        RunRecord(id="p1a", status="succeeded", started_at=_NOW, profile_id=1),
+    )
+
+    resp = _client(service).get("/api/runs", params={"profile": 1})
+
+    assert resp.status_code == 200
+    ids = [r["id"] for r in resp.json()]
+    assert ids == ["p1a"]
 
 
 def test_failed_run_response_carries_type_name_only():

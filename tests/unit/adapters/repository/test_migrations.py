@@ -11,6 +11,7 @@ from datetime import datetime
 
 from src.adapters.repository.migrations import MIGRATIONS, apply_migrations
 from src.adapters.repository.sqlite_repository import SQLiteJobRepository
+from src.adapters.repository.sqlite_run_repository import SQLiteRunRepository
 from src.core.domain.fingerprint import compute_fingerprint
 from src.core.domain.job import Job
 from src.core.domain.match_result import MatchResult, ScoreBreakdown, ScoreCategory
@@ -77,7 +78,7 @@ def test_migrations_create_all_tables_on_fresh_db():
     assert "search_profiles" in tables  # migration 6 (W7)
     assert "runs" in tables  # migration 7 (W8)
     versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations")]
-    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert versions == [v for v, _ in MIGRATIONS] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
     # Migration 5 (W6): the async status column exists and defaults to 'ready'.
     columns = _generations_columns(conn)
@@ -136,7 +137,7 @@ def test_migration_3_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     resume_count = repo2._conn.execute("SELECT COUNT(*) FROM resumes").fetchone()[0]
     assert resume_count == 0
     versions = [row[0] for row in repo2._conn.execute("SELECT version FROM schema_migrations")]
-    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     repo2.close()
 
 
@@ -268,7 +269,47 @@ def test_migration_9_upgrades_existing_job_store_without_touching_jobs(tmp_path)
     assert found is not None
     assert found.salary_min is None and found.posted_at is None
     versions = [row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")]
-    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    repo.close()
+
+
+def _runs_columns(conn: sqlite3.Connection) -> set[str]:
+    """Return the ``runs`` table's column names."""
+    return {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+
+
+def test_migration_11_upgrades_existing_runs_store_without_touching_rows(tmp_path):
+    """A store at v10 upgrades to v11; the legacy run row survives with profile_id NULL."""
+    db_path = str(tmp_path / "agent.db")
+
+    # Build a database at migrations 1..10 only, then insert a run row directly (no
+    # profile_id column exists yet — it is honestly a global "run all" batch).
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    for version, sql in MIGRATIONS:
+        if version >= 11:
+            continue
+        conn.executescript(sql)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (version, _NOW.isoformat()),
+        )
+    conn.execute(
+        "INSERT INTO runs (id, status, trigger, started_at) VALUES (?, ?, ?, ?)",
+        ("legacy-run", "succeeded", "web", _NOW.isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+    # Opening applies migration 11 — the column appears and the legacy row reads NULL.
+    repo = SQLiteRunRepository(db_path=db_path)
+    assert "profile_id" in _runs_columns(repo._conn)
+    legacy = repo.get("legacy-run")
+    assert legacy is not None and legacy.profile_id is None
+    versions = [row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     repo.close()
 
 
@@ -319,5 +360,5 @@ def test_migrations_4_and_5_upgrade_existing_store_without_touching_jobs(tmp_pat
     gen_count = repo._conn.execute("SELECT COUNT(*) FROM generations").fetchone()[0]
     assert gen_count == 0
     versions = [row[0] for row in repo._conn.execute("SELECT version FROM schema_migrations")]
-    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     repo.close()

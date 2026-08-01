@@ -134,6 +134,7 @@ class RunService:
                 id=uuid4().hex,
                 status="running",
                 trigger=trigger,
+                profile_id=profile_id,
                 started_at=datetime.now(),
             )
             logger.info("Started run %s (trigger=%s, profile=%s)", run.id, trigger, profile_id)
@@ -164,7 +165,7 @@ class RunService:
             profiles = self._settings_service.list_profiles()
             if profile_id is not None:
                 profiles = [p for p in profiles if _profile_id_of(p) == profile_id]
-            reports = await self._run_all_profiles(
+            reports, failures = await self._run_all_profiles(
                 profiles, self._service_factory, self._settings_service
             )
         except Exception as exc:  # noqa: BLE001 — record failure, never crash the task
@@ -174,6 +175,26 @@ class RunService:
                     update={
                         "status": "failed",
                         "error": type(exc).__name__,
+                        "finished_at": datetime.now(),
+                    }
+                )
+            )
+            return
+
+        # Derive the run status from the actual work outcome, not merely from
+        # ``run_all_profiles`` returning without raising — it swallows per-profile
+        # failures for batch resilience, so a failed run must be read from
+        # ``failures`` or an empty ``reports`` (Bug 2). Scope A: a mixed batch
+        # (some succeed, some fail) stays ``succeeded``; those failures live in the
+        # logs only, and a distinct ``partial`` status is a noted follow-up.
+        error = _run_failure_error(profile_id, reports, failures)
+        if error is not None:
+            logger.error("Run %s failed (%s)", run_id, error)
+            self._run_repo.update(
+                run.model_copy(
+                    update={
+                        "status": "failed",
+                        "error": error,
                         "finished_at": datetime.now(),
                     }
                 )
@@ -214,16 +235,18 @@ class RunService:
         """
         return self._heal(self._run_repo.get(run_id))
 
-    def recent_runs(self, limit: int = 20) -> list[RunRecord]:
+    def recent_runs(self, limit: int = 20, profile_id: int | None = None) -> list[RunRecord]:
         """Return the most recent runs, newest first, healing any timed-out row.
 
         Args:
             limit: Maximum number of runs to return.
+            profile_id: When set, return only runs that targeted this profile (the
+                rail's per-profile history); None returns every run (search v2 §A).
 
         Returns:
             Up to ``limit`` runs ordered newest first (possibly empty).
         """
-        return [self._heal(run) for run in self._run_repo.list_recent(limit)]
+        return [self._heal(run) for run in self._run_repo.list_recent(limit, profile_id)]
 
     def _active_run(self) -> RunRecord | None:
         """Return the in-progress run, or None — healing a timed-out row first."""
@@ -256,6 +279,49 @@ def _profile_id_of(profile: object) -> object:
 def _find_profile(profiles: list, profile_id: int) -> object | None:
     """Return the profile with ``profile_id`` from a loaded list, or None."""
     return next((p for p in profiles if _profile_id_of(p) == profile_id), None)
+
+
+def _run_failure_error(
+    profile_id: int | None,
+    reports: list[RunReport],
+    failures: list[tuple[int, str]],
+) -> str | None:
+    """Return the ``error`` type name if the run failed, or None if it succeeded.
+
+    Encodes the Bug 2 decision table (scope A — no ``partial`` status, no failed
+    count):
+
+    * Single-profile run (``profile_id`` set):
+        - the profile is in ``failures`` ⇒ ``failed`` with that profile's error type.
+        - neither a report nor a failure was produced (the profile vanished between
+          ``start_run`` and here) ⇒ ``failed`` with ``"ProfileVanished"`` — a
+          "Run now" that ran nothing is not a success.
+        - otherwise ⇒ succeeded (None).
+    * Batch run (``profile_id`` is None):
+        - ``reports`` empty (every profile failed, or none ran) ⇒ ``failed`` with the
+          first failure's error type, or ``"NoProfilesRun"`` when nothing failed
+          either.
+        - otherwise ⇒ succeeded (None); mixed-batch failures live in the logs only.
+
+    Args:
+        profile_id: The single profile the run targeted, or None for a batch.
+        reports: The per-profile reports the run produced.
+        failures: ``(profile_id, error_type_name)`` for each profile that raised.
+
+    Returns:
+        The exception type name to store in ``RunRecord.error``, or None on success.
+    """
+    if profile_id is not None:
+        for failed_id, error_type in failures:
+            if failed_id == profile_id:
+                return error_type
+        if not reports:
+            return "ProfileVanished"
+        return None
+
+    if not reports:
+        return failures[0][1] if failures else "NoProfilesRun"
+    return None
 
 
 def _summarize(reports: list[RunReport]) -> dict[str, int]:

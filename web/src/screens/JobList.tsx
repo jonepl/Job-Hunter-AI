@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { useJobs } from "../hooks/useJobs";
 import { useRuns } from "../hooks/useRuns";
+import { ConfigureProfileModal } from "../components/ConfigureProfileModal";
 import { JobCard } from "../components/JobCard";
 import { JobDetail } from "../components/JobDetail";
 import { JobFilterBar } from "../components/JobFilterBar";
@@ -15,9 +16,9 @@ import { EMPTY_FILTER, applyFilters, type FilterState } from "../lib/filters";
 import { useResolvedSelection } from "../lib/searchView";
 import { isTracked, statusLabel } from "../lib/status";
 import { relativeTime } from "../lib/time";
-import type { JobSummary, RunOut } from "../api/client";
+import type { JobSummary, ProfileOut, RunOut } from "../api/client";
 
-// The Search screen shell (redesign Part B): a 284px navigation rail, a 484px
+// The Search screen shell (redesign Part B): a 340px navigation rail, a 484px
 // results column, and a fluid detail pane, each scrolling independently under the
 // 66px TopBar. The rail collapses to a drawer below xl and the whole thing to a
 // single column below lg. Rail selection is shared React state (searchView.tsx).
@@ -31,6 +32,11 @@ export function JobList() {
   const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER);
   const [railOpen, setRailOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  // Multi-select for batch runs lives here (not in <SearchRail>) so the desktop rail and
+  // the mobile drawer share one selection; the ⚙ target lives here so the modal renders
+  // at the screen shell (search v2 §C/§F). React state only — no browser storage.
+  const [selectedProfileIds, setSelectedProfileIds] = useState<Set<number>>(new Set());
+  const [configureProfile, setConfigureProfile] = useState<ProfileOut | null>(null);
 
   const allJobs = jobs ?? [];
   // Base list per view: Tracked shows in-flight jobs; a profile view (the "Latest
@@ -48,8 +54,13 @@ export function JobList() {
 
   return (
     <div className="flex h-[calc(100vh-66px)]">
-      <aside className="hidden w-[284px] shrink-0 overflow-y-auto border-r border-border bg-surface p-5 px-[14px] as-scroll xl:block">
-        <SearchRail onNewProfile={() => setModalOpen(true)} />
+      <aside className="hidden w-[340px] shrink-0 overflow-y-auto border-r border-border bg-surface p-5 px-[14px] as-scroll xl:block">
+        <SearchRail
+          onNewProfile={() => setModalOpen(true)}
+          onConfigure={setConfigureProfile}
+          selectedIds={selectedProfileIds}
+          onSelectionChange={setSelectedProfileIds}
+        />
       </aside>
 
       {railOpen && (
@@ -59,6 +70,12 @@ export function JobList() {
               setRailOpen(false);
               setModalOpen(true);
             }}
+            onConfigure={(profile) => {
+              setRailOpen(false);
+              setConfigureProfile(profile);
+            }}
+            selectedIds={selectedProfileIds}
+            onSelectionChange={setSelectedProfileIds}
           />
         </RailDrawer>
       )}
@@ -111,6 +128,12 @@ export function JobList() {
       </section>
 
       {modalOpen && <NewProfileModal onClose={() => setModalOpen(false)} />}
+      {configureProfile && (
+        <ConfigureProfileModal
+          profile={configureProfile}
+          onClose={() => setConfigureProfile(null)}
+        />
+      )}
     </div>
   );
 }
@@ -120,7 +143,7 @@ function RailDrawer({ children, onClose }: { children: React.ReactNode; onClose:
   return (
     <div className="fixed inset-0 z-40 flex xl:hidden" role="dialog" aria-label="Profiles">
       <div className="flex-1 bg-text/40" onClick={onClose} />
-      <aside className="ml-auto w-[284px] overflow-y-auto border-l border-border bg-surface p-5 px-[14px] as-scroll">
+      <aside className="ml-auto w-[340px] overflow-y-auto border-l border-border bg-surface p-5 px-[14px] as-scroll">
         {children}
       </aside>
     </div>
@@ -219,7 +242,7 @@ function ResultsBody({
       <div className="rounded-card border border-border bg-surface p-8 text-center">
         <h2 className="font-display text-h3">Couldn’t load your jobs</h2>
         <p className="mx-auto mt-2 max-w-md text-small text-text-2">
-          The job service didn’t respond. Check that the API is running, then try again.
+          Something went wrong loading your jobs. Please try again in a moment.
         </p>
         <button
           type="button"

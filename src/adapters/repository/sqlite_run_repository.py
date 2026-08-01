@@ -7,11 +7,10 @@ per-operation commits. Only a summary is stored, never job content (CLAUDE.md #2
 """
 
 import logging
-import os
 import sqlite3
 from datetime import datetime
 
-from src.adapters.repository.migrations import apply_migrations
+from src.adapters.repository.connection import open_connection
 from src.core.domain.run_record import RunRecord
 from src.core.ports.run_repository_port import RunRepositoryPort
 
@@ -35,29 +34,23 @@ class SQLiteRunRepository(RunRepositoryPort):
             db_path: Path to the SQLite file. Parent directories are created.
             busy_timeout_ms: ``PRAGMA busy_timeout`` in milliseconds (ADR-034 §1).
         """
-        parent = os.path.dirname(db_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        apply_migrations(self._conn)
+        # Cross-thread safety comes from the per-file lock inside open_connection —
+        # the poll and the background run share this connection (ADR-034 §1, bug1).
+        self._conn = open_connection(db_path, busy_timeout_ms)
         logger.info("Run repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms)
 
     def save(self, run: RunRecord) -> RunRecord:
         """Persist a new run record and return it."""
         self._conn.execute(
             "INSERT INTO runs ("
-            "id, status, trigger, profiles_run, jobs_found, new_jobs, "
+            "id, status, trigger, profile_id, profiles_run, jobs_found, new_jobs, "
             "qualifying, error, started_at, finished_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run.id,
                 run.status,
                 run.trigger,
+                run.profile_id,
                 run.profiles_run,
                 run.jobs_found,
                 run.new_jobs,
@@ -98,11 +91,22 @@ class SQLiteRunRepository(RunRepositoryPort):
         row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         return self._row_to_run(row) if row is not None else None
 
-    def list_recent(self, limit: int = 20) -> list[RunRecord]:
-        """Return up to ``limit`` runs, newest first."""
-        rows = self._conn.execute(
-            "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+    def list_recent(self, limit: int = 20, profile_id: int | None = None) -> list[RunRecord]:
+        """Return up to ``limit`` runs, newest first.
+
+        When ``profile_id`` is given, return only that profile's runs — global
+        "run all" batches (``profile_id`` NULL) are deliberately excluded so the rail's
+        per-profile history shows exactly the runs that targeted it (search v2 §A).
+        """
+        if profile_id is not None:
+            rows = self._conn.execute(
+                "SELECT * FROM runs WHERE profile_id = ? ORDER BY started_at DESC LIMIT ?",
+                (profile_id, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [self._row_to_run(row) for row in rows]
 
     def active(self) -> RunRecord | None:
@@ -123,6 +127,7 @@ class SQLiteRunRepository(RunRepositoryPort):
             id=row["id"],
             status=row["status"],
             trigger=row["trigger"],
+            profile_id=row["profile_id"],
             profiles_run=row["profiles_run"],
             jobs_found=row["jobs_found"],
             new_jobs=row["new_jobs"],

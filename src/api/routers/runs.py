@@ -61,18 +61,23 @@ async def start_run(
 @router.get("/runs", response_model=list[RunOut])
 def list_runs(
     limit: int = Query(default=20, ge=1, le=100),
+    profile: int | None = Query(default=None),
     service: RunService = Depends(get_run_service),
 ) -> list[RunOut]:
     """List recent runs, newest first (healing any run lost to a restart).
 
+    When ``?profile=id`` is given the list is scoped to that profile's runs — the
+    rail's per-profile run history (search v2); global "run all" batches are excluded.
+
     Args:
         limit: Maximum number of runs to return (1–100).
+        profile: Optional profile id to scope the history to; None returns every run.
         service: The shared RunService (injected).
 
     Returns:
         Up to ``limit`` runs as response models.
     """
-    return [RunOut.from_run(run) for run in service.recent_runs(limit)]
+    return [RunOut.from_run(run) for run in service.recent_runs(limit, profile)]
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)

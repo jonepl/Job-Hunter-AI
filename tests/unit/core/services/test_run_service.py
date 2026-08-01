@@ -106,15 +106,22 @@ def _service(
     reports: list[RunReport] | None = None,
     *,
     fail: bool = False,
+    failures: list[tuple[int, str]] | None = None,
     timeout: float = 1800.0,
 ) -> tuple[RunService, SQLiteRunRepository]:
-    """Build a RunService over an in-memory repo + fakes; return both."""
+    """Build a RunService over an in-memory repo + fakes; return both.
+
+    ``fail`` makes the fake ``run_all_profiles`` *itself* raise (an unrecoverable
+    error the service catches). ``failures`` instead models per-profile failures
+    the runner swallows and returns — ``(profile_id, error_type_name)`` — so the
+    Bug 2 status-derivation logic can be driven directly.
+    """
     repo = SQLiteRunRepository(db_path=":memory:")
 
     async def fake_run_all(profs, factory, settings_service=None):
         if fail:
             raise RuntimeError("SECRET scraped payload exploded")
-        return reports or []
+        return (reports or [], failures or [])
 
     service = RunService(
         run_repo=repo,
@@ -209,6 +216,76 @@ async def test_execute_run_records_failure_type_name_only():
 
 
 @pytest.mark.asyncio
+async def test_execute_run_single_profile_failure_marks_failed():
+    """A single-profile run whose profile is in `failures` is failed, not a zero success.
+
+    The exact Bug 2 defect: `run_all_profiles` swallows the profile error and returns
+    empty reports; the run must read the failure and terminate `failed` with the type.
+    """
+    service, repo = _service(
+        profiles=[_real_profile(2)], reports=[], failures=[(2, "DatabaseError")]
+    )
+    run = service.start_run(profile_id=2)
+
+    await service.execute_run(run.id, profile_id=2)
+
+    done = repo.get(run.id)
+    assert done.status == "failed"
+    assert done.error == "DatabaseError"
+    assert done.finished_at is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_run_single_profile_vanished_marks_failed():
+    """A single-profile run that produced neither a report nor a failure is failed.
+
+    Models the profile being deleted between start_run and execute_run — a "Run now"
+    that ran nothing must not be reported as a success.
+    """
+    service, repo = _service(profiles=[_real_profile(1)], reports=[], failures=[])
+    run = service.start_run(profile_id=1)
+
+    await service.execute_run(run.id, profile_id=1)
+
+    done = repo.get(run.id)
+    assert done.status == "failed"
+    assert done.error == "ProfileVanished"
+
+
+@pytest.mark.asyncio
+async def test_execute_run_batch_all_failed_marks_failed():
+    """A "run all" batch where every profile failed is failed with the first type."""
+    service, repo = _service(
+        profiles=["p1", "p2"], reports=[], failures=[(1, "ScraperError"), (2, "DatabaseError")]
+    )
+    run = service.start_run()
+
+    await service.execute_run(run.id)
+
+    done = repo.get(run.id)
+    assert done.status == "failed"
+    assert done.error == "ScraperError"  # first failure
+
+
+@pytest.mark.asyncio
+async def test_execute_run_mixed_batch_succeeds():
+    """Scope A: a batch with at least one report succeeds; failures live only in logs."""
+    service, repo = _service(
+        profiles=["p1", "p2"],
+        reports=[_report(total=10, reused=0, qualifying=2)],
+        failures=[(2, "ScraperError")],
+    )
+    run = service.start_run()
+
+    await service.execute_run(run.id)
+
+    done = repo.get(run.id)
+    assert done.status == "succeeded"
+    assert done.profiles_run == 1  # only the successful profile contributed a report
+    assert done.error == ""
+
+
+@pytest.mark.asyncio
 async def test_execute_run_ignores_a_non_running_row():
     """execute_run is a no-op when the row is already terminal or gone."""
     service, repo = _service(profiles=["p1"], reports=[])
@@ -269,7 +346,7 @@ async def test_execute_run_filters_to_single_profile():
 
     async def capturing_run_all(profs, factory, settings_service=None):
         seen.append(list(profs))
-        return []
+        return ([_report(total=1, reused=0, qualifying=0)], [])
 
     service = RunService(
         run_repo=repo,
@@ -293,7 +370,7 @@ def test_shared_class_level_lock_rejects_cross_instance_second_run():
     repo = SQLiteRunRepository(db_path=":memory:")
 
     async def noop_run_all(profs, factory, settings_service=None):
-        return []
+        return ([], [])
 
     def _svc() -> RunService:
         return RunService(
@@ -319,3 +396,28 @@ def test_recent_runs_returns_newest_first():
     ids = [r.id for r in service.recent_runs()]
     assert ids[0] == second.id
     assert first.id in ids
+
+
+def test_start_run_stamps_profile_id_on_the_record():
+    """A per-profile run records the profile it targeted; a batch records None."""
+    service, _ = _service(profiles=[_real_profile(3)])
+    scoped = service.start_run(profile_id=3)
+    assert scoped.profile_id == 3
+
+
+def test_start_run_batch_leaves_profile_id_none():
+    """A global 'run all' batch has no profile_id."""
+    service, _ = _service(profiles=[_real_profile(1)])
+    assert service.start_run().profile_id is None
+
+
+def test_recent_runs_scopes_to_a_profile():
+    """recent_runs(profile_id) returns only that profile's runs, excluding batches."""
+    service, repo = _service(profiles=[_real_profile(1), _real_profile(2)])
+    batch = service.start_run()
+    repo.update(batch.model_copy(update={"status": "succeeded"}))
+    scoped = service.start_run(profile_id=2)
+
+    ids = [r.id for r in service.recent_runs(profile_id=2)]
+    assert ids == [scoped.id]
+    assert batch.id not in ids

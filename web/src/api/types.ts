@@ -839,6 +839,8 @@ export interface components {
             scheduleTimezone: string;
             /** Scheduleenabled */
             scheduleEnabled: boolean;
+            /** Nextrunat */
+            nextRunAt: string | null;
             /** Lastrunat */
             lastRunAt: string | null;
             /** Lastrunstatus */
@@ -913,6 +915,8 @@ export interface components {
              * @enum {string}
              */
             trigger: "web" | "scheduled" | "cli";
+            /** Profileid */
+            profileId: number | null;
             /** Profilesrun */
             profilesRun: number;
             /** Jobsfound */
@@ -1730,6 +1734,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                profile?: number | null;
             };
             header?: never;
             path?: never;

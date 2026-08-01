@@ -161,6 +161,59 @@ def test_put_can_set_a_profile_schedule(monkeypatch):
     assert body["scheduleEnabled"] is True
 
 
+def test_unscheduled_profile_has_no_next_run(monkeypatch):
+    """An enabled but unscheduled profile reports nextRunAt null (search v2 §D)."""
+    body = _client(monkeypatch).post("/api/profiles", json=_REMOTE_PROFILE).json()
+    assert body["nextRunAt"] is None
+
+
+def test_scheduled_profile_exposes_next_run_at(monkeypatch):
+    """A scheduled profile surfaces a computed next-run timestamp for the top-bar strip."""
+    client = _client(monkeypatch)
+    pid = client.post("/api/profiles", json=_REMOTE_PROFILE).json()["id"]
+    body = client.put(
+        f"/api/profiles/{pid}",
+        json={
+            **_REMOTE_PROFILE,
+            "scheduleCron": "0 8 * * 1-5",
+            "scheduleTimezone": "UTC",
+            "scheduleEnabled": True,
+        },
+    ).json()
+    assert body["nextRunAt"] is not None
+
+
+def test_paused_scheduled_profile_has_no_next_run(monkeypatch):
+    """A paused profile never fires, so nextRunAt is null even with a schedule."""
+    client = _client(monkeypatch)
+    pid = client.post("/api/profiles", json=_REMOTE_PROFILE).json()["id"]
+    body = client.put(
+        f"/api/profiles/{pid}",
+        json={
+            **_REMOTE_PROFILE,
+            "enabled": False,
+            "scheduleCron": "0 8 * * 1-5",
+            "scheduleEnabled": True,
+        },
+    ).json()
+    assert body["nextRunAt"] is None
+
+
+def test_invalid_cron_degrades_next_run_to_null(monkeypatch):
+    """An unparseable raw cron degrades nextRunAt to null, never 500s the list."""
+    client = _client(monkeypatch)
+    pid = client.post("/api/profiles", json=_REMOTE_PROFILE).json()["id"]
+    body = client.put(
+        f"/api/profiles/{pid}",
+        json={
+            **_REMOTE_PROFILE,
+            "scheduleCron": "not a cron",
+            "scheduleEnabled": True,
+        },
+    ).json()
+    assert body["nextRunAt"] is None
+
+
 def test_crud_reconciles_the_live_scheduler(monkeypatch):
     """Create / update / delete each call manager.sync() when a scheduler is registered."""
     manager = MagicMock()

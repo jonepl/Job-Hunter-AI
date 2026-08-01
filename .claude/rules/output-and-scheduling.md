@@ -43,6 +43,27 @@
 - Profile failures are caught and logged — a failing profile never stops the
   remaining ones. When CLI args are provided they override all profiles (testing only).
 
+## Run attribution & per-profile history (ADR-041)
+
+- **A run targets one profile OR every enabled profile.** `RunRecord.profile_id`
+  (`runs.profile_id`, migration 11) is the single profile a run targeted, or **NULL**
+  for a global "run all" batch (`POST /runs` with no arg — today's default). A
+  per-profile "Run now" and a scheduled fire both set it (`POST /runs?profile=id`).
+- **Run history is attributable per profile.** `GET /runs?profile=id`
+  (`RunRepositoryPort.list_recent(limit, profile_id)`) returns only that profile's runs;
+  global batches (NULL) are **excluded** from a profile's list. The rail's per-profile
+  history reads this; the source badge maps `trigger`: `scheduled` → "Scheduled",
+  `web`/`cli` → "Ad-hoc".
+- **Multi-select "Run N selected" is client-orchestrated, sequential.** The web rail
+  fires one `POST /runs?profile=id` at a time, polling each to a terminal status before
+  the next — it **reuses** the `RunService` single-flight guard rather than adding a new
+  server-side queue or concurrency surface. No run ever spans an arbitrary *subset*.
+- **`next_run_at` is computed, never stored.** `ProfileOut.next_run_at` is derived from
+  the profile's own cron via `SettingsService.next_run_times` (off the live scheduler),
+  and is NULL unless the profile is `enabled AND schedule_enabled` with a parseable cron.
+  It feeds the Search top-bar "Next scheduled run" strip; a bad cron degrades to NULL,
+  never a 500.
+
 ## Multi-profile config
 
 - **Profiles and global settings load from the DB, not `.env` directly (W7,

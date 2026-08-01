@@ -20,9 +20,13 @@ from src.core.ports.settings_repository_port import SettingsRepositoryPort
 
 logger = logging.getLogger(__name__)
 
-# One repository instance per database path, so every profile (and later the API
-# and scheduler) writes through a single JobRepositoryPort — ADR-034 §1 routes
-# all writes through one instance to serialize concurrent writers safely.
+# One repository instance per database path, so every profile (and the API and
+# scheduler) writes through a single JobRepositoryPort. The six repository types
+# (jobs, resume, generation, settings, profile, run) now share **one** SQLite
+# connection per file — ``connection.open_connection`` caches it by path — and a
+# single per-file lock serializes every access to it across threads. That shared
+# lock, NOT ``busy_timeout``, is what makes concurrent web reads/writes safe
+# (ADR-034 §1, handoff bug1).
 _REPOSITORIES: dict[str, JobRepositoryPort] = {}
 _RESUME_REPOSITORIES: dict[str, ResumeRepositoryPort] = {}
 _GENERATION_REPOSITORIES: dict[str, GenerationRepositoryPort] = {}

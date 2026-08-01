@@ -12,11 +12,10 @@ single transaction so the invariant never breaks mid-write.
 """
 
 import logging
-import os
 import sqlite3
 from datetime import datetime
 
-from src.adapters.repository.migrations import apply_migrations
+from src.adapters.repository.connection import open_connection
 from src.core.domain.resume import Resume
 from src.core.ports.resume_repository_port import ResumeRepositoryPort
 
@@ -41,16 +40,9 @@ class SQLiteResumeRepository(ResumeRepositoryPort):
             busy_timeout_ms: ``PRAGMA busy_timeout`` in milliseconds — how long a
                 writer waits for a competing writer before erroring (ADR-034 §1).
         """
-        parent = os.path.dirname(db_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        apply_migrations(self._conn)
+        # Cross-thread safety comes from the per-file lock inside open_connection,
+        # shared with every other connection to this file (ADR-034 §1, bug1).
+        self._conn = open_connection(db_path, busy_timeout_ms)
         logger.info("Resume repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms)
 
     def get_active(self) -> Resume | None:

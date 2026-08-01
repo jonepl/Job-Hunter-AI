@@ -5,7 +5,7 @@ import { JobList } from "../../src/screens/JobList";
 import { useJobs } from "../../src/hooks/useJobs";
 import { useJob, useMarkStatus, useSaved } from "../../src/hooks/useJob";
 import { useProfiles } from "../../src/hooks/useProfiles";
-import { useRuns } from "../../src/hooks/useRuns";
+import { useRunProfilesSequentially, useRuns } from "../../src/hooks/useRuns";
 import {
   useGenerate,
   useGeneration,
@@ -46,6 +46,14 @@ beforeEach(() => {
     typeof useProfiles
   >);
   mockedUseRuns.mockReturnValue({ data: [] } as unknown as ReturnType<typeof useRuns>);
+  (useRunProfilesSequentially as jest.Mock).mockReturnValue({
+    running: false,
+    current: 0,
+    total: 0,
+    error: null,
+    start: jest.fn(),
+    reset: jest.fn(),
+  });
   (useJobGenerations as jest.Mock).mockReturnValue({ data: [] });
   (useGenerate as jest.Mock).mockReturnValue({ mutate: jest.fn(), isPending: false });
   (useGeneration as jest.Mock).mockReturnValue({ data: undefined });

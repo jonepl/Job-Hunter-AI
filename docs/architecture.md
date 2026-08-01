@@ -136,8 +136,9 @@ returns only a masked suffix and a server-computed "differs from .env" flag, nev
 Because every factory reads
 `os.getenv`, `SettingsService.apply_to_environment()` bridges the DB values back into
 the environment at the run entrypoint (ADR-035), so DB edits take effect with no
-adapter changes (precedence `.env` → DB → CLI). Run history and the live cron
-reschedule arrive with later stories.
+adapter changes (precedence `.env` → DB → CLI). Run history is now **per-profile**
+(`runs.profile_id`, ADR-041) and the live per-profile cron reconciles on every profile
+CRUD (ADR-040).
 
 ```
    CLI  (src/main, src/cli) ─┐
@@ -201,7 +202,7 @@ job-search-agent/
 │   │       ├── generations.py          ← POST /api/jobs/{id}/generate · GET poll/list/download (async, W6)
 │   │       ├── settings.py             ← GET/PUT /api/settings · secrets · schedule preview (W7)
 │   │       ├── profiles.py             ← GET/POST/PUT/DELETE /api/profiles (CRUD, W7)
-│   │       └── runs.py                 ← POST /api/runs (background run) · GET poll/list (async, W8)
+│   │       └── runs.py                 ← POST /api/runs[?profile=id] · GET poll/list[?profile=id] (async, W8 + v2)
 │   │
 │   ├── cli/                             ← CLI concerns
 │   │   ├── __init__.py
@@ -909,14 +910,18 @@ search definition: `name`, `query`, `location`, JSON `work_types`/`active_scrape
 behind `SettingsRepositoryPort` / `ProfileRepositoryPort`. Runs read profiles from the
 store and pick up the global settings through the env bridge (ADR-035).
 
-**Schema (migration 7 — W8).** Adds `runs` (`id` opaque PK, `status`
-`running`/`succeeded`/`failed`, `trigger`, the summary counts `profiles_run` /
-`jobs_found` / `new_jobs` / `qualifying`, `error` type-name, `started_at`,
-`finished_at`) — one **summary-only** row per web-triggered run, behind
-`RunRepositoryPort`. A run is created `running`, updated to a terminal status by the
-background task, and self-heals to `failed` on read past `RUN_TIMEOUT_SECONDS`. Only one
-row is ever `running` (single-flight, ADR-034 §1). No job content is stored — the
-pipeline writes evaluated jobs to `jobs` as always.
+**Schema (migration 7 — W8; migration 11 — search v2).** Adds `runs` (`id` opaque PK,
+`status` `running`/`succeeded`/`failed`, `trigger`, `profile_id` (migration 11), the
+summary counts `profiles_run` / `jobs_found` / `new_jobs` / `qualifying`, `error`
+type-name, `started_at`, `finished_at`) — one **summary-only** row per run, behind
+`RunRepositoryPort`. `profile_id` is the single profile a run targeted, or **NULL** for a
+global "run all enabled" batch (existing rows are honestly NULL — no backfill); it scopes
+the rail's per-profile history via `list_recent(limit, profile_id)` / `GET /runs?profile=id`,
+which excludes NULL batches (ADR-041). A run is created `running`, updated to a terminal
+status by the background task, and self-heals to `failed` on read past
+`RUN_TIMEOUT_SECONDS`. Only one row is ever `running` (single-flight, ADR-034 §1) — which
+also serializes the client-orchestrated multi-select "Run N selected" batch. No job
+content is stored — the pipeline writes evaluated jobs to `jobs` as always.
 
 ### Generation ports — `ResumeTailorPort` / `CoverLetterPort` / `DocxWriterPort` / `GenerationRepositoryPort`
 

@@ -8,11 +8,10 @@ repository instance.
 """
 
 import logging
-import os
 import sqlite3
 from datetime import datetime
 
-from src.adapters.repository.migrations import apply_migrations
+from src.adapters.repository.connection import open_connection
 from src.core.domain.fingerprint import Fingerprint
 from src.core.domain.job import Job
 from src.core.domain.job_status import JobStatus, is_human_set
@@ -39,22 +38,14 @@ class SQLiteJobRepository(JobRepositoryPort):
 
         Args:
             db_path: Path to the SQLite file. Parent directories are created.
-            busy_timeout_ms: ``PRAGMA busy_timeout`` in milliseconds — how long a
-                writer waits for a competing writer before erroring (ADR-034 §1).
+            busy_timeout_ms: ``PRAGMA busy_timeout`` in milliseconds — kept as
+                belt-and-suspenders for a separate OS process (ADR-034 §1).
         """
-        parent = os.path.dirname(db_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-
-        # check_same_thread=False: the future in-process scheduler (ADR-032) may
-        # touch the repo from a background thread; all writes still funnel through
-        # this one instance, and busy_timeout serializes any real contention.
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        apply_migrations(self._conn)
+        # The connection is shared across threads (the web app reads on threadpool
+        # threads while a run writes on the event loop). Cross-thread safety comes
+        # from the per-file lock inside open_connection — NOT from busy_timeout,
+        # which only arbitrates between transactions (ADR-034 §1, handoff bug1).
+        self._conn = open_connection(db_path, busy_timeout_ms)
         logger.info("Job repository ready at %s (busy_timeout=%dms)", db_path, busy_timeout_ms)
 
     def list_jobs(self) -> list[StoredJob]:

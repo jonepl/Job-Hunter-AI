@@ -40,3 +40,21 @@ class NoProfilesError(Exception):
     A run with nothing to run would immediately "succeed" with an empty summary,
     which reads as a bug. The API maps this to a 400 pointing the user at Settings.
     """
+
+
+class RepositoryError(Exception):
+    """Raised when a persistence operation fails at the storage boundary (bug3).
+
+    The technology-agnostic persistence failure. The SQLite adapter catches raw
+    ``sqlite3.Error`` — corruption, a locked file, disk full, permissions, a
+    migration failure on open — and re-raises this with the original chained via
+    ``from exc``, so no persistence-technology type ever escapes the adapter into
+    the core or a driving adapter (ports abstraction, ``.claude/rules/architecture.md``).
+
+    Unlike the config-fatal exceptions above, this does *not* abort the process:
+    a driving adapter degrades it to a clean, technology-neutral error (the API
+    maps it to a 503 and logs the real cause server-side). It carries no
+    user-facing message itself — that copy is the handling adapter's concern, so
+    the same failure can surface differently in the web API, the CLI, or a future
+    driving adapter.
+    """
